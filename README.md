@@ -21,6 +21,7 @@
 8. [Build and Flash](#build-and-flash)
 9. [Testing](#testing)
 10. [Repository Structure](#repository-structure)
+11. [Future Work](#future-work)
 
 ---
 
@@ -294,7 +295,6 @@ The expected operational workflow is to define the mission on the ground from a 
    - Check the mission list with `GET /api/missions`.
    - Activate it with `POST /api/mission/activate`.
    - Verify status with `GET /api/status` and `GET /api/mission` before arming.
-   - The helper scripts [scripts/ares_api_tui.py](scripts/ares_api_tui.py) and [scripts/ares_fs_tui.py](scripts/ares_fs_tui.py) are intended to simplify ground operations and file access.
 
 4. **Fly the mission**
    - Put the system into flight mode and arm it.
@@ -585,6 +585,34 @@ Ares2/
 ├── platformio.ini                 # Build configuration
 └── partitions.csv                 # Flash partition map
 ```
+
+---
+
+## Future Work
+
+### 1. Stronger DO-178C-Inspired Practices
+
+- Expand verification evidence beyond build + static analysis into a more complete test pyramid.
+- Add clearer traceability from requirement -> AMS behavior -> test case -> evidence artifact.
+- Introduce stricter review/checklist gates for flight-critical changes (arming, state transitions, telemetry integrity, storage integrity).
+- Formalize qualification-style regression packs for release candidates.
+
+### 2. Pyro Actions and Flight Actuation
+
+- Implement explicit AMS actions for pyrotechnic channels (DROGUE / MAIN), not only reserved pins.
+- Add interlocks and arming conditions for pyro commands (mode, altitude/time windows, one-shot behavior, timeout watchdog).
+- Add dedicated telemetry/events for pyro state transitions and fault reasons.
+- Define and test fail-safe behavior for abort/error paths when pyro conditions are not met.
+
+### 3. New Hardware Roadmap
+
+- Evaluate and integrate additional sensors/modules needed for higher-fidelity flight control and post-flight analysis.
+- Extend HAL interfaces first, then provide concrete drivers to preserve application-layer portability.
+- Prioritized hardware candidates:
+  - Redundant barometric/GNSS sensing for cross-check and fault detection.
+  - Storage expansion (e.g., SD over SPI) for longer high-rate logs.
+  - Future radio options while keeping the same ARES protocol framing model.
+- Document each hardware addition in registry, pin map, and standards/deviation notes before flight use.
 
 ---
 
