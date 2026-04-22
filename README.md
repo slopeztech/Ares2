@@ -1,5 +1,7 @@
 # ARES — Amateur Rocket Embedded System
 
+WARNING: for now this is a beta version — use it at your own risk until a final and LTS version is released!
+
 **Avionics firmware for amateur rockets on ESP32-S3**
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](#build-and-flash)
@@ -74,7 +76,7 @@ Related documents:
 
 | Peripheral          | Interface | Function                                       |
 |---------------------|-----------|------------------------------------------------|
-| **DX-LR03-433T30D** | UART2     | LoRa 433 MHz (current profile), telemetry downlink |
+| **DX-LR03-433T30D** | UART2     | LoRa 433/868 MHz (current profile), telemetry downlink |
 | **BN-220**          | UART1     | u-blox GNSS, NMEA 0183 (GGA + RMC)            |
 | **BMP280**          | I2C       | Barometer + temperature (barometric altitude)  |
 | **MPU-6050**        | I2C       | 6-axis IMU (accelerometer ±2g + gyro ±250°/s) |
@@ -482,7 +484,7 @@ Standards references:
 ### Requirements
 
 - [PlatformIO](https://platformio.org/) CLI or VS Code extension
-- ESP32-S3 Zero Mini connected via USB (COM3 or COM6 depending on the system)
+- ESP32-S3 Zero Mini connected via USB
 
 ### Build
 
