@@ -41,7 +41,7 @@ UART assignments:
 | GPS baud                | 9600         | Standard NMEA                  |
 | LoRa UART baud          | 9600         | DX-LR03 default               |
 | Pyro fire duration      | 1000 ms      | E-match ignition pulse         |
-| LoRa frequency          | 433.125 MHz  | CH23 (410.125 + 23)           |
+| LoRa frequency          | 433.125 MHz (current) / 868 MHz (optional profile) | CH23 (410.125 + 23) for 433 profile |
 | LoRa TX power           | 20 dBm       | Configurable up to 30 dBm     |
 | WiFi AP password        | `ares1234`   | WPA2 PSK                      |
 | WiFi API port           | 80           | HTTP                           |

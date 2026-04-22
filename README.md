@@ -74,7 +74,7 @@ Related documents:
 
 | Peripheral          | Interface | Function                                       |
 |---------------------|-----------|------------------------------------------------|
-| **DX-LR03-433T30D** | UART2     | LoRa 433 MHz, 30 dBm, telemetry downlink       |
+| **DX-LR03-433T30D** | UART2     | LoRa 433 MHz (current profile), telemetry downlink |
 | **BN-220**          | UART1     | u-blox GNSS, NMEA 0183 (GGA + RMC)            |
 | **BMP280**          | I2C       | Barometer + temperature (barometric altitude)  |
 | **MPU-6050**        | I2C       | 6-axis IMU (accelerometer ±2g + gyro ±250°/s) |
@@ -360,11 +360,13 @@ Protocol references:
 | Parameter     | Value                     |
 |---------------|---------------------------|
 | Module        | DX-LR03-433T30D           |
-| Frequency     | 433.125 MHz (CH23)        |
+| Frequency     | 433.125 MHz (CH23, current) / 868 MHz (optional profile with compatible module/settings) |
 | TX Power      | 20 dBm (configurable)     |
 | Air Data Rate | 2.4 kbps                  |
 | UART baud     | 9600                      |
 | WiFi in flight| Disabled (REST-13.3)      |
+
+The current hardware profile is 433 MHz. An 868 MHz profile is also supported in documentation/standards when using a compatible radio module and regional configuration.
 
 ---
 

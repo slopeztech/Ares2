@@ -31,7 +31,9 @@ must operate correctly over any supported transport.
 | Custom / Future  | Any        | Any licensed   | Any               | ≥ 32 bytes  |
 
 The **default** configuration for ARES v2 is LoRa at 433.125 MHz /
-SF10 / BW 125 kHz (~2.4 kbps effective), but the APUS standard
+SF10 / BW 125 kHz (~2.4 kbps effective). A 868 MHz profile is also
+supported when using a compatible radio module and equivalent regional
+settings, but the APUS standard
 applies identically regardless of the physical layer. All radio-
 specific parameters (frequency, spreading factor, bandwidth, TX
 power) are configured in `config.h` and are **not** part of this

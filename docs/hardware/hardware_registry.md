@@ -29,8 +29,8 @@
 | Property          | Value                               |
 |-------------------|-------------------------------------|
 | Type              | UART LoRa transceiver               |
-| Frequency         | 433 MHz (ISM band)                  |
-| Default Channel   | CH23 = 433.125 MHz                  |
+| Frequency         | 433 MHz (current module profile); 868 MHz with compatible module/profile |
+| Default Channel   | CH23 = 433.125 MHz (current); define equivalent channel/profile for 868 MHz |
 | TX Power          | 30 dBm (1 W)                        |
 | Air Data Rate     | 2.4 kbps                            |
 | UART Baud         | 9600                                |
