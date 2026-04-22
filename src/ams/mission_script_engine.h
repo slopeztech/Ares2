@@ -410,6 +410,7 @@ private:
     TcCommand pendingTc_ = TcCommand::NONE;
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
+    bool logHeaderWritten_ = false;
 
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
 };

@@ -2052,8 +2052,60 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
                             : ImuStatus::NOT_READY;
 
     char line[256] = {};
+
+    // Helper lambda-equivalent: map ExprKind to column name string.
+    // Defined as an inline switch used twice (header and data row).
+    auto exprToKey = [](ExprKind e) -> const char* {
+        switch (e)
+        {
+        case ExprKind::GPS_LAT:       return "gps_lat";
+        case ExprKind::GPS_LON:       return "gps_lon";
+        case ExprKind::GPS_ALT:       return "gps_alt";
+        case ExprKind::BARO_ALT:      return "baro_alt";
+        case ExprKind::BARO_TEMP:     return "baro_temp";
+        case ExprKind::BARO_PRESS:    return "baro_pressure";
+        case ExprKind::IMU_ACCEL_X:   return "imu_accel_x";
+        case ExprKind::IMU_ACCEL_Y:   return "imu_accel_y";
+        case ExprKind::IMU_ACCEL_Z:   return "imu_accel_z";
+        case ExprKind::IMU_ACCEL_MAG: return "imu_accel_mag";
+        case ExprKind::IMU_GYRO_X:    return "imu_gyro_x";
+        case ExprKind::IMU_GYRO_Y:    return "imu_gyro_y";
+        case ExprKind::IMU_GYRO_Z:    return "imu_gyro_z";
+        case ExprKind::IMU_TEMP:      return "imu_temp";
+        default:                      return "expr";
+        }
+    };
+
+    // Write the CSV header row once per log file (first log write).
+    if (!logHeaderWritten_)
+    {
+        int hLen = snprintf(line, sizeof(line), "t_ms,state");
+        if (hLen > 0)
+        {
+            uint32_t hPos = static_cast<uint32_t>(hLen);
+            for (uint8_t i = 0; i < st.logFieldCount; i++)
+            {
+                const int n = snprintf(&line[hPos], sizeof(line) - hPos,
+                                       ",%s", exprToKey(st.logFields[i].expr));
+                if (n <= 0) { break; }
+                hPos += static_cast<uint32_t>(n);
+                if (hPos >= sizeof(line) - 2U) { break; }
+            }
+            const int nl = snprintf(&line[hPos], sizeof(line) - hPos, "\n");
+            if (nl > 0)
+            {
+                const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
+                storage_.appendFile(logPath_,
+                                    reinterpret_cast<const uint8_t*>(line),
+                                    hTot);
+                logHeaderWritten_ = true;
+            }
+        }
+    }
+
+    // Data row: t_ms,state,val1,val2,...
     int headLen = snprintf(line, sizeof(line),
-                           "t_ms=%" PRIu32 ",state=%s",
+                           "%" PRIu32 ",%s",
                            nowMs,
                            st.name);
     if (headLen <= 0)
@@ -2069,31 +2121,15 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
                                    g, gpsSt, b, baroSt, imuR, imuSt,
                                    value, sizeof(value)))
         {
+            // Write empty field to keep column alignment.
+            const int n = snprintf(&line[pos], sizeof(line) - pos, ",");
+            if (n <= 0) { break; }
+            pos += static_cast<uint32_t>(n);
             continue;
         }
 
-        const char* key = "expr";
-        switch (st.logFields[i].expr)
-        {
-        case ExprKind::GPS_LAT: key = "gps_lat"; break;
-        case ExprKind::GPS_LON: key = "gps_lon"; break;
-        case ExprKind::GPS_ALT: key = "gps_alt"; break;
-        case ExprKind::BARO_ALT: key = "baro_alt"; break;
-        case ExprKind::BARO_TEMP: key = "baro_temp"; break;
-        case ExprKind::BARO_PRESS: key = "baro_pressure"; break;
-        case ExprKind::IMU_ACCEL_X:   key = "imu_accel_x";   break;
-        case ExprKind::IMU_ACCEL_Y:   key = "imu_accel_y";   break;
-        case ExprKind::IMU_ACCEL_Z:   key = "imu_accel_z";   break;
-        case ExprKind::IMU_ACCEL_MAG: key = "imu_accel_mag"; break;
-        case ExprKind::IMU_GYRO_X:    key = "imu_gyro_x";    break;
-        case ExprKind::IMU_GYRO_Y:    key = "imu_gyro_y";    break;
-        case ExprKind::IMU_GYRO_Z:    key = "imu_gyro_z";    break;
-        case ExprKind::IMU_TEMP:      key = "imu_temp";      break;
-        default: break;
-        }
-
         const int n = snprintf(&line[pos], sizeof(line) - pos,
-                               ",%s=%s", key, value);
+                               ",%s", value);
         if (n <= 0)
         {
             break;
@@ -2141,7 +2177,7 @@ bool MissionScriptEngine::ensureLogFileLocked(const char* fileName)
     }
 
     const int written = snprintf(logPath_, sizeof(logPath_),
-                                 "%s/mission_%s.txt",
+                                 "%s/mission_%s.csv",
                                  ares::LOG_DIR,
                                  safeName);
     if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(logPath_))
@@ -2149,12 +2185,11 @@ bool MissionScriptEngine::ensureLogFileLocked(const char* fileName)
         return false;
     }
 
-    static const char kHeader[] =
-        "# ARES AMS sensor log\n"
-        "# format: key=value CSV per line\n";
+    // Create an empty file; the CSV header row is written on the first log write
+    // so it reflects the actual column names used by the first logging state.
+    logHeaderWritten_ = false;
     const StorageStatus stWrite = storage_.writeFile(
-        logPath_, reinterpret_cast<const uint8_t*>(kHeader),
-        static_cast<uint32_t>(sizeof(kHeader) - 1U));
+        logPath_, reinterpret_cast<const uint8_t*>(""), 0U);
     return stWrite == StorageStatus::OK;
 }
 
