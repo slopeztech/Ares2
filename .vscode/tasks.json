@@ -1,0 +1,103 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: PlatformIO",
+      "type": "shell",
+      "command": "C:/Users/Sergio/.platformio/penv/Scripts/platformio.exe",
+      "args": [
+        "run"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build"
+    },
+    {
+      "label": "MISRA: Generate compile database",
+      "type": "shell",
+      "command": "C:/Users/Sergio/.platformio/penv/Scripts/platformio.exe",
+      "args": [
+        "run",
+        "-t",
+        "compiledb"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "MISRA: Cppcheck (MISRA addon)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".vscode/scripts/run_cppcheck_misra.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "Cppcheck: Practical (no MISRA addon)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".vscode/scripts/run_cppcheck_practical.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "Cppcheck: Practical report (XML)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".vscode/scripts/run_cppcheck_practical_xml.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "MISRA: Build + Cppcheck",
+      "type": "shell",
+      "command": "echo",
+      "args": [
+        "Running MISRA pipeline..."
+      ],
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build: PlatformIO",
+        "MISRA: Generate compile database",
+        "MISRA: Cppcheck (MISRA addon)"
+      ]
+    },
+    {
+      "label": "Build + Cppcheck practical",
+      "type": "shell",
+      "command": "echo",
+      "args": [
+        "Running practical static analysis pipeline..."
+      ],
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build: PlatformIO",
+        "MISRA: Generate compile database",
+        "Cppcheck: Practical (no MISRA addon)"
+      ]
+    }
+  ]
+}

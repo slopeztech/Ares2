@@ -1,0 +1,124 @@
+/**
+ * @file  main.cpp
+ * @brief ARES runtime bootstrap (quiet mode).
+ *
+ * Initialises subsystems (sensors, radio, storage, WiFi, API, AMS)
+ * and then remains idle until external commands arrive through the
+ * REST API / mission runtime.
+ *
+ * All objects are statically allocated (no `new`) so heap
+ * usage stays at zero (PO10-3).
+ */
+
+#include "config.h"
+#include "hal/baro/barometer_interface.h"
+#include "hal/gps/gps_interface.h"
+#include "hal/imu/imu_interface.h"
+#include "hal/led/led_interface.h"
+#include "hal/radio/radio_interface.h"
+#include "drivers/baro/bmp280_driver.h"
+#include "drivers/gps/bn220_driver.h"
+#include "drivers/imu/mpu6050_driver.h"
+#include "drivers/radio/dxlr03_driver.h"
+#include "sys/led/neopixel_driver.h"
+#include "sys/led/status_led.h"
+#include "sys/wifi/wifi_ap.h"
+#include "sys/storage/littlefs_storage.h"
+#include "api/api_server.h"
+#include "ams/mission_script_engine.h"
+#include "comms/ares_radio_protocol.h"
+
+#include <Arduino.h>
+#include <freertos/task.h>
+#include <Wire.h>
+
+// ── Peripherals (static allocation, no heap) ───────────────
+// Concrete drivers are created here and exposed below as
+// interface references.  This is the only place in the
+// codebase that knows which sensor hardware is installed.
+static HardwareSerial gpsSerial(ares::GPS_UART_PORT);
+static HardwareSerial loraSerial(ares::LORA_UART_PORT);
+static Bmp280Driver   baro(Wire, ares::BMP280_I2C_ADDR);
+static Bn220Driver    gps(gpsSerial, ares::PIN_GPS_RX,
+                          ares::PIN_GPS_TX, ares::GPS_BAUD);
+static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
+                             ares::PIN_LORA_RX, ares::PIN_LORA_AUX,
+                             ares::LORA_UART_BAUD);
+static Mpu6050Driver  imu(Wire, ares::MPU6050_I2C_ADDR);
+static NeopixelDriver led(ares::PIN_LED_RGB);
+static StatusLed      statusLed(led);
+
+// WiFi Access Point (sys layer) — ground configuration link.
+static WifiAp wifiAp;
+
+// On-board flash filesystem for flight logs.
+static LittleFsStorage storage;
+
+// Interface references — all downstream code uses these.
+static BarometerInterface& baroIf    = baro;
+static GpsInterface&       gpsIf     = gps;
+static LedInterface&       ledIf     = led;
+static StorageInterface&   storageIf = storage;
+static RadioInterface&     radioIf   = radio;
+static ImuInterface&       imuIf     = imu;
+
+// REST API server — receives references to interfaces.
+static ares::ams::MissionScriptEngine missionEngine(storageIf, gpsIf, baroIf,
+                                                    radioIf, &imuIf);
+static ApiServer apiServer(wifiAp, baroIf, gpsIf, &storageIf, &missionEngine,
+                           &statusLed);
+
+// ═══════════════════════════════════════════════════════════
+void setup()
+{
+    // Keep USB serial available for on-demand diagnostics, but do not
+    // emit boot banners or periodic traces in normal operation.
+    Serial.begin(ares::SERIAL_BAUD);
+
+    // I2C bus — must be initialised before any I2C driver.
+    Wire.begin(ares::PIN_I2C_SDA, ares::PIN_I2C_SCL, ares::I2C_FREQ);
+
+    (void)baroIf.begin();
+    (void)imuIf.begin();
+
+    (void)gpsIf.begin();
+
+    // Status LED — NeoPixel on GPIO 21
+    (void)ledIf.begin();
+    ledIf.setBrightness(ares::DEFAULT_LED_BRIGHTNESS);
+    statusLed.begin();  // starts RTOS task — solid green (IDLE)
+
+    // On-board flash storage (LittleFS)
+    (void)storageIf.begin();
+
+    // LoRa radio transceiver (UART2)
+    (void)radioIf.begin();
+
+    // WiFi AP — must be up before API server
+    (void)wifiAp.begin();
+
+    // AMS runtime (IDLE by default, waits for API activation)
+    (void)missionEngine.begin();
+
+    // REST API server — start after AMS is ready to avoid init race
+    (void)apiServer.begin();
+
+    // All subsystems ready — exit boot blink, go solid green (IDLE)
+    statusLed.setMode(ares::OperatingMode::IDLE);
+}
+
+// ═══════════════════════════════════════════════════════════
+void loop()
+{
+    const uint32_t now = millis();
+
+    // GPS bytes must be consumed every iteration to keep
+    // the UART FIFO from overflowing (72-byte HW FIFO).
+    gpsIf.update();
+
+    // AMS script runtime tick (state machine + PUS emission).
+    missionEngine.tick(now);
+
+    // Yield via RTOS delay (avoid Arduino delay() in RTOS task context).
+    vTaskDelay(pdMS_TO_TICKS(ares::SENSOR_RATE_MS));
+}

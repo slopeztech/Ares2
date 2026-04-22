@@ -1,0 +1,2102 @@
+<?xml version="1.0"?>
+<dumps language="cpp">
+  <platform name="native" char_bit="8" short_bit="16" int_bit="32" long_bit="32" long_long_bit="64" float_bit="32" double_bit="64" long_double_bit="64" pointer_bit="64" wchar_t_bit="16" size_t_bit="64"/>
+  <rawtokens>
+    <file index="0" name="src/api/storage/storage_handler.cpp"/>
+    <file index="1" name="src/api/api_server.h"/>
+    <file index="2" name="src/api/api_common.h"/>
+    <file index="3" name="src/debug/ares_log.h"/>
+    <file index="4" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson.h"/>
+    <file index="5" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h"/>
+    <file index="6" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h"/>
+    <file index="7" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Client.h"/>
+    <file index="8" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h"/>
+    <file index="9" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Stream.h"/>
+    <file index="10" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/IPAddress.h"/>
+    <file index="11" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/WString.h"/>
+    <file index="12" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Printable.h"/>
+    <file index="13" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/pgmspace.h"/>
+    <file index="14" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp_arduino_version.h"/>
+    <file index="15" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/FreeRTOS.h"/>
+    <file index="16" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/task.h"/>
+    <file index="17" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/semphr.h"/>
+    <file index="18" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal.h"/>
+    <file index="19" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp8266-compat.h"/>
+    <file index="20" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/gpio_reg.h"/>
+    <file index="21" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/stdlib_noniso.h"/>
+    <file index="22" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/binary.h"/>
+    <file index="23" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/WCharacter.h"/>
+    <file index="24" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Server.h"/>
+    <file index="25" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h"/>
+    <file index="26" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/HardwareSerial.h"/>
+    <file index="27" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/Esp.h"/>
+    <file index="28" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/esp32/spiram.h"/>
+    <file index="29" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/variants/esp32s3/pins_arduino.h"/>
+    <file index="30" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/io_pin_remap.h"/>
+    <file index="31" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc_caps.h"/>
+    <file index="32" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/brownout_caps.h"/>
+    <file index="33" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/cpu_caps.h"/>
+    <file index="34" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/i2c_caps.h"/>
+    <file index="35" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/ledc_caps.h"/>
+    <file index="36" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/mpu_caps.h"/>
+    <file index="37" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/twai_caps.h"/>
+    <file index="38" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_err.h"/>
+    <file index="39" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/assert.h"/>
+    <file index="40" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_compiler.h"/>
+    <file index="41" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/qio_qspi/include/sdkconfig.h"/>
+    <file index="42" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_partition.h"/>
+    <file index="43" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/cpu_hal.h"/>
+    <file index="44" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/cpu_types.h"/>
+    <file index="45" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/esp32s3/include/hal/cpu_ll.h"/>
+    <file index="46" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xt_instr_macros.h"/>
+    <file index="47" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/specreg.h"/>
+    <file index="48" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/extreg.h"/>
+    <file index="49" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_bit_defs.h"/>
+    <file index="50" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_attr.h"/>
+    <file index="51" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/core.h"/>
+    <file index="52" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/hal.h"/>
+    <file index="53" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtensa-versions.h"/>
+    <file index="54" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/core-isa.h"/>
+    <file index="55" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/core-matmap.h"/>
+    <file index="56" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/tie.h"/>
+    <file index="57" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/tie-asm.h"/>
+    <file index="58" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/corebits.h"/>
+    <file index="59" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtruntime.h"/>
+    <file index="60" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtruntime-core-state.h"/>
+    <file index="61" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtruntime-frames.h"/>
+    <file index="62" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_flash.h"/>
+    <file index="63" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_spi_flash.h"/>
+    <file index="64" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_spi_flash_counters.h"/>
+    <file index="65" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/spi_flash_types.h"/>
+    <file index="66" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_types.h"/>
+    <file index="67" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/esp_flash_err.h"/>
+    <file index="68" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/uart_types.h"/>
+    <file index="69" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/HWCDC.h"/>
+    <file index="70" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/USBCDC.h"/>
+    <file index="71" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_event/include/esp_event.h"/>
+    <file index="72" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/queue.h"/>
+    <file index="73" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_event/include/esp_event_base.h"/>
+    <file index="74" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_event/include/esp_event_legacy.h"/>
+    <file index="75" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_wifi_types.h"/>
+    <file index="76" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_netif/include/esp_netif.h"/>
+    <file index="77" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_netif/include/esp_netif_ip_addr.h"/>
+    <file index="78" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_netif/include/esp_netif_types.h"/>
+    <file index="79" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_netif/include/esp_netif_defaults.h"/>
+    <file index="80" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_eth/include/esp_eth_netif_glue.h"/>
+    <file index="81" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/tcpip_adapter/include/tcpip_adapter.h"/>
+    <file index="82" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/tcpip_adapter/include/tcpip_adapter_types.h"/>
+    <file index="83" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/ip_addr.h"/>
+    <file index="84" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/include/apps/dhcpserver/dhcpserver.h"/>
+    <file index="85" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_netif/include/esp_netif_sta_list.h"/>
+    <file index="86" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/err.h"/>
+    <file index="87" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/opt.h"/>
+    <file index="88" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/arch.h"/>
+    <file index="89" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/arch/cc.h"/>
+    <file index="90" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/errno.h"/>
+    <file index="91" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/arch/sys_arch.h"/>
+    <file index="92" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log.h"/>
+    <file index="93" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp_rom_sys.h"/>
+    <file index="94" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/ets_sys.h"/>
+    <file index="95" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s2/rom/ets_sys.h"/>
+    <file index="96" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/ets_sys.h"/>
+    <file index="97" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32c3/rom/ets_sys.h"/>
+    <file index="98" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32h2/rom/ets_sys.h"/>
+    <file index="99" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log_internal.h"/>
+    <file index="100" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h"/>
+    <file index="101" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_assert.h"/>
+    <file index="102" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/reset_reasons.h"/>
+    <file index="103" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/arch/vfs_lwip.h"/>
+    <file index="104" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/lwipopts.h"/>
+    <file index="105" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/debug.h"/>
+    <file index="106" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/sys/ioctl.h"/>
+    <file index="107" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/sys/select.h"/>
+    <file index="108" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_system/include/esp_task.h"/>
+    <file index="109" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_system/include/esp_system.h"/>
+    <file index="110" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/netif/dhcp_state.h"/>
+    <file index="111" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/sntp/sntp_get_set_time.h"/>
+    <file index="112" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_common/include/esp_idf_version.h"/>
+    <file index="113" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_mac.h"/>
+    <file index="114" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_chip_info.h"/>
+    <file index="115" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_random.h"/>
+    <file index="116" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/esp_additions/freertos/FreeRTOSConfig.h"/>
+    <file index="117" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/FreeRTOSConfig_arch.h"/>
+    <file index="118" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/xtensa_config.h"/>
+    <file index="119" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/esp32s3/include/xtensa/config/system.h"/>
+    <file index="120" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/xtensa_context.h"/>
+    <file index="121" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtensa_context.h"/>
+    <file index="122" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/coreasm.h"/>
+    <file index="123" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/sys/time.h"/>
+    <file index="124" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/def.h"/>
+    <file index="125" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/ip4_addr.h"/>
+    <file index="126" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/ip6_addr.h"/>
+    <file index="127" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/lwip/src/include/lwip/ip6_zone.h"/>
+    <file index="128" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/lwip/port/esp32/include/arch/perf.h"/>
+    <file index="129" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_eth/include/esp_eth.h"/>
+    <file index="130" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_eth/include/esp_eth_com.h"/>
+    <file index="131" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_eth/include/esp_eth_mac.h"/>
+    <file index="132" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_eth/include/esp_eth_phy.h"/>
+    <file index="133" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/eth_types.h"/>
+    <file index="134" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_private/esp_wifi_types_private.h"/>
+    <file index="135" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_interface.h"/>
+    <file index="136" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_sleep.h"/>
+    <file index="137" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/event_groups.h"/>
+    <file index="138" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-log.h"/>
+    <file index="139" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-matrix.h"/>
+    <file index="140" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-uart.h"/>
+    <file index="141" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-gpio.h"/>
+    <file index="142" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-touch.h"/>
+    <file index="143" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-dac.h"/>
+    <file index="144" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-adc.h"/>
+    <file index="145" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-spi.h"/>
+    <file index="146" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-i2c.h"/>
+    <file index="147" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-ledc.h"/>
+    <file index="148" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-rmt.h"/>
+    <file index="149" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-sigmadelta.h"/>
+    <file index="150" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-timer.h"/>
+    <file index="151" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-bt.h"/>
+    <file index="152" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-psram.h"/>
+    <file index="153" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-rgb-led.h"/>
+    <file index="154" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-cpu.h"/>
+    <file index="155" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/gpio.h"/>
+    <file index="156" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_intr_alloc.h"/>
+    <file index="157" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/include/soc/gpio_periph.h"/>
+    <file index="158" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/gpio_types.h"/>
+    <file index="159" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/gpio.h"/>
+    <file index="160" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s2/rom/gpio.h"/>
+    <file index="161" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/gpio.h"/>
+    <file index="162" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32c3/rom/gpio.h"/>
+    <file index="163" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32h2/rom/gpio.h"/>
+    <file index="164" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/rtc_io_reg.h"/>
+    <file index="165" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/io_mux_reg.h"/>
+    <file index="166" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/gpio_struct.h"/>
+    <file index="167" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/gpio_sig_map.h"/>
+    <file index="168" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_timer/include/esp_timer.h"/>
+    <file index="169" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/timers.h"/>
+    <file index="170" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/touch_sensor_types.h"/>
+    <file index="171" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/list.h"/>
+    <file index="172" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/portmacro.h"/>
+    <file index="173" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/esp_additions/freertos/task_snapshot.h"/>
+    <file index="174" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/spinlock.h"/>
+    <file index="175" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_system/include/esp_private/crosscore_int.h"/>
+    <file index="176" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/esp_newlib.h"/>
+    <file index="177" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/heap/include/esp_heap_caps.h"/>
+    <file index="178" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/portbenchmark.h"/>
+    <file index="179" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/xtensa/include/xtensa/xtensa_api.h"/>
+    <file index="180" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/cpu.h"/>
+    <file index="181" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/heap/include/soc/soc_memory_layout.h"/>
+    <file index="182" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/portmacro_deprecated.h"/>
+    <file index="183" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/heap/include/heap_memory_layout.h"/>
+    <file index="184" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/include/soc/soc_memory_types.h"/>
+    <file index="185" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/esp_cpu.h"/>
+    <file index="186" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/heap/include/multi_heap.h"/>
+    <file index="187" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/newlib/platform_include/sys/reent.h"/>
+    <file index="188" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/compare_set.h"/>
+    <file index="189" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/projdefs.h"/>
+    <file index="190" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/portable.h"/>
+    <file index="191" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/deprecated_definitions.h"/>
+    <file index="192" name="C:/Users/Sergio/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/mpu_wrappers.h"/>
+    <file index="193" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson.hpp"/>
+    <file index="194" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Configuration.hpp"/>
+    <file index="195" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/JsonArray.hpp"/>
+    <file index="196" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/JsonObject.hpp"/>
+    <file index="197" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/JsonVariantConst.hpp"/>
+    <file index="198" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Document/JsonDocument.hpp"/>
+    <file index="199" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/ArrayImpl.hpp"/>
+    <file index="200" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/ElementProxy.hpp"/>
+    <file index="201" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/Utilities.hpp"/>
+    <file index="202" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Collection/CollectionImpl.hpp"/>
+    <file index="203" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/ResourceManagerImpl.hpp"/>
+    <file index="204" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/MemberProxy.hpp"/>
+    <file index="205" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/ObjectImpl.hpp"/>
+    <file index="206" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/ConverterImpl.hpp"/>
+    <file index="207" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/JsonVariantCopier.hpp"/>
+    <file index="208" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantCompare.hpp"/>
+    <file index="209" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantImpl.hpp"/>
+    <file index="210" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantRefBaseImpl.hpp"/>
+    <file index="211" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/JsonDeserializer.hpp"/>
+    <file index="212" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/JsonSerializer.hpp"/>
+    <file index="213" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/PrettyJsonSerializer.hpp"/>
+    <file index="214" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/MsgPackBinary.hpp"/>
+    <file index="215" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/MsgPackDeserializer.hpp"/>
+    <file index="216" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/MsgPackExtension.hpp"/>
+    <file index="217" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/MsgPackSerializer.hpp"/>
+    <file index="218" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/compatibility.hpp"/>
+    <file index="219" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Namespace.hpp"/>
+    <file index="220" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/preprocessor.hpp"/>
+    <file index="221" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/version.hpp"/>
+    <file index="222" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/endianness.hpp"/>
+    <file index="223" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/assert.hpp"/>
+    <file index="224" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits.hpp"/>
+    <file index="225" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/CountingDecorator.hpp"/>
+    <file index="226" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/measure.hpp"/>
+    <file index="227" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/serialize.hpp"/>
+    <file index="228" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantData.hpp"/>
+    <file index="229" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/MemoryPool.hpp"/>
+    <file index="230" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/StringNode.hpp"/>
+    <file index="231" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Misc/SerializedValue.hpp"/>
+    <file index="232" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/convertNumber.hpp"/>
+    <file index="233" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/JsonString.hpp"/>
+    <file index="234" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/StringAdapters.hpp"/>
+    <file index="235" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantContent.hpp"/>
+    <file index="236" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/ArrayData.hpp"/>
+    <file index="237" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/JsonFloat.hpp"/>
+    <file index="238" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/JsonInteger.hpp"/>
+    <file index="239" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/ObjectData.hpp"/>
+    <file index="240" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Collection/CollectionData.hpp"/>
+    <file index="241" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/Adapters/RamString.hpp"/>
+    <file index="242" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/Adapters/StringObject.hpp"/>
+    <file index="243" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/Adapters/FlashString.hpp"/>
+    <file index="244" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/pgmspace.hpp"/>
+    <file index="245" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/StringAdapter.hpp"/>
+    <file index="246" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/utility.hpp"/>
+    <file index="247" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/StringTraits.hpp"/>
+    <file index="248" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/attributes.hpp"/>
+    <file index="249" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/FloatTraits.hpp"/>
+    <file index="250" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/limits.hpp"/>
+    <file index="251" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/alias_cast.hpp"/>
+    <file index="252" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/math.hpp"/>
+    <file index="253" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/pgmspace_generic.hpp"/>
+    <file index="254" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/Allocator.hpp"/>
+    <file index="255" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/integer.hpp"/>
+    <file index="256" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writer.hpp"/>
+    <file index="257" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/StaticStringWriter.hpp"/>
+    <file index="258" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/StdStringWriter.hpp"/>
+    <file index="259" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/ArduinoStringWriter.hpp"/>
+    <file index="260" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/StdStreamWriter.hpp"/>
+    <file index="261" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/PrintWriter.hpp"/>
+    <file index="262" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Serialization/Writers/DummyWriter.hpp"/>
+    <file index="263" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/conditional.hpp"/>
+    <file index="264" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/decay.hpp"/>
+    <file index="265" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/enable_if.hpp"/>
+    <file index="266" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/function_traits.hpp"/>
+    <file index="267" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/integral_constant.hpp"/>
+    <file index="268" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_array.hpp"/>
+    <file index="269" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_base_of.hpp"/>
+    <file index="270" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_class.hpp"/>
+    <file index="271" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_const.hpp"/>
+    <file index="272" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_convertible.hpp"/>
+    <file index="273" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_enum.hpp"/>
+    <file index="274" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_floating_point.hpp"/>
+    <file index="275" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_integral.hpp"/>
+    <file index="276" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_pointer.hpp"/>
+    <file index="277" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_same.hpp"/>
+    <file index="278" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_signed.hpp"/>
+    <file index="279" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/is_unsigned.hpp"/>
+    <file index="280" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/make_unsigned.hpp"/>
+    <file index="281" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/remove_const.hpp"/>
+    <file index="282" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/remove_reference.hpp"/>
+    <file index="283" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/void_t.hpp"/>
+    <file index="284" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/type_identity.hpp"/>
+    <file index="285" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/remove_cv.hpp"/>
+    <file index="286" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/type_traits/declval.hpp"/>
+    <file index="287" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/Converter.hpp"/>
+    <file index="288" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/deserialize.hpp"/>
+    <file index="289" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/ResourceManager.hpp"/>
+    <file index="290" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/StringBuffer.hpp"/>
+    <file index="291" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/MsgPack/ieee754.hpp"/>
+    <file index="292" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/MemoryPoolList.hpp"/>
+    <file index="293" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/StringPool.hpp"/>
+    <file index="294" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/DeserializationError.hpp"/>
+    <file index="295" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/DeserializationOptions.hpp"/>
+    <file index="296" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Reader.hpp"/>
+    <file index="297" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/IteratorReader.hpp"/>
+    <file index="298" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/RamReader.hpp"/>
+    <file index="299" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/VariantReader.hpp"/>
+    <file index="300" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/ArduinoStreamReader.hpp"/>
+    <file index="301" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/ArduinoStringReader.hpp"/>
+    <file index="302" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/FlashReader.hpp"/>
+    <file index="303" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Readers/StdStreamReader.hpp"/>
+    <file index="304" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/Filter.hpp"/>
+    <file index="305" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Deserialization/NestingLimit.hpp"/>
+    <file index="306" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/JsonVariant.hpp"/>
+    <file index="307" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantAttorney.hpp"/>
+    <file index="308" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantTo.hpp"/>
+    <file index="309" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantRefBase.hpp"/>
+    <file index="310" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantOperators.hpp"/>
+    <file index="311" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/arithmeticCompare.hpp"/>
+    <file index="312" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantTag.hpp"/>
+    <file index="313" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/TextFormatter.hpp"/>
+    <file index="314" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/VariantDataVisitor.hpp"/>
+    <file index="315" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/EscapeSequence.hpp"/>
+    <file index="316" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/FloatParts.hpp"/>
+    <file index="317" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/Latch.hpp"/>
+    <file index="318" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/Utf16.hpp"/>
+    <file index="319" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Json/Utf8.hpp"/>
+    <file index="320" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Numbers/parseNumber.hpp"/>
+    <file index="321" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Polyfills/ctype.hpp"/>
+    <file index="322" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Variant/JsonVariantVisitor.hpp"/>
+    <file index="323" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/StringBuilder.hpp"/>
+    <file index="324" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Memory/Alignment.hpp"/>
+    <file index="325" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Strings/IsString.hpp"/>
+    <file index="326" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/JsonObjectConst.hpp"/>
+    <file index="327" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/JsonObjectIterator.hpp"/>
+    <file index="328" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Object/JsonPair.hpp"/>
+    <file index="329" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/JsonArrayConst.hpp"/>
+    <file index="330" name=".pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src/ArduinoJson/Array/JsonArrayIterator.hpp"/>
+    <file index="331" name="src/ares_assert.h"/>
+    <file index="332" name="src/ams/mission_script_engine.h"/>
+    <file index="333" name="src/config.h"/>
+    <file index="334" name="src/hal/baro/barometer_interface.h"/>
+    <file index="335" name="src/hal/gps/gps_interface.h"/>
+    <file index="336" name="src/hal/storage/storage_interface.h"/>
+    <file index="337" name="src/sys/wifi/wifi_ap.h"/>
+    <file index="338" name="src/comms/ares_radio_protocol.h"/>
+    <file index="339" name="src/hal/radio/radio_interface.h"/>
+    <tok fileIndex="0" linenr="1" column="1" str="/**&#10; * @file  storage_handler.cpp&#10; * @brief GET/DELETE /api/logs endpoint implementations (REST-12).&#10; *&#10; * Provides log-file listing, chunked download, and deletion&#10; * through the StorageInterface abstraction.&#10; *&#10; * Implements ApiServer::handleLogsList, handleLogDownload,&#10; * handleLogDelete, handleLogDeleteAll (declared in api_server.h).&#10; *&#10; * Security:&#10; *   - Only files under LOG_DIR are accessible (REST-12.5).&#10; *   - Filenames are validated for path traversal (REST-12.4).&#10; *   - Downloads are forbidden during flight (REST-6.2).&#10; */"/>
+    <tok fileIndex="0" linenr="17" column="1" str="#"/>
+    <tok fileIndex="0" linenr="17" column="2" str="include"/>
+    <tok fileIndex="0" linenr="17" column="10" str="&quot;api/api_server.h&quot;"/>
+    <tok fileIndex="0" linenr="18" column="1" str="#"/>
+    <tok fileIndex="0" linenr="18" column="2" str="include"/>
+    <tok fileIndex="0" linenr="18" column="10" str="&quot;api/api_common.h&quot;"/>
+    <tok fileIndex="0" linenr="19" column="1" str="#"/>
+    <tok fileIndex="0" linenr="19" column="2" str="include"/>
+    <tok fileIndex="0" linenr="19" column="10" str="&quot;debug/ares_log.h&quot;"/>
+    <tok fileIndex="0" linenr="21" column="1" str="#"/>
+    <tok fileIndex="0" linenr="21" column="2" str="include"/>
+    <tok fileIndex="0" linenr="21" column="10" str="&lt;ArduinoJson.h&gt;"/>
+    <tok fileIndex="0" linenr="22" column="1" str="#"/>
+    <tok fileIndex="0" linenr="22" column="2" str="include"/>
+    <tok fileIndex="0" linenr="22" column="10" str="&lt;WiFiClient.h&gt;"/>
+    <tok fileIndex="0" linenr="23" column="1" str="#"/>
+    <tok fileIndex="0" linenr="23" column="2" str="include"/>
+    <tok fileIndex="0" linenr="23" column="10" str="&lt;cinttypes&gt;"/>
+    <tok fileIndex="0" linenr="24" column="1" str="#"/>
+    <tok fileIndex="0" linenr="24" column="2" str="include"/>
+    <tok fileIndex="0" linenr="24" column="10" str="&lt;cstring&gt;"/>
+    <tok fileIndex="0" linenr="25" column="1" str="#"/>
+    <tok fileIndex="0" linenr="25" column="2" str="include"/>
+    <tok fileIndex="0" linenr="25" column="10" str="&lt;cstdio&gt;"/>
+    <tok fileIndex="0" linenr="27" column="1" str="static"/>
+    <tok fileIndex="0" linenr="27" column="8" str="constexpr"/>
+    <tok fileIndex="0" linenr="27" column="18" str="const"/>
+    <tok fileIndex="0" linenr="27" column="24" str="char"/>
+    <tok fileIndex="0" linenr="27" column="28" str="*"/>
+    <tok fileIndex="0" linenr="27" column="30" str="TAG"/>
+    <tok fileIndex="0" linenr="27" column="34" str="="/>
+    <tok fileIndex="0" linenr="27" column="36" str="&quot;API.LOG&quot;"/>
+    <tok fileIndex="0" linenr="27" column="45" str=";"/>
+    <tok fileIndex="0" linenr="29" column="1" str="// API server processes one request at a time in a single task."/>
+    <tok fileIndex="0" linenr="30" column="1" str="// Keep large scratch buffers off task stack to avoid canary trips."/>
+    <tok fileIndex="0" linenr="31" column="1" str="static"/>
+    <tok fileIndex="0" linenr="31" column="8" str="FileEntry"/>
+    <tok fileIndex="0" linenr="31" column="18" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="31" column="30" str="["/>
+    <tok fileIndex="0" linenr="31" column="31" str="ares"/>
+    <tok fileIndex="0" linenr="31" column="35" str="::"/>
+    <tok fileIndex="0" linenr="31" column="37" str="MAX_LOG_FILES"/>
+    <tok fileIndex="0" linenr="31" column="50" str="]"/>
+    <tok fileIndex="0" linenr="31" column="52" str="="/>
+    <tok fileIndex="0" linenr="31" column="54" str="{"/>
+    <tok fileIndex="0" linenr="31" column="55" str="}"/>
+    <tok fileIndex="0" linenr="31" column="56" str=";"/>
+    <tok fileIndex="0" linenr="32" column="1" str="static"/>
+    <tok fileIndex="0" linenr="32" column="8" str="char"/>
+    <tok fileIndex="0" linenr="32" column="13" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="32" column="22" str="["/>
+    <tok fileIndex="0" linenr="32" column="23" str="ares"/>
+    <tok fileIndex="0" linenr="32" column="27" str="::"/>
+    <tok fileIndex="0" linenr="32" column="29" str="API_MAX_RESPONSE_BODY"/>
+    <tok fileIndex="0" linenr="32" column="50" str="]"/>
+    <tok fileIndex="0" linenr="32" column="52" str="="/>
+    <tok fileIndex="0" linenr="32" column="54" str="{"/>
+    <tok fileIndex="0" linenr="32" column="55" str="}"/>
+    <tok fileIndex="0" linenr="32" column="56" str=";"/>
+    <tok fileIndex="0" linenr="34" column="1" str="// xxxxxx Path safety (REST-11, REST-12.4) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+    <tok fileIndex="0" linenr="36" column="1" str="/**&#10; * Validate that a log filename contains no path traversal&#10; * characters.  Only alphanumeric, underscore, hyphen, and dot&#10; * are allowed.  The name must not start with a dot.&#10; *&#10; * @return true if the filename is safe to use.&#10; */"/>
+    <tok fileIndex="0" linenr="43" column="1" str="static"/>
+    <tok fileIndex="0" linenr="43" column="8" str="bool"/>
+    <tok fileIndex="0" linenr="43" column="13" str="isValidLogFilename"/>
+    <tok fileIndex="0" linenr="43" column="31" str="("/>
+    <tok fileIndex="0" linenr="43" column="32" str="const"/>
+    <tok fileIndex="0" linenr="43" column="38" str="char"/>
+    <tok fileIndex="0" linenr="43" column="42" str="*"/>
+    <tok fileIndex="0" linenr="43" column="44" str="name"/>
+    <tok fileIndex="0" linenr="43" column="48" str=")"/>
+    <tok fileIndex="0" linenr="44" column="1" str="{"/>
+    <tok fileIndex="0" linenr="45" column="5" str="if"/>
+    <tok fileIndex="0" linenr="45" column="8" str="("/>
+    <tok fileIndex="0" linenr="45" column="9" str="name"/>
+    <tok fileIndex="0" linenr="45" column="14" str="=="/>
+    <tok fileIndex="0" linenr="45" column="17" str="nullptr"/>
+    <tok fileIndex="0" linenr="45" column="25" str="||"/>
+    <tok fileIndex="0" linenr="45" column="28" str="name"/>
+    <tok fileIndex="0" linenr="45" column="32" str="["/>
+    <tok fileIndex="0" linenr="45" column="33" str="0"/>
+    <tok fileIndex="0" linenr="45" column="34" str="]"/>
+    <tok fileIndex="0" linenr="45" column="36" str="=="/>
+    <tok fileIndex="0" linenr="45" column="39" str="&apos;\0&apos;"/>
+    <tok fileIndex="0" linenr="45" column="44" str="||"/>
+    <tok fileIndex="0" linenr="45" column="47" str="name"/>
+    <tok fileIndex="0" linenr="45" column="51" str="["/>
+    <tok fileIndex="0" linenr="45" column="52" str="0"/>
+    <tok fileIndex="0" linenr="45" column="53" str="]"/>
+    <tok fileIndex="0" linenr="45" column="55" str="=="/>
+    <tok fileIndex="0" linenr="45" column="58" str="&apos;.&apos;"/>
+    <tok fileIndex="0" linenr="45" column="61" str=")"/>
+    <tok fileIndex="0" linenr="46" column="5" str="{"/>
+    <tok fileIndex="0" linenr="47" column="9" str="return"/>
+    <tok fileIndex="0" linenr="47" column="16" str="false"/>
+    <tok fileIndex="0" linenr="47" column="21" str=";"/>
+    <tok fileIndex="0" linenr="48" column="5" str="}"/>
+    <tok fileIndex="0" linenr="50" column="5" str="const"/>
+    <tok fileIndex="0" linenr="50" column="11" str="uint32_t"/>
+    <tok fileIndex="0" linenr="50" column="20" str="len"/>
+    <tok fileIndex="0" linenr="50" column="24" str="="/>
+    <tok fileIndex="0" linenr="50" column="26" str="static_cast"/>
+    <tok fileIndex="0" linenr="50" column="37" str="&lt;"/>
+    <tok fileIndex="0" linenr="50" column="38" str="uint32_t"/>
+    <tok fileIndex="0" linenr="50" column="46" str="&gt;"/>
+    <tok fileIndex="0" linenr="50" column="47" str="("/>
+    <tok fileIndex="0" linenr="51" column="9" str="strnlen"/>
+    <tok fileIndex="0" linenr="51" column="16" str="("/>
+    <tok fileIndex="0" linenr="51" column="17" str="name"/>
+    <tok fileIndex="0" linenr="51" column="21" str=","/>
+    <tok fileIndex="0" linenr="51" column="23" str="ares"/>
+    <tok fileIndex="0" linenr="51" column="27" str="::"/>
+    <tok fileIndex="0" linenr="51" column="29" str="LOG_FILENAME_MAX"/>
+    <tok fileIndex="0" linenr="51" column="46" str="+"/>
+    <tok fileIndex="0" linenr="51" column="48" str="1U"/>
+    <tok fileIndex="0" linenr="51" column="50" str=")"/>
+    <tok fileIndex="0" linenr="51" column="51" str=")"/>
+    <tok fileIndex="0" linenr="51" column="52" str=";"/>
+    <tok fileIndex="0" linenr="53" column="5" str="if"/>
+    <tok fileIndex="0" linenr="53" column="8" str="("/>
+    <tok fileIndex="0" linenr="53" column="9" str="len"/>
+    <tok fileIndex="0" linenr="53" column="13" str="&gt;"/>
+    <tok fileIndex="0" linenr="53" column="15" str="ares"/>
+    <tok fileIndex="0" linenr="53" column="19" str="::"/>
+    <tok fileIndex="0" linenr="53" column="21" str="LOG_FILENAME_MAX"/>
+    <tok fileIndex="0" linenr="53" column="37" str=")"/>
+    <tok fileIndex="0" linenr="54" column="5" str="{"/>
+    <tok fileIndex="0" linenr="55" column="9" str="return"/>
+    <tok fileIndex="0" linenr="55" column="16" str="false"/>
+    <tok fileIndex="0" linenr="55" column="21" str=";"/>
+    <tok fileIndex="0" linenr="56" column="5" str="}"/>
+    <tok fileIndex="0" linenr="58" column="5" str="for"/>
+    <tok fileIndex="0" linenr="58" column="9" str="("/>
+    <tok fileIndex="0" linenr="58" column="10" str="uint32_t"/>
+    <tok fileIndex="0" linenr="58" column="19" str="i"/>
+    <tok fileIndex="0" linenr="58" column="21" str="="/>
+    <tok fileIndex="0" linenr="58" column="23" str="0"/>
+    <tok fileIndex="0" linenr="58" column="24" str=";"/>
+    <tok fileIndex="0" linenr="58" column="26" str="i"/>
+    <tok fileIndex="0" linenr="58" column="28" str="&lt;"/>
+    <tok fileIndex="0" linenr="58" column="30" str="len"/>
+    <tok fileIndex="0" linenr="58" column="33" str=";"/>
+    <tok fileIndex="0" linenr="58" column="35" str="i"/>
+    <tok fileIndex="0" linenr="58" column="36" str="++"/>
+    <tok fileIndex="0" linenr="58" column="38" str=")"/>
+    <tok fileIndex="0" linenr="59" column="5" str="{"/>
+    <tok fileIndex="0" linenr="60" column="9" str="const"/>
+    <tok fileIndex="0" linenr="60" column="15" str="char"/>
+    <tok fileIndex="0" linenr="60" column="20" str="c"/>
+    <tok fileIndex="0" linenr="60" column="22" str="="/>
+    <tok fileIndex="0" linenr="60" column="24" str="name"/>
+    <tok fileIndex="0" linenr="60" column="28" str="["/>
+    <tok fileIndex="0" linenr="60" column="29" str="i"/>
+    <tok fileIndex="0" linenr="60" column="30" str="]"/>
+    <tok fileIndex="0" linenr="60" column="31" str=";"/>
+    <tok fileIndex="0" linenr="61" column="9" str="const"/>
+    <tok fileIndex="0" linenr="61" column="15" str="bool"/>
+    <tok fileIndex="0" linenr="61" column="20" str="ok"/>
+    <tok fileIndex="0" linenr="61" column="23" str="="/>
+    <tok fileIndex="0" linenr="61" column="25" str="("/>
+    <tok fileIndex="0" linenr="61" column="26" str="c"/>
+    <tok fileIndex="0" linenr="61" column="28" str="&gt;="/>
+    <tok fileIndex="0" linenr="61" column="31" str="&apos;a&apos;"/>
+    <tok fileIndex="0" linenr="61" column="35" str="&amp;&amp;"/>
+    <tok fileIndex="0" linenr="61" column="38" str="c"/>
+    <tok fileIndex="0" linenr="61" column="40" str="&lt;="/>
+    <tok fileIndex="0" linenr="61" column="43" str="&apos;z&apos;"/>
+    <tok fileIndex="0" linenr="61" column="46" str=")"/>
+    <tok fileIndex="0" linenr="62" column="22" str="||"/>
+    <tok fileIndex="0" linenr="62" column="25" str="("/>
+    <tok fileIndex="0" linenr="62" column="26" str="c"/>
+    <tok fileIndex="0" linenr="62" column="28" str="&gt;="/>
+    <tok fileIndex="0" linenr="62" column="31" str="&apos;A&apos;"/>
+    <tok fileIndex="0" linenr="62" column="35" str="&amp;&amp;"/>
+    <tok fileIndex="0" linenr="62" column="38" str="c"/>
+    <tok fileIndex="0" linenr="62" column="40" str="&lt;="/>
+    <tok fileIndex="0" linenr="62" column="43" str="&apos;Z&apos;"/>
+    <tok fileIndex="0" linenr="62" column="46" str=")"/>
+    <tok fileIndex="0" linenr="63" column="22" str="||"/>
+    <tok fileIndex="0" linenr="63" column="25" str="("/>
+    <tok fileIndex="0" linenr="63" column="26" str="c"/>
+    <tok fileIndex="0" linenr="63" column="28" str="&gt;="/>
+    <tok fileIndex="0" linenr="63" column="31" str="&apos;0&apos;"/>
+    <tok fileIndex="0" linenr="63" column="35" str="&amp;&amp;"/>
+    <tok fileIndex="0" linenr="63" column="38" str="c"/>
+    <tok fileIndex="0" linenr="63" column="40" str="&lt;="/>
+    <tok fileIndex="0" linenr="63" column="43" str="&apos;9&apos;"/>
+    <tok fileIndex="0" linenr="63" column="46" str=")"/>
+    <tok fileIndex="0" linenr="64" column="22" str="||"/>
+    <tok fileIndex="0" linenr="64" column="25" str="c"/>
+    <tok fileIndex="0" linenr="64" column="27" str="=="/>
+    <tok fileIndex="0" linenr="64" column="30" str="&apos;_&apos;"/>
+    <tok fileIndex="0" linenr="64" column="34" str="||"/>
+    <tok fileIndex="0" linenr="64" column="37" str="c"/>
+    <tok fileIndex="0" linenr="64" column="39" str="=="/>
+    <tok fileIndex="0" linenr="64" column="42" str="&apos;-&apos;"/>
+    <tok fileIndex="0" linenr="64" column="46" str="||"/>
+    <tok fileIndex="0" linenr="64" column="49" str="c"/>
+    <tok fileIndex="0" linenr="64" column="51" str="=="/>
+    <tok fileIndex="0" linenr="64" column="54" str="&apos;.&apos;"/>
+    <tok fileIndex="0" linenr="64" column="57" str=";"/>
+    <tok fileIndex="0" linenr="65" column="9" str="if"/>
+    <tok fileIndex="0" linenr="65" column="12" str="("/>
+    <tok fileIndex="0" linenr="65" column="13" str="!"/>
+    <tok fileIndex="0" linenr="65" column="14" str="ok"/>
+    <tok fileIndex="0" linenr="65" column="16" str=")"/>
+    <tok fileIndex="0" linenr="66" column="9" str="{"/>
+    <tok fileIndex="0" linenr="67" column="13" str="return"/>
+    <tok fileIndex="0" linenr="67" column="20" str="false"/>
+    <tok fileIndex="0" linenr="67" column="25" str=";"/>
+    <tok fileIndex="0" linenr="68" column="9" str="}"/>
+    <tok fileIndex="0" linenr="69" column="5" str="}"/>
+    <tok fileIndex="0" linenr="71" column="5" str="// Reject &quot;..&quot; anywhere in the name (path traversal)"/>
+    <tok fileIndex="0" linenr="72" column="5" str="if"/>
+    <tok fileIndex="0" linenr="72" column="8" str="("/>
+    <tok fileIndex="0" linenr="72" column="9" str="strstr"/>
+    <tok fileIndex="0" linenr="72" column="15" str="("/>
+    <tok fileIndex="0" linenr="72" column="16" str="name"/>
+    <tok fileIndex="0" linenr="72" column="20" str=","/>
+    <tok fileIndex="0" linenr="72" column="22" str="&quot;..&quot;"/>
+    <tok fileIndex="0" linenr="72" column="26" str=")"/>
+    <tok fileIndex="0" linenr="72" column="28" str="!="/>
+    <tok fileIndex="0" linenr="72" column="31" str="nullptr"/>
+    <tok fileIndex="0" linenr="72" column="38" str=")"/>
+    <tok fileIndex="0" linenr="73" column="5" str="{"/>
+    <tok fileIndex="0" linenr="74" column="9" str="return"/>
+    <tok fileIndex="0" linenr="74" column="16" str="false"/>
+    <tok fileIndex="0" linenr="74" column="21" str=";"/>
+    <tok fileIndex="0" linenr="75" column="5" str="}"/>
+    <tok fileIndex="0" linenr="77" column="5" str="return"/>
+    <tok fileIndex="0" linenr="77" column="12" str="true"/>
+    <tok fileIndex="0" linenr="77" column="16" str=";"/>
+    <tok fileIndex="0" linenr="78" column="1" str="}"/>
+    <tok fileIndex="0" linenr="80" column="1" str="/**&#10; * Build the full LittleFS path from a log filename.&#10; * @param[in]  filename  Validated filename (no path separators).&#10; * @param[out] out       Buffer for the full path.&#10; * @param[in]  outSize   Size of @p out in bytes.&#10; * @return true if the path fits in the buffer.&#10; */"/>
+    <tok fileIndex="0" linenr="87" column="1" str="static"/>
+    <tok fileIndex="0" linenr="87" column="8" str="bool"/>
+    <tok fileIndex="0" linenr="87" column="13" str="buildLogPath"/>
+    <tok fileIndex="0" linenr="87" column="25" str="("/>
+    <tok fileIndex="0" linenr="87" column="26" str="const"/>
+    <tok fileIndex="0" linenr="87" column="32" str="char"/>
+    <tok fileIndex="0" linenr="87" column="36" str="*"/>
+    <tok fileIndex="0" linenr="87" column="38" str="filename"/>
+    <tok fileIndex="0" linenr="87" column="46" str=","/>
+    <tok fileIndex="0" linenr="87" column="48" str="char"/>
+    <tok fileIndex="0" linenr="87" column="52" str="*"/>
+    <tok fileIndex="0" linenr="87" column="54" str="out"/>
+    <tok fileIndex="0" linenr="87" column="57" str=","/>
+    <tok fileIndex="0" linenr="87" column="59" str="uint32_t"/>
+    <tok fileIndex="0" linenr="87" column="68" str="outSize"/>
+    <tok fileIndex="0" linenr="87" column="75" str=")"/>
+    <tok fileIndex="0" linenr="88" column="1" str="{"/>
+    <tok fileIndex="0" linenr="89" column="5" str="const"/>
+    <tok fileIndex="0" linenr="89" column="11" str="int"/>
+    <tok fileIndex="0" linenr="89" column="15" str="written"/>
+    <tok fileIndex="0" linenr="89" column="23" str="="/>
+    <tok fileIndex="0" linenr="89" column="25" str="snprintf"/>
+    <tok fileIndex="0" linenr="89" column="33" str="("/>
+    <tok fileIndex="0" linenr="89" column="34" str="out"/>
+    <tok fileIndex="0" linenr="89" column="37" str=","/>
+    <tok fileIndex="0" linenr="89" column="39" str="outSize"/>
+    <tok fileIndex="0" linenr="89" column="46" str=","/>
+    <tok fileIndex="0" linenr="89" column="48" str="&quot;%s/%s&quot;"/>
+    <tok fileIndex="0" linenr="89" column="55" str=","/>
+    <tok fileIndex="0" linenr="90" column="35" str="ares"/>
+    <tok fileIndex="0" linenr="90" column="39" str="::"/>
+    <tok fileIndex="0" linenr="90" column="41" str="LOG_DIR"/>
+    <tok fileIndex="0" linenr="90" column="48" str=","/>
+    <tok fileIndex="0" linenr="90" column="50" str="filename"/>
+    <tok fileIndex="0" linenr="90" column="58" str=")"/>
+    <tok fileIndex="0" linenr="90" column="59" str=";"/>
+    <tok fileIndex="0" linenr="91" column="5" str="return"/>
+    <tok fileIndex="0" linenr="91" column="12" str="("/>
+    <tok fileIndex="0" linenr="91" column="13" str="written"/>
+    <tok fileIndex="0" linenr="91" column="21" str="&gt;"/>
+    <tok fileIndex="0" linenr="91" column="23" str="0"/>
+    <tok fileIndex="0" linenr="92" column="13" str="&amp;&amp;"/>
+    <tok fileIndex="0" linenr="92" column="16" str="static_cast"/>
+    <tok fileIndex="0" linenr="92" column="27" str="&lt;"/>
+    <tok fileIndex="0" linenr="92" column="28" str="uint32_t"/>
+    <tok fileIndex="0" linenr="92" column="36" str="&gt;"/>
+    <tok fileIndex="0" linenr="92" column="37" str="("/>
+    <tok fileIndex="0" linenr="92" column="38" str="written"/>
+    <tok fileIndex="0" linenr="92" column="45" str=")"/>
+    <tok fileIndex="0" linenr="92" column="47" str="&lt;"/>
+    <tok fileIndex="0" linenr="92" column="49" str="outSize"/>
+    <tok fileIndex="0" linenr="92" column="56" str=")"/>
+    <tok fileIndex="0" linenr="92" column="57" str=";"/>
+    <tok fileIndex="0" linenr="93" column="1" str="}"/>
+    <tok fileIndex="0" linenr="95" column="1" str="// xxxxxx Handlers xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+    <tok fileIndex="0" linenr="97" column="1" str="void"/>
+    <tok fileIndex="0" linenr="97" column="6" str="ApiServer"/>
+    <tok fileIndex="0" linenr="97" column="15" str="::"/>
+    <tok fileIndex="0" linenr="97" column="17" str="handleLogsList"/>
+    <tok fileIndex="0" linenr="97" column="31" str="("/>
+    <tok fileIndex="0" linenr="97" column="32" str="WiFiClient"/>
+    <tok fileIndex="0" linenr="97" column="42" str="&amp;"/>
+    <tok fileIndex="0" linenr="97" column="44" str="client"/>
+    <tok fileIndex="0" linenr="97" column="50" str=")"/>
+    <tok fileIndex="0" linenr="98" column="1" str="{"/>
+    <tok fileIndex="0" linenr="99" column="5" str="if"/>
+    <tok fileIndex="0" linenr="99" column="8" str="("/>
+    <tok fileIndex="0" linenr="99" column="9" str="storage_"/>
+    <tok fileIndex="0" linenr="99" column="18" str="=="/>
+    <tok fileIndex="0" linenr="99" column="21" str="nullptr"/>
+    <tok fileIndex="0" linenr="99" column="28" str=")"/>
+    <tok fileIndex="0" linenr="100" column="5" str="{"/>
+    <tok fileIndex="0" linenr="101" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="101" column="18" str="("/>
+    <tok fileIndex="0" linenr="101" column="19" str="client"/>
+    <tok fileIndex="0" linenr="101" column="25" str=","/>
+    <tok fileIndex="0" linenr="101" column="27" str="500"/>
+    <tok fileIndex="0" linenr="101" column="30" str=","/>
+    <tok fileIndex="0" linenr="101" column="32" str="&quot;storage not available&quot;"/>
+    <tok fileIndex="0" linenr="101" column="55" str=")"/>
+    <tok fileIndex="0" linenr="101" column="56" str=";"/>
+    <tok fileIndex="0" linenr="102" column="9" str="LOG_E"/>
+    <tok fileIndex="0" linenr="102" column="14" str="("/>
+    <tok fileIndex="0" linenr="102" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="102" column="18" str=","/>
+    <tok fileIndex="0" linenr="102" column="20" str="&quot;GET /api/logs 500: no storage&quot;"/>
+    <tok fileIndex="0" linenr="102" column="51" str=")"/>
+    <tok fileIndex="0" linenr="102" column="52" str=";"/>
+    <tok fileIndex="0" linenr="103" column="9" str="return"/>
+    <tok fileIndex="0" linenr="103" column="15" str=";"/>
+    <tok fileIndex="0" linenr="104" column="5" str="}"/>
+    <tok fileIndex="0" linenr="106" column="5" str="memset"/>
+    <tok fileIndex="0" linenr="106" column="11" str="("/>
+    <tok fileIndex="0" linenr="106" column="12" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="106" column="24" str=","/>
+    <tok fileIndex="0" linenr="106" column="26" str="0"/>
+    <tok fileIndex="0" linenr="106" column="27" str=","/>
+    <tok fileIndex="0" linenr="106" column="29" str="sizeof"/>
+    <tok fileIndex="0" linenr="106" column="35" str="("/>
+    <tok fileIndex="0" linenr="106" column="36" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="106" column="48" str=")"/>
+    <tok fileIndex="0" linenr="106" column="49" str=")"/>
+    <tok fileIndex="0" linenr="106" column="50" str=";"/>
+    <tok fileIndex="0" linenr="107" column="5" str="uint8_t"/>
+    <tok fileIndex="0" linenr="107" column="13" str="count"/>
+    <tok fileIndex="0" linenr="107" column="19" str="="/>
+    <tok fileIndex="0" linenr="107" column="21" str="0"/>
+    <tok fileIndex="0" linenr="107" column="22" str=";"/>
+    <tok fileIndex="0" linenr="109" column="5" str="const"/>
+    <tok fileIndex="0" linenr="109" column="11" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="109" column="25" str="st"/>
+    <tok fileIndex="0" linenr="109" column="28" str="="/>
+    <tok fileIndex="0" linenr="109" column="30" str="storage_"/>
+    <tok fileIndex="0" linenr="109" column="38" str="-&gt;"/>
+    <tok fileIndex="0" linenr="109" column="40" str="listFiles"/>
+    <tok fileIndex="0" linenr="109" column="49" str="("/>
+    <tok fileIndex="0" linenr="110" column="9" str="ares"/>
+    <tok fileIndex="0" linenr="110" column="13" str="::"/>
+    <tok fileIndex="0" linenr="110" column="15" str="LOG_DIR"/>
+    <tok fileIndex="0" linenr="110" column="22" str=","/>
+    <tok fileIndex="0" linenr="110" column="24" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="110" column="36" str=","/>
+    <tok fileIndex="0" linenr="110" column="38" str="ares"/>
+    <tok fileIndex="0" linenr="110" column="42" str="::"/>
+    <tok fileIndex="0" linenr="110" column="44" str="MAX_LOG_FILES"/>
+    <tok fileIndex="0" linenr="110" column="57" str=","/>
+    <tok fileIndex="0" linenr="110" column="59" str="count"/>
+    <tok fileIndex="0" linenr="110" column="64" str=")"/>
+    <tok fileIndex="0" linenr="110" column="65" str=";"/>
+    <tok fileIndex="0" linenr="112" column="5" str="if"/>
+    <tok fileIndex="0" linenr="112" column="8" str="("/>
+    <tok fileIndex="0" linenr="112" column="9" str="st"/>
+    <tok fileIndex="0" linenr="112" column="12" str="=="/>
+    <tok fileIndex="0" linenr="112" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="112" column="28" str="::"/>
+    <tok fileIndex="0" linenr="112" column="30" str="NOT_FOUND"/>
+    <tok fileIndex="0" linenr="112" column="39" str=")"/>
+    <tok fileIndex="0" linenr="113" column="5" str="{"/>
+    <tok fileIndex="0" linenr="114" column="9" str="// Directory doesn&apos;t exist yet xxx return empty list"/>
+    <tok fileIndex="0" linenr="115" column="9" str="sendJson"/>
+    <tok fileIndex="0" linenr="115" column="17" str="("/>
+    <tok fileIndex="0" linenr="115" column="18" str="client"/>
+    <tok fileIndex="0" linenr="115" column="24" str=","/>
+    <tok fileIndex="0" linenr="115" column="26" str="200"/>
+    <tok fileIndex="0" linenr="115" column="29" str=","/>
+    <tok fileIndex="0" linenr="115" column="31" str="&quot;[]&quot;"/>
+    <tok fileIndex="0" linenr="115" column="35" str=","/>
+    <tok fileIndex="0" linenr="115" column="37" str="2"/>
+    <tok fileIndex="0" linenr="115" column="38" str=")"/>
+    <tok fileIndex="0" linenr="115" column="39" str=";"/>
+    <tok fileIndex="0" linenr="116" column="9" str="LOG_D"/>
+    <tok fileIndex="0" linenr="116" column="14" str="("/>
+    <tok fileIndex="0" linenr="116" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="116" column="18" str=","/>
+    <tok fileIndex="0" linenr="116" column="20" str="&quot;GET /api/logs 200: dir not found, empty list&quot;"/>
+    <tok fileIndex="0" linenr="116" column="66" str=")"/>
+    <tok fileIndex="0" linenr="116" column="67" str=";"/>
+    <tok fileIndex="0" linenr="117" column="9" str="return"/>
+    <tok fileIndex="0" linenr="117" column="15" str=";"/>
+    <tok fileIndex="0" linenr="118" column="5" str="}"/>
+    <tok fileIndex="0" linenr="120" column="5" str="if"/>
+    <tok fileIndex="0" linenr="120" column="8" str="("/>
+    <tok fileIndex="0" linenr="120" column="9" str="st"/>
+    <tok fileIndex="0" linenr="120" column="12" str="!="/>
+    <tok fileIndex="0" linenr="120" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="120" column="28" str="::"/>
+    <tok fileIndex="0" linenr="120" column="30" str="OK"/>
+    <tok fileIndex="0" linenr="120" column="32" str=")"/>
+    <tok fileIndex="0" linenr="121" column="5" str="{"/>
+    <tok fileIndex="0" linenr="122" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="122" column="18" str="("/>
+    <tok fileIndex="0" linenr="122" column="19" str="client"/>
+    <tok fileIndex="0" linenr="122" column="25" str=","/>
+    <tok fileIndex="0" linenr="122" column="27" str="500"/>
+    <tok fileIndex="0" linenr="122" column="30" str=","/>
+    <tok fileIndex="0" linenr="122" column="32" str="&quot;storage error&quot;"/>
+    <tok fileIndex="0" linenr="122" column="47" str=")"/>
+    <tok fileIndex="0" linenr="122" column="48" str=";"/>
+    <tok fileIndex="0" linenr="123" column="9" str="LOG_E"/>
+    <tok fileIndex="0" linenr="123" column="14" str="("/>
+    <tok fileIndex="0" linenr="123" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="123" column="18" str=","/>
+    <tok fileIndex="0" linenr="123" column="20" str="&quot;GET /api/logs 500: status=%u&quot;"/>
+    <tok fileIndex="0" linenr="123" column="50" str=","/>
+    <tok fileIndex="0" linenr="124" column="15" str="static_cast"/>
+    <tok fileIndex="0" linenr="124" column="26" str="&lt;"/>
+    <tok fileIndex="0" linenr="124" column="27" str="uint32_t"/>
+    <tok fileIndex="0" linenr="124" column="35" str="&gt;"/>
+    <tok fileIndex="0" linenr="124" column="36" str="("/>
+    <tok fileIndex="0" linenr="124" column="37" str="st"/>
+    <tok fileIndex="0" linenr="124" column="39" str=")"/>
+    <tok fileIndex="0" linenr="124" column="40" str=")"/>
+    <tok fileIndex="0" linenr="124" column="41" str=";"/>
+    <tok fileIndex="0" linenr="125" column="9" str="return"/>
+    <tok fileIndex="0" linenr="125" column="15" str=";"/>
+    <tok fileIndex="0" linenr="126" column="5" str="}"/>
+    <tok fileIndex="0" linenr="128" column="5" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="128" column="16" str="("/>
+    <tok fileIndex="0" linenr="128" column="17" str="count"/>
+    <tok fileIndex="0" linenr="128" column="23" str="&lt;="/>
+    <tok fileIndex="0" linenr="128" column="26" str="ares"/>
+    <tok fileIndex="0" linenr="128" column="30" str="::"/>
+    <tok fileIndex="0" linenr="128" column="32" str="MAX_LOG_FILES"/>
+    <tok fileIndex="0" linenr="128" column="45" str=")"/>
+    <tok fileIndex="0" linenr="128" column="46" str=";"/>
+    <tok fileIndex="0" linenr="130" column="5" str="JsonDocument"/>
+    <tok fileIndex="0" linenr="130" column="18" str="doc"/>
+    <tok fileIndex="0" linenr="130" column="21" str=";"/>
+    <tok fileIndex="0" linenr="131" column="5" str="JsonArray"/>
+    <tok fileIndex="0" linenr="131" column="15" str="arr"/>
+    <tok fileIndex="0" linenr="131" column="19" str="="/>
+    <tok fileIndex="0" linenr="131" column="21" str="doc"/>
+    <tok fileIndex="0" linenr="131" column="24" str="."/>
+    <tok fileIndex="0" linenr="131" column="25" str="to"/>
+    <tok fileIndex="0" linenr="131" column="27" str="&lt;"/>
+    <tok fileIndex="0" linenr="131" column="28" str="JsonArray"/>
+    <tok fileIndex="0" linenr="131" column="37" str="&gt;"/>
+    <tok fileIndex="0" linenr="131" column="38" str="("/>
+    <tok fileIndex="0" linenr="131" column="39" str=")"/>
+    <tok fileIndex="0" linenr="131" column="40" str=";"/>
+    <tok fileIndex="0" linenr="133" column="5" str="for"/>
+    <tok fileIndex="0" linenr="133" column="9" str="("/>
+    <tok fileIndex="0" linenr="133" column="10" str="uint8_t"/>
+    <tok fileIndex="0" linenr="133" column="18" str="i"/>
+    <tok fileIndex="0" linenr="133" column="20" str="="/>
+    <tok fileIndex="0" linenr="133" column="22" str="0"/>
+    <tok fileIndex="0" linenr="133" column="23" str=";"/>
+    <tok fileIndex="0" linenr="133" column="25" str="i"/>
+    <tok fileIndex="0" linenr="133" column="27" str="&lt;"/>
+    <tok fileIndex="0" linenr="133" column="29" str="count"/>
+    <tok fileIndex="0" linenr="133" column="34" str=";"/>
+    <tok fileIndex="0" linenr="133" column="36" str="i"/>
+    <tok fileIndex="0" linenr="133" column="37" str="++"/>
+    <tok fileIndex="0" linenr="133" column="39" str=")"/>
+    <tok fileIndex="0" linenr="134" column="5" str="{"/>
+    <tok fileIndex="0" linenr="135" column="9" str="JsonObject"/>
+    <tok fileIndex="0" linenr="135" column="20" str="obj"/>
+    <tok fileIndex="0" linenr="135" column="24" str="="/>
+    <tok fileIndex="0" linenr="135" column="26" str="arr"/>
+    <tok fileIndex="0" linenr="135" column="29" str="."/>
+    <tok fileIndex="0" linenr="135" column="30" str="add"/>
+    <tok fileIndex="0" linenr="135" column="33" str="&lt;"/>
+    <tok fileIndex="0" linenr="135" column="34" str="JsonObject"/>
+    <tok fileIndex="0" linenr="135" column="44" str="&gt;"/>
+    <tok fileIndex="0" linenr="135" column="45" str="("/>
+    <tok fileIndex="0" linenr="135" column="46" str=")"/>
+    <tok fileIndex="0" linenr="135" column="47" str=";"/>
+    <tok fileIndex="0" linenr="136" column="9" str="obj"/>
+    <tok fileIndex="0" linenr="136" column="12" str="["/>
+    <tok fileIndex="0" linenr="136" column="13" str="&quot;name&quot;"/>
+    <tok fileIndex="0" linenr="136" column="19" str="]"/>
+    <tok fileIndex="0" linenr="136" column="21" str="="/>
+    <tok fileIndex="0" linenr="136" column="23" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="136" column="35" str="["/>
+    <tok fileIndex="0" linenr="136" column="36" str="i"/>
+    <tok fileIndex="0" linenr="136" column="37" str="]"/>
+    <tok fileIndex="0" linenr="136" column="38" str="."/>
+    <tok fileIndex="0" linenr="136" column="39" str="name"/>
+    <tok fileIndex="0" linenr="136" column="43" str=";"/>
+    <tok fileIndex="0" linenr="137" column="9" str="obj"/>
+    <tok fileIndex="0" linenr="137" column="12" str="["/>
+    <tok fileIndex="0" linenr="137" column="13" str="&quot;size&quot;"/>
+    <tok fileIndex="0" linenr="137" column="19" str="]"/>
+    <tok fileIndex="0" linenr="137" column="21" str="="/>
+    <tok fileIndex="0" linenr="137" column="23" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="137" column="35" str="["/>
+    <tok fileIndex="0" linenr="137" column="36" str="i"/>
+    <tok fileIndex="0" linenr="137" column="37" str="]"/>
+    <tok fileIndex="0" linenr="137" column="38" str="."/>
+    <tok fileIndex="0" linenr="137" column="39" str="size"/>
+    <tok fileIndex="0" linenr="137" column="43" str=";"/>
+    <tok fileIndex="0" linenr="138" column="5" str="}"/>
+    <tok fileIndex="0" linenr="140" column="5" str="memset"/>
+    <tok fileIndex="0" linenr="140" column="11" str="("/>
+    <tok fileIndex="0" linenr="140" column="12" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="140" column="21" str=","/>
+    <tok fileIndex="0" linenr="140" column="23" str="0"/>
+    <tok fileIndex="0" linenr="140" column="24" str=","/>
+    <tok fileIndex="0" linenr="140" column="26" str="sizeof"/>
+    <tok fileIndex="0" linenr="140" column="32" str="("/>
+    <tok fileIndex="0" linenr="140" column="33" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="140" column="42" str=")"/>
+    <tok fileIndex="0" linenr="140" column="43" str=")"/>
+    <tok fileIndex="0" linenr="140" column="44" str=";"/>
+    <tok fileIndex="0" linenr="141" column="5" str="const"/>
+    <tok fileIndex="0" linenr="141" column="11" str="uint32_t"/>
+    <tok fileIndex="0" linenr="141" column="20" str="len"/>
+    <tok fileIndex="0" linenr="141" column="24" str="="/>
+    <tok fileIndex="0" linenr="141" column="26" str="serializeJson"/>
+    <tok fileIndex="0" linenr="141" column="39" str="("/>
+    <tok fileIndex="0" linenr="141" column="40" str="doc"/>
+    <tok fileIndex="0" linenr="141" column="43" str=","/>
+    <tok fileIndex="0" linenr="141" column="45" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="141" column="54" str=","/>
+    <tok fileIndex="0" linenr="141" column="56" str="sizeof"/>
+    <tok fileIndex="0" linenr="141" column="62" str="("/>
+    <tok fileIndex="0" linenr="141" column="63" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="141" column="72" str=")"/>
+    <tok fileIndex="0" linenr="141" column="73" str=")"/>
+    <tok fileIndex="0" linenr="141" column="74" str=";"/>
+    <tok fileIndex="0" linenr="142" column="5" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="142" column="16" str="("/>
+    <tok fileIndex="0" linenr="142" column="17" str="len"/>
+    <tok fileIndex="0" linenr="142" column="21" str="&lt;"/>
+    <tok fileIndex="0" linenr="142" column="23" str="sizeof"/>
+    <tok fileIndex="0" linenr="142" column="29" str="("/>
+    <tok fileIndex="0" linenr="142" column="30" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="142" column="39" str=")"/>
+    <tok fileIndex="0" linenr="142" column="40" str=")"/>
+    <tok fileIndex="0" linenr="142" column="41" str=";"/>
+    <tok fileIndex="0" linenr="143" column="5" str="sendJson"/>
+    <tok fileIndex="0" linenr="143" column="13" str="("/>
+    <tok fileIndex="0" linenr="143" column="14" str="client"/>
+    <tok fileIndex="0" linenr="143" column="20" str=","/>
+    <tok fileIndex="0" linenr="143" column="22" str="200"/>
+    <tok fileIndex="0" linenr="143" column="25" str=","/>
+    <tok fileIndex="0" linenr="143" column="27" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="143" column="36" str=","/>
+    <tok fileIndex="0" linenr="143" column="38" str="len"/>
+    <tok fileIndex="0" linenr="143" column="41" str=")"/>
+    <tok fileIndex="0" linenr="143" column="42" str=";"/>
+    <tok fileIndex="0" linenr="144" column="5" str="LOG_D"/>
+    <tok fileIndex="0" linenr="144" column="10" str="("/>
+    <tok fileIndex="0" linenr="144" column="11" str="TAG"/>
+    <tok fileIndex="0" linenr="144" column="14" str=","/>
+    <tok fileIndex="0" linenr="144" column="16" str="&quot;GET /api/logs 200: %u files&quot;"/>
+    <tok fileIndex="0" linenr="144" column="45" str=","/>
+    <tok fileIndex="0" linenr="144" column="47" str="static_cast"/>
+    <tok fileIndex="0" linenr="144" column="58" str="&lt;"/>
+    <tok fileIndex="0" linenr="144" column="59" str="uint32_t"/>
+    <tok fileIndex="0" linenr="144" column="67" str="&gt;"/>
+    <tok fileIndex="0" linenr="144" column="68" str="("/>
+    <tok fileIndex="0" linenr="144" column="69" str="count"/>
+    <tok fileIndex="0" linenr="144" column="74" str=")"/>
+    <tok fileIndex="0" linenr="144" column="75" str=")"/>
+    <tok fileIndex="0" linenr="144" column="76" str=";"/>
+    <tok fileIndex="0" linenr="145" column="1" str="}"/>
+    <tok fileIndex="0" linenr="147" column="1" str="void"/>
+    <tok fileIndex="0" linenr="147" column="6" str="ApiServer"/>
+    <tok fileIndex="0" linenr="147" column="15" str="::"/>
+    <tok fileIndex="0" linenr="147" column="17" str="handleLogDownload"/>
+    <tok fileIndex="0" linenr="147" column="34" str="("/>
+    <tok fileIndex="0" linenr="147" column="35" str="WiFiClient"/>
+    <tok fileIndex="0" linenr="147" column="45" str="&amp;"/>
+    <tok fileIndex="0" linenr="147" column="47" str="client"/>
+    <tok fileIndex="0" linenr="147" column="53" str=","/>
+    <tok fileIndex="0" linenr="148" column="36" str="const"/>
+    <tok fileIndex="0" linenr="148" column="42" str="char"/>
+    <tok fileIndex="0" linenr="148" column="46" str="*"/>
+    <tok fileIndex="0" linenr="148" column="48" str="filename"/>
+    <tok fileIndex="0" linenr="148" column="56" str=")"/>
+    <tok fileIndex="0" linenr="149" column="1" str="{"/>
+    <tok fileIndex="0" linenr="150" column="5" str="// REST-6.2: no downloads during flight"/>
+    <tok fileIndex="0" linenr="151" column="5" str="if"/>
+    <tok fileIndex="0" linenr="151" column="8" str="("/>
+    <tok fileIndex="0" linenr="151" column="9" str="isFlightLocked"/>
+    <tok fileIndex="0" linenr="151" column="23" str="("/>
+    <tok fileIndex="0" linenr="151" column="24" str=")"/>
+    <tok fileIndex="0" linenr="151" column="25" str=")"/>
+    <tok fileIndex="0" linenr="152" column="5" str="{"/>
+    <tok fileIndex="0" linenr="153" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="153" column="18" str="("/>
+    <tok fileIndex="0" linenr="153" column="19" str="client"/>
+    <tok fileIndex="0" linenr="153" column="25" str=","/>
+    <tok fileIndex="0" linenr="153" column="27" str="409"/>
+    <tok fileIndex="0" linenr="153" column="30" str=","/>
+    <tok fileIndex="0" linenr="153" column="32" str="&quot;operation locked during flight&quot;"/>
+    <tok fileIndex="0" linenr="153" column="64" str=")"/>
+    <tok fileIndex="0" linenr="153" column="65" str=";"/>
+    <tok fileIndex="0" linenr="154" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="154" column="14" str="("/>
+    <tok fileIndex="0" linenr="154" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="154" column="18" str=","/>
+    <tok fileIndex="0" linenr="154" column="20" str="&quot;GET /api/logs/%s 409: flight locked&quot;"/>
+    <tok fileIndex="0" linenr="154" column="57" str=","/>
+    <tok fileIndex="0" linenr="154" column="59" str="filename"/>
+    <tok fileIndex="0" linenr="154" column="67" str=")"/>
+    <tok fileIndex="0" linenr="154" column="68" str=";"/>
+    <tok fileIndex="0" linenr="155" column="9" str="return"/>
+    <tok fileIndex="0" linenr="155" column="15" str=";"/>
+    <tok fileIndex="0" linenr="156" column="5" str="}"/>
+    <tok fileIndex="0" linenr="158" column="5" str="if"/>
+    <tok fileIndex="0" linenr="158" column="8" str="("/>
+    <tok fileIndex="0" linenr="158" column="9" str="storage_"/>
+    <tok fileIndex="0" linenr="158" column="18" str="=="/>
+    <tok fileIndex="0" linenr="158" column="21" str="nullptr"/>
+    <tok fileIndex="0" linenr="158" column="28" str=")"/>
+    <tok fileIndex="0" linenr="159" column="5" str="{"/>
+    <tok fileIndex="0" linenr="160" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="160" column="18" str="("/>
+    <tok fileIndex="0" linenr="160" column="19" str="client"/>
+    <tok fileIndex="0" linenr="160" column="25" str=","/>
+    <tok fileIndex="0" linenr="160" column="27" str="500"/>
+    <tok fileIndex="0" linenr="160" column="30" str=","/>
+    <tok fileIndex="0" linenr="160" column="32" str="&quot;storage not available&quot;"/>
+    <tok fileIndex="0" linenr="160" column="55" str=")"/>
+    <tok fileIndex="0" linenr="160" column="56" str=";"/>
+    <tok fileIndex="0" linenr="161" column="9" str="return"/>
+    <tok fileIndex="0" linenr="161" column="15" str=";"/>
+    <tok fileIndex="0" linenr="162" column="5" str="}"/>
+    <tok fileIndex="0" linenr="164" column="5" str="// REST-12.4: validate filename"/>
+    <tok fileIndex="0" linenr="165" column="5" str="if"/>
+    <tok fileIndex="0" linenr="165" column="8" str="("/>
+    <tok fileIndex="0" linenr="165" column="9" str="!"/>
+    <tok fileIndex="0" linenr="165" column="10" str="isValidLogFilename"/>
+    <tok fileIndex="0" linenr="165" column="28" str="("/>
+    <tok fileIndex="0" linenr="165" column="29" str="filename"/>
+    <tok fileIndex="0" linenr="165" column="37" str=")"/>
+    <tok fileIndex="0" linenr="165" column="38" str=")"/>
+    <tok fileIndex="0" linenr="166" column="5" str="{"/>
+    <tok fileIndex="0" linenr="167" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="167" column="18" str="("/>
+    <tok fileIndex="0" linenr="167" column="19" str="client"/>
+    <tok fileIndex="0" linenr="167" column="25" str=","/>
+    <tok fileIndex="0" linenr="167" column="27" str="400"/>
+    <tok fileIndex="0" linenr="167" column="30" str=","/>
+    <tok fileIndex="0" linenr="167" column="32" str="&quot;invalid filename&quot;"/>
+    <tok fileIndex="0" linenr="167" column="50" str=")"/>
+    <tok fileIndex="0" linenr="167" column="51" str=";"/>
+    <tok fileIndex="0" linenr="168" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="168" column="14" str="("/>
+    <tok fileIndex="0" linenr="168" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="168" column="18" str=","/>
+    <tok fileIndex="0" linenr="168" column="20" str="&quot;GET /api/logs 400: invalid filename&quot;"/>
+    <tok fileIndex="0" linenr="168" column="57" str=")"/>
+    <tok fileIndex="0" linenr="168" column="58" str=";"/>
+    <tok fileIndex="0" linenr="169" column="9" str="return"/>
+    <tok fileIndex="0" linenr="169" column="15" str=";"/>
+    <tok fileIndex="0" linenr="170" column="5" str="}"/>
+    <tok fileIndex="0" linenr="172" column="5" str="char"/>
+    <tok fileIndex="0" linenr="172" column="10" str="path"/>
+    <tok fileIndex="0" linenr="172" column="14" str="["/>
+    <tok fileIndex="0" linenr="172" column="15" str="ares"/>
+    <tok fileIndex="0" linenr="172" column="19" str="::"/>
+    <tok fileIndex="0" linenr="172" column="21" str="STORAGE_MAX_PATH"/>
+    <tok fileIndex="0" linenr="172" column="37" str="]"/>
+    <tok fileIndex="0" linenr="172" column="39" str="="/>
+    <tok fileIndex="0" linenr="172" column="41" str="{"/>
+    <tok fileIndex="0" linenr="172" column="42" str="}"/>
+    <tok fileIndex="0" linenr="172" column="43" str=";"/>
+    <tok fileIndex="0" linenr="173" column="5" str="if"/>
+    <tok fileIndex="0" linenr="173" column="8" str="("/>
+    <tok fileIndex="0" linenr="173" column="9" str="!"/>
+    <tok fileIndex="0" linenr="173" column="10" str="buildLogPath"/>
+    <tok fileIndex="0" linenr="173" column="22" str="("/>
+    <tok fileIndex="0" linenr="173" column="23" str="filename"/>
+    <tok fileIndex="0" linenr="173" column="31" str=","/>
+    <tok fileIndex="0" linenr="173" column="33" str="path"/>
+    <tok fileIndex="0" linenr="173" column="37" str=","/>
+    <tok fileIndex="0" linenr="173" column="39" str="sizeof"/>
+    <tok fileIndex="0" linenr="173" column="45" str="("/>
+    <tok fileIndex="0" linenr="173" column="46" str="path"/>
+    <tok fileIndex="0" linenr="173" column="50" str=")"/>
+    <tok fileIndex="0" linenr="173" column="51" str=")"/>
+    <tok fileIndex="0" linenr="173" column="52" str=")"/>
+    <tok fileIndex="0" linenr="174" column="5" str="{"/>
+    <tok fileIndex="0" linenr="175" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="175" column="18" str="("/>
+    <tok fileIndex="0" linenr="175" column="19" str="client"/>
+    <tok fileIndex="0" linenr="175" column="25" str=","/>
+    <tok fileIndex="0" linenr="175" column="27" str="400"/>
+    <tok fileIndex="0" linenr="175" column="30" str=","/>
+    <tok fileIndex="0" linenr="175" column="32" str="&quot;path too long&quot;"/>
+    <tok fileIndex="0" linenr="175" column="47" str=")"/>
+    <tok fileIndex="0" linenr="175" column="48" str=";"/>
+    <tok fileIndex="0" linenr="176" column="9" str="return"/>
+    <tok fileIndex="0" linenr="176" column="15" str=";"/>
+    <tok fileIndex="0" linenr="177" column="5" str="}"/>
+    <tok fileIndex="0" linenr="179" column="5" str="// Get file size"/>
+    <tok fileIndex="0" linenr="180" column="5" str="uint32_t"/>
+    <tok fileIndex="0" linenr="180" column="14" str="fileSize"/>
+    <tok fileIndex="0" linenr="180" column="23" str="="/>
+    <tok fileIndex="0" linenr="180" column="25" str="0"/>
+    <tok fileIndex="0" linenr="180" column="26" str=";"/>
+    <tok fileIndex="0" linenr="181" column="5" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="181" column="19" str="st"/>
+    <tok fileIndex="0" linenr="181" column="22" str="="/>
+    <tok fileIndex="0" linenr="181" column="24" str="storage_"/>
+    <tok fileIndex="0" linenr="181" column="32" str="-&gt;"/>
+    <tok fileIndex="0" linenr="181" column="34" str="fileSize"/>
+    <tok fileIndex="0" linenr="181" column="42" str="("/>
+    <tok fileIndex="0" linenr="181" column="43" str="path"/>
+    <tok fileIndex="0" linenr="181" column="47" str=","/>
+    <tok fileIndex="0" linenr="181" column="49" str="fileSize"/>
+    <tok fileIndex="0" linenr="181" column="57" str=")"/>
+    <tok fileIndex="0" linenr="181" column="58" str=";"/>
+    <tok fileIndex="0" linenr="183" column="5" str="if"/>
+    <tok fileIndex="0" linenr="183" column="8" str="("/>
+    <tok fileIndex="0" linenr="183" column="9" str="st"/>
+    <tok fileIndex="0" linenr="183" column="12" str="=="/>
+    <tok fileIndex="0" linenr="183" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="183" column="28" str="::"/>
+    <tok fileIndex="0" linenr="183" column="30" str="NOT_FOUND"/>
+    <tok fileIndex="0" linenr="183" column="39" str=")"/>
+    <tok fileIndex="0" linenr="184" column="5" str="{"/>
+    <tok fileIndex="0" linenr="185" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="185" column="18" str="("/>
+    <tok fileIndex="0" linenr="185" column="19" str="client"/>
+    <tok fileIndex="0" linenr="185" column="25" str=","/>
+    <tok fileIndex="0" linenr="185" column="27" str="404"/>
+    <tok fileIndex="0" linenr="185" column="30" str=","/>
+    <tok fileIndex="0" linenr="185" column="32" str="&quot;file not found&quot;"/>
+    <tok fileIndex="0" linenr="185" column="48" str=")"/>
+    <tok fileIndex="0" linenr="185" column="49" str=";"/>
+    <tok fileIndex="0" linenr="186" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="186" column="14" str="("/>
+    <tok fileIndex="0" linenr="186" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="186" column="18" str=","/>
+    <tok fileIndex="0" linenr="186" column="20" str="&quot;GET %s 404&quot;"/>
+    <tok fileIndex="0" linenr="186" column="32" str=","/>
+    <tok fileIndex="0" linenr="186" column="34" str="path"/>
+    <tok fileIndex="0" linenr="186" column="38" str=")"/>
+    <tok fileIndex="0" linenr="186" column="39" str=";"/>
+    <tok fileIndex="0" linenr="187" column="9" str="return"/>
+    <tok fileIndex="0" linenr="187" column="15" str=";"/>
+    <tok fileIndex="0" linenr="188" column="5" str="}"/>
+    <tok fileIndex="0" linenr="189" column="5" str="if"/>
+    <tok fileIndex="0" linenr="189" column="8" str="("/>
+    <tok fileIndex="0" linenr="189" column="9" str="st"/>
+    <tok fileIndex="0" linenr="189" column="12" str="!="/>
+    <tok fileIndex="0" linenr="189" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="189" column="28" str="::"/>
+    <tok fileIndex="0" linenr="189" column="30" str="OK"/>
+    <tok fileIndex="0" linenr="189" column="32" str=")"/>
+    <tok fileIndex="0" linenr="190" column="5" str="{"/>
+    <tok fileIndex="0" linenr="191" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="191" column="18" str="("/>
+    <tok fileIndex="0" linenr="191" column="19" str="client"/>
+    <tok fileIndex="0" linenr="191" column="25" str=","/>
+    <tok fileIndex="0" linenr="191" column="27" str="500"/>
+    <tok fileIndex="0" linenr="191" column="30" str=","/>
+    <tok fileIndex="0" linenr="191" column="32" str="&quot;storage error&quot;"/>
+    <tok fileIndex="0" linenr="191" column="47" str=")"/>
+    <tok fileIndex="0" linenr="191" column="48" str=";"/>
+    <tok fileIndex="0" linenr="192" column="9" str="return"/>
+    <tok fileIndex="0" linenr="192" column="15" str=";"/>
+    <tok fileIndex="0" linenr="193" column="5" str="}"/>
+    <tok fileIndex="0" linenr="195" column="5" str="// Send HTTP headers for binary download"/>
+    <tok fileIndex="0" linenr="196" column="5" str="client"/>
+    <tok fileIndex="0" linenr="196" column="11" str="."/>
+    <tok fileIndex="0" linenr="196" column="12" str="printf"/>
+    <tok fileIndex="0" linenr="196" column="18" str="("/>
+    <tok fileIndex="0" linenr="196" column="19" str="&quot;HTTP/1.1 200 OK\r\n&quot;"/>
+    <tok fileIndex="0" linenr="196" column="40" str=")"/>
+    <tok fileIndex="0" linenr="196" column="41" str=";"/>
+    <tok fileIndex="0" linenr="197" column="5" str="client"/>
+    <tok fileIndex="0" linenr="197" column="11" str="."/>
+    <tok fileIndex="0" linenr="197" column="12" str="print"/>
+    <tok fileIndex="0" linenr="197" column="17" str="("/>
+    <tok fileIndex="0" linenr="197" column="18" str="&quot;Content-Type: application/octet-stream\r\n&quot;"/>
+    <tok fileIndex="0" linenr="197" column="62" str=")"/>
+    <tok fileIndex="0" linenr="197" column="63" str=";"/>
+    <tok fileIndex="0" linenr="198" column="5" str="client"/>
+    <tok fileIndex="0" linenr="198" column="11" str="."/>
+    <tok fileIndex="0" linenr="198" column="12" str="printf"/>
+    <tok fileIndex="0" linenr="198" column="18" str="("/>
+    <tok fileIndex="0" linenr="198" column="19" str="&quot;Content-Length: %&quot;"/>
+    <tok fileIndex="0" linenr="198" column="39" str="PRIu32"/>
+    <tok fileIndex="0" linenr="198" column="46" str="&quot;\r\n&quot;"/>
+    <tok fileIndex="0" linenr="198" column="52" str=","/>
+    <tok fileIndex="0" linenr="198" column="54" str="fileSize"/>
+    <tok fileIndex="0" linenr="198" column="62" str=")"/>
+    <tok fileIndex="0" linenr="198" column="63" str=";"/>
+    <tok fileIndex="0" linenr="199" column="5" str="client"/>
+    <tok fileIndex="0" linenr="199" column="11" str="."/>
+    <tok fileIndex="0" linenr="199" column="12" str="printf"/>
+    <tok fileIndex="0" linenr="199" column="18" str="("/>
+    <tok fileIndex="0" linenr="199" column="19" str="&quot;Content-Disposition: attachment; filename=\&quot;%s\&quot;\r\n&quot;"/>
+    <tok fileIndex="0" linenr="199" column="73" str=","/>
+    <tok fileIndex="0" linenr="200" column="19" str="filename"/>
+    <tok fileIndex="0" linenr="200" column="27" str=")"/>
+    <tok fileIndex="0" linenr="200" column="28" str=";"/>
+    <tok fileIndex="0" linenr="201" column="5" str="client"/>
+    <tok fileIndex="0" linenr="201" column="11" str="."/>
+    <tok fileIndex="0" linenr="201" column="12" str="print"/>
+    <tok fileIndex="0" linenr="201" column="17" str="("/>
+    <tok fileIndex="0" linenr="201" column="18" str="CORS_HEADERS"/>
+    <tok fileIndex="0" linenr="201" column="30" str=")"/>
+    <tok fileIndex="0" linenr="201" column="31" str=";"/>
+    <tok fileIndex="0" linenr="202" column="5" str="client"/>
+    <tok fileIndex="0" linenr="202" column="11" str="."/>
+    <tok fileIndex="0" linenr="202" column="12" str="print"/>
+    <tok fileIndex="0" linenr="202" column="17" str="("/>
+    <tok fileIndex="0" linenr="202" column="18" str="&quot;Connection: close\r\n&quot;"/>
+    <tok fileIndex="0" linenr="202" column="41" str=")"/>
+    <tok fileIndex="0" linenr="202" column="42" str=";"/>
+    <tok fileIndex="0" linenr="203" column="5" str="client"/>
+    <tok fileIndex="0" linenr="203" column="11" str="."/>
+    <tok fileIndex="0" linenr="203" column="12" str="print"/>
+    <tok fileIndex="0" linenr="203" column="17" str="("/>
+    <tok fileIndex="0" linenr="203" column="18" str="&quot;\r\n&quot;"/>
+    <tok fileIndex="0" linenr="203" column="24" str=")"/>
+    <tok fileIndex="0" linenr="203" column="25" str=";"/>
+    <tok fileIndex="0" linenr="205" column="5" str="// REST-12.2: send in fixed-size chunks"/>
+    <tok fileIndex="0" linenr="206" column="5" str="uint8_t"/>
+    <tok fileIndex="0" linenr="206" column="13" str="chunk"/>
+    <tok fileIndex="0" linenr="206" column="18" str="["/>
+    <tok fileIndex="0" linenr="206" column="19" str="ares"/>
+    <tok fileIndex="0" linenr="206" column="23" str="::"/>
+    <tok fileIndex="0" linenr="206" column="25" str="DOWNLOAD_CHUNK_SIZE"/>
+    <tok fileIndex="0" linenr="206" column="44" str="]"/>
+    <tok fileIndex="0" linenr="206" column="46" str="="/>
+    <tok fileIndex="0" linenr="206" column="48" str="{"/>
+    <tok fileIndex="0" linenr="206" column="49" str="}"/>
+    <tok fileIndex="0" linenr="206" column="50" str=";"/>
+    <tok fileIndex="0" linenr="207" column="5" str="uint32_t"/>
+    <tok fileIndex="0" linenr="207" column="14" str="offset"/>
+    <tok fileIndex="0" linenr="207" column="21" str="="/>
+    <tok fileIndex="0" linenr="207" column="23" str="0"/>
+    <tok fileIndex="0" linenr="207" column="24" str=";"/>
+    <tok fileIndex="0" linenr="209" column="5" str="while"/>
+    <tok fileIndex="0" linenr="209" column="11" str="("/>
+    <tok fileIndex="0" linenr="209" column="12" str="offset"/>
+    <tok fileIndex="0" linenr="209" column="19" str="&lt;"/>
+    <tok fileIndex="0" linenr="209" column="21" str="fileSize"/>
+    <tok fileIndex="0" linenr="209" column="30" str="&amp;&amp;"/>
+    <tok fileIndex="0" linenr="209" column="33" str="client"/>
+    <tok fileIndex="0" linenr="209" column="39" str="."/>
+    <tok fileIndex="0" linenr="209" column="40" str="connected"/>
+    <tok fileIndex="0" linenr="209" column="49" str="("/>
+    <tok fileIndex="0" linenr="209" column="50" str=")"/>
+    <tok fileIndex="0" linenr="209" column="51" str=")"/>
+    <tok fileIndex="0" linenr="209" column="54" str="// PO10-2: bounded"/>
+    <tok fileIndex="0" linenr="210" column="5" str="{"/>
+    <tok fileIndex="0" linenr="211" column="9" str="uint32_t"/>
+    <tok fileIndex="0" linenr="211" column="18" str="bytesRead"/>
+    <tok fileIndex="0" linenr="211" column="28" str="="/>
+    <tok fileIndex="0" linenr="211" column="30" str="0"/>
+    <tok fileIndex="0" linenr="211" column="31" str=";"/>
+    <tok fileIndex="0" linenr="212" column="9" str="st"/>
+    <tok fileIndex="0" linenr="212" column="12" str="="/>
+    <tok fileIndex="0" linenr="212" column="14" str="storage_"/>
+    <tok fileIndex="0" linenr="212" column="22" str="-&gt;"/>
+    <tok fileIndex="0" linenr="212" column="24" str="readFileChunk"/>
+    <tok fileIndex="0" linenr="212" column="37" str="("/>
+    <tok fileIndex="0" linenr="212" column="38" str="path"/>
+    <tok fileIndex="0" linenr="212" column="42" str=","/>
+    <tok fileIndex="0" linenr="212" column="44" str="offset"/>
+    <tok fileIndex="0" linenr="212" column="50" str=","/>
+    <tok fileIndex="0" linenr="212" column="52" str="chunk"/>
+    <tok fileIndex="0" linenr="212" column="57" str=","/>
+    <tok fileIndex="0" linenr="213" column="39" str="ares"/>
+    <tok fileIndex="0" linenr="213" column="43" str="::"/>
+    <tok fileIndex="0" linenr="213" column="45" str="DOWNLOAD_CHUNK_SIZE"/>
+    <tok fileIndex="0" linenr="213" column="64" str=","/>
+    <tok fileIndex="0" linenr="214" column="39" str="bytesRead"/>
+    <tok fileIndex="0" linenr="214" column="48" str=")"/>
+    <tok fileIndex="0" linenr="214" column="49" str=";"/>
+    <tok fileIndex="0" linenr="215" column="9" str="if"/>
+    <tok fileIndex="0" linenr="215" column="12" str="("/>
+    <tok fileIndex="0" linenr="215" column="13" str="st"/>
+    <tok fileIndex="0" linenr="215" column="16" str="!="/>
+    <tok fileIndex="0" linenr="215" column="19" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="215" column="32" str="::"/>
+    <tok fileIndex="0" linenr="215" column="34" str="OK"/>
+    <tok fileIndex="0" linenr="215" column="37" str="||"/>
+    <tok fileIndex="0" linenr="215" column="40" str="bytesRead"/>
+    <tok fileIndex="0" linenr="215" column="50" str="=="/>
+    <tok fileIndex="0" linenr="215" column="53" str="0"/>
+    <tok fileIndex="0" linenr="215" column="54" str=")"/>
+    <tok fileIndex="0" linenr="216" column="9" str="{"/>
+    <tok fileIndex="0" linenr="217" column="13" str="break"/>
+    <tok fileIndex="0" linenr="217" column="18" str=";"/>
+    <tok fileIndex="0" linenr="217" column="21" str="// Error or unexpected EOF"/>
+    <tok fileIndex="0" linenr="218" column="9" str="}"/>
+    <tok fileIndex="0" linenr="220" column="9" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="220" column="20" str="("/>
+    <tok fileIndex="0" linenr="220" column="21" str="bytesRead"/>
+    <tok fileIndex="0" linenr="220" column="31" str="&lt;="/>
+    <tok fileIndex="0" linenr="220" column="34" str="ares"/>
+    <tok fileIndex="0" linenr="220" column="38" str="::"/>
+    <tok fileIndex="0" linenr="220" column="40" str="DOWNLOAD_CHUNK_SIZE"/>
+    <tok fileIndex="0" linenr="220" column="59" str=")"/>
+    <tok fileIndex="0" linenr="220" column="60" str=";"/>
+    <tok fileIndex="0" linenr="221" column="9" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="221" column="20" str="("/>
+    <tok fileIndex="0" linenr="221" column="21" str="("/>
+    <tok fileIndex="0" linenr="221" column="22" str="offset"/>
+    <tok fileIndex="0" linenr="221" column="29" str="+"/>
+    <tok fileIndex="0" linenr="221" column="31" str="bytesRead"/>
+    <tok fileIndex="0" linenr="221" column="40" str=")"/>
+    <tok fileIndex="0" linenr="221" column="42" str="&lt;="/>
+    <tok fileIndex="0" linenr="221" column="45" str="fileSize"/>
+    <tok fileIndex="0" linenr="221" column="53" str=")"/>
+    <tok fileIndex="0" linenr="221" column="54" str=";"/>
+    <tok fileIndex="0" linenr="223" column="9" str="client"/>
+    <tok fileIndex="0" linenr="223" column="15" str="."/>
+    <tok fileIndex="0" linenr="223" column="16" str="write"/>
+    <tok fileIndex="0" linenr="223" column="21" str="("/>
+    <tok fileIndex="0" linenr="223" column="22" str="chunk"/>
+    <tok fileIndex="0" linenr="223" column="27" str=","/>
+    <tok fileIndex="0" linenr="223" column="29" str="bytesRead"/>
+    <tok fileIndex="0" linenr="223" column="38" str=")"/>
+    <tok fileIndex="0" linenr="223" column="39" str=";"/>
+    <tok fileIndex="0" linenr="224" column="9" str="offset"/>
+    <tok fileIndex="0" linenr="224" column="16" str="+="/>
+    <tok fileIndex="0" linenr="224" column="19" str="bytesRead"/>
+    <tok fileIndex="0" linenr="224" column="28" str=";"/>
+    <tok fileIndex="0" linenr="225" column="5" str="}"/>
+    <tok fileIndex="0" linenr="227" column="5" str="LOG_I"/>
+    <tok fileIndex="0" linenr="227" column="10" str="("/>
+    <tok fileIndex="0" linenr="227" column="11" str="TAG"/>
+    <tok fileIndex="0" linenr="227" column="14" str=","/>
+    <tok fileIndex="0" linenr="227" column="16" str="&quot;GET %s 200: %&quot;"/>
+    <tok fileIndex="0" linenr="227" column="32" str="PRIu32"/>
+    <tok fileIndex="0" linenr="227" column="39" str="&quot; bytes sent&quot;"/>
+    <tok fileIndex="0" linenr="227" column="52" str=","/>
+    <tok fileIndex="0" linenr="227" column="54" str="path"/>
+    <tok fileIndex="0" linenr="227" column="58" str=","/>
+    <tok fileIndex="0" linenr="227" column="60" str="offset"/>
+    <tok fileIndex="0" linenr="227" column="66" str=")"/>
+    <tok fileIndex="0" linenr="227" column="67" str=";"/>
+    <tok fileIndex="0" linenr="228" column="1" str="}"/>
+    <tok fileIndex="0" linenr="230" column="1" str="void"/>
+    <tok fileIndex="0" linenr="230" column="6" str="ApiServer"/>
+    <tok fileIndex="0" linenr="230" column="15" str="::"/>
+    <tok fileIndex="0" linenr="230" column="17" str="handleLogDelete"/>
+    <tok fileIndex="0" linenr="230" column="32" str="("/>
+    <tok fileIndex="0" linenr="230" column="33" str="WiFiClient"/>
+    <tok fileIndex="0" linenr="230" column="43" str="&amp;"/>
+    <tok fileIndex="0" linenr="230" column="45" str="client"/>
+    <tok fileIndex="0" linenr="230" column="51" str=","/>
+    <tok fileIndex="0" linenr="231" column="34" str="const"/>
+    <tok fileIndex="0" linenr="231" column="40" str="char"/>
+    <tok fileIndex="0" linenr="231" column="44" str="*"/>
+    <tok fileIndex="0" linenr="231" column="46" str="filename"/>
+    <tok fileIndex="0" linenr="231" column="54" str=")"/>
+    <tok fileIndex="0" linenr="232" column="1" str="{"/>
+    <tok fileIndex="0" linenr="233" column="5" str="// REST-6.1: log deletion only allowed in IDLE"/>
+    <tok fileIndex="0" linenr="234" column="5" str="if"/>
+    <tok fileIndex="0" linenr="234" column="8" str="("/>
+    <tok fileIndex="0" linenr="234" column="9" str="getMode"/>
+    <tok fileIndex="0" linenr="234" column="16" str="("/>
+    <tok fileIndex="0" linenr="234" column="17" str=")"/>
+    <tok fileIndex="0" linenr="234" column="19" str="!="/>
+    <tok fileIndex="0" linenr="234" column="22" str="ares"/>
+    <tok fileIndex="0" linenr="234" column="26" str="::"/>
+    <tok fileIndex="0" linenr="234" column="28" str="OperatingMode"/>
+    <tok fileIndex="0" linenr="234" column="41" str="::"/>
+    <tok fileIndex="0" linenr="234" column="43" str="IDLE"/>
+    <tok fileIndex="0" linenr="234" column="47" str=")"/>
+    <tok fileIndex="0" linenr="235" column="5" str="{"/>
+    <tok fileIndex="0" linenr="236" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="236" column="18" str="("/>
+    <tok fileIndex="0" linenr="236" column="19" str="client"/>
+    <tok fileIndex="0" linenr="236" column="25" str=","/>
+    <tok fileIndex="0" linenr="236" column="27" str="409"/>
+    <tok fileIndex="0" linenr="236" column="30" str=","/>
+    <tok fileIndex="0" linenr="236" column="32" str="&quot;log deletion requires idle mode&quot;"/>
+    <tok fileIndex="0" linenr="236" column="65" str=")"/>
+    <tok fileIndex="0" linenr="236" column="66" str=";"/>
+    <tok fileIndex="0" linenr="237" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="237" column="14" str="("/>
+    <tok fileIndex="0" linenr="237" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="237" column="18" str=","/>
+    <tok fileIndex="0" linenr="237" column="20" str="&quot;DELETE /api/logs/%s 409: not idle&quot;"/>
+    <tok fileIndex="0" linenr="237" column="55" str=","/>
+    <tok fileIndex="0" linenr="237" column="57" str="filename"/>
+    <tok fileIndex="0" linenr="237" column="65" str=")"/>
+    <tok fileIndex="0" linenr="237" column="66" str=";"/>
+    <tok fileIndex="0" linenr="238" column="9" str="return"/>
+    <tok fileIndex="0" linenr="238" column="15" str=";"/>
+    <tok fileIndex="0" linenr="239" column="5" str="}"/>
+    <tok fileIndex="0" linenr="241" column="5" str="if"/>
+    <tok fileIndex="0" linenr="241" column="8" str="("/>
+    <tok fileIndex="0" linenr="241" column="9" str="storage_"/>
+    <tok fileIndex="0" linenr="241" column="18" str="=="/>
+    <tok fileIndex="0" linenr="241" column="21" str="nullptr"/>
+    <tok fileIndex="0" linenr="241" column="28" str=")"/>
+    <tok fileIndex="0" linenr="242" column="5" str="{"/>
+    <tok fileIndex="0" linenr="243" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="243" column="18" str="("/>
+    <tok fileIndex="0" linenr="243" column="19" str="client"/>
+    <tok fileIndex="0" linenr="243" column="25" str=","/>
+    <tok fileIndex="0" linenr="243" column="27" str="500"/>
+    <tok fileIndex="0" linenr="243" column="30" str=","/>
+    <tok fileIndex="0" linenr="243" column="32" str="&quot;storage not available&quot;"/>
+    <tok fileIndex="0" linenr="243" column="55" str=")"/>
+    <tok fileIndex="0" linenr="243" column="56" str=";"/>
+    <tok fileIndex="0" linenr="244" column="9" str="return"/>
+    <tok fileIndex="0" linenr="244" column="15" str=";"/>
+    <tok fileIndex="0" linenr="245" column="5" str="}"/>
+    <tok fileIndex="0" linenr="247" column="5" str="if"/>
+    <tok fileIndex="0" linenr="247" column="8" str="("/>
+    <tok fileIndex="0" linenr="247" column="9" str="!"/>
+    <tok fileIndex="0" linenr="247" column="10" str="isValidLogFilename"/>
+    <tok fileIndex="0" linenr="247" column="28" str="("/>
+    <tok fileIndex="0" linenr="247" column="29" str="filename"/>
+    <tok fileIndex="0" linenr="247" column="37" str=")"/>
+    <tok fileIndex="0" linenr="247" column="38" str=")"/>
+    <tok fileIndex="0" linenr="248" column="5" str="{"/>
+    <tok fileIndex="0" linenr="249" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="249" column="18" str="("/>
+    <tok fileIndex="0" linenr="249" column="19" str="client"/>
+    <tok fileIndex="0" linenr="249" column="25" str=","/>
+    <tok fileIndex="0" linenr="249" column="27" str="400"/>
+    <tok fileIndex="0" linenr="249" column="30" str=","/>
+    <tok fileIndex="0" linenr="249" column="32" str="&quot;invalid filename&quot;"/>
+    <tok fileIndex="0" linenr="249" column="50" str=")"/>
+    <tok fileIndex="0" linenr="249" column="51" str=";"/>
+    <tok fileIndex="0" linenr="250" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="250" column="14" str="("/>
+    <tok fileIndex="0" linenr="250" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="250" column="18" str=","/>
+    <tok fileIndex="0" linenr="250" column="20" str="&quot;DELETE /api/logs 400: invalid filename&quot;"/>
+    <tok fileIndex="0" linenr="250" column="60" str=")"/>
+    <tok fileIndex="0" linenr="250" column="61" str=";"/>
+    <tok fileIndex="0" linenr="251" column="9" str="return"/>
+    <tok fileIndex="0" linenr="251" column="15" str=";"/>
+    <tok fileIndex="0" linenr="252" column="5" str="}"/>
+    <tok fileIndex="0" linenr="254" column="5" str="char"/>
+    <tok fileIndex="0" linenr="254" column="10" str="path"/>
+    <tok fileIndex="0" linenr="254" column="14" str="["/>
+    <tok fileIndex="0" linenr="254" column="15" str="ares"/>
+    <tok fileIndex="0" linenr="254" column="19" str="::"/>
+    <tok fileIndex="0" linenr="254" column="21" str="STORAGE_MAX_PATH"/>
+    <tok fileIndex="0" linenr="254" column="37" str="]"/>
+    <tok fileIndex="0" linenr="254" column="39" str="="/>
+    <tok fileIndex="0" linenr="254" column="41" str="{"/>
+    <tok fileIndex="0" linenr="254" column="42" str="}"/>
+    <tok fileIndex="0" linenr="254" column="43" str=";"/>
+    <tok fileIndex="0" linenr="255" column="5" str="if"/>
+    <tok fileIndex="0" linenr="255" column="8" str="("/>
+    <tok fileIndex="0" linenr="255" column="9" str="!"/>
+    <tok fileIndex="0" linenr="255" column="10" str="buildLogPath"/>
+    <tok fileIndex="0" linenr="255" column="22" str="("/>
+    <tok fileIndex="0" linenr="255" column="23" str="filename"/>
+    <tok fileIndex="0" linenr="255" column="31" str=","/>
+    <tok fileIndex="0" linenr="255" column="33" str="path"/>
+    <tok fileIndex="0" linenr="255" column="37" str=","/>
+    <tok fileIndex="0" linenr="255" column="39" str="sizeof"/>
+    <tok fileIndex="0" linenr="255" column="45" str="("/>
+    <tok fileIndex="0" linenr="255" column="46" str="path"/>
+    <tok fileIndex="0" linenr="255" column="50" str=")"/>
+    <tok fileIndex="0" linenr="255" column="51" str=")"/>
+    <tok fileIndex="0" linenr="255" column="52" str=")"/>
+    <tok fileIndex="0" linenr="256" column="5" str="{"/>
+    <tok fileIndex="0" linenr="257" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="257" column="18" str="("/>
+    <tok fileIndex="0" linenr="257" column="19" str="client"/>
+    <tok fileIndex="0" linenr="257" column="25" str=","/>
+    <tok fileIndex="0" linenr="257" column="27" str="400"/>
+    <tok fileIndex="0" linenr="257" column="30" str=","/>
+    <tok fileIndex="0" linenr="257" column="32" str="&quot;path too long&quot;"/>
+    <tok fileIndex="0" linenr="257" column="47" str=")"/>
+    <tok fileIndex="0" linenr="257" column="48" str=";"/>
+    <tok fileIndex="0" linenr="258" column="9" str="return"/>
+    <tok fileIndex="0" linenr="258" column="15" str=";"/>
+    <tok fileIndex="0" linenr="259" column="5" str="}"/>
+    <tok fileIndex="0" linenr="261" column="5" str="const"/>
+    <tok fileIndex="0" linenr="261" column="11" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="261" column="25" str="st"/>
+    <tok fileIndex="0" linenr="261" column="28" str="="/>
+    <tok fileIndex="0" linenr="261" column="30" str="storage_"/>
+    <tok fileIndex="0" linenr="261" column="38" str="-&gt;"/>
+    <tok fileIndex="0" linenr="261" column="40" str="removeFile"/>
+    <tok fileIndex="0" linenr="261" column="50" str="("/>
+    <tok fileIndex="0" linenr="261" column="51" str="path"/>
+    <tok fileIndex="0" linenr="261" column="55" str=")"/>
+    <tok fileIndex="0" linenr="261" column="56" str=";"/>
+    <tok fileIndex="0" linenr="263" column="5" str="if"/>
+    <tok fileIndex="0" linenr="263" column="8" str="("/>
+    <tok fileIndex="0" linenr="263" column="9" str="st"/>
+    <tok fileIndex="0" linenr="263" column="12" str="=="/>
+    <tok fileIndex="0" linenr="263" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="263" column="28" str="::"/>
+    <tok fileIndex="0" linenr="263" column="30" str="NOT_FOUND"/>
+    <tok fileIndex="0" linenr="263" column="39" str=")"/>
+    <tok fileIndex="0" linenr="264" column="5" str="{"/>
+    <tok fileIndex="0" linenr="265" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="265" column="18" str="("/>
+    <tok fileIndex="0" linenr="265" column="19" str="client"/>
+    <tok fileIndex="0" linenr="265" column="25" str=","/>
+    <tok fileIndex="0" linenr="265" column="27" str="404"/>
+    <tok fileIndex="0" linenr="265" column="30" str=","/>
+    <tok fileIndex="0" linenr="265" column="32" str="&quot;file not found&quot;"/>
+    <tok fileIndex="0" linenr="265" column="48" str=")"/>
+    <tok fileIndex="0" linenr="265" column="49" str=";"/>
+    <tok fileIndex="0" linenr="266" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="266" column="14" str="("/>
+    <tok fileIndex="0" linenr="266" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="266" column="18" str=","/>
+    <tok fileIndex="0" linenr="266" column="20" str="&quot;DELETE %s 404&quot;"/>
+    <tok fileIndex="0" linenr="266" column="35" str=","/>
+    <tok fileIndex="0" linenr="266" column="37" str="path"/>
+    <tok fileIndex="0" linenr="266" column="41" str=")"/>
+    <tok fileIndex="0" linenr="266" column="42" str=";"/>
+    <tok fileIndex="0" linenr="267" column="9" str="return"/>
+    <tok fileIndex="0" linenr="267" column="15" str=";"/>
+    <tok fileIndex="0" linenr="268" column="5" str="}"/>
+    <tok fileIndex="0" linenr="269" column="5" str="if"/>
+    <tok fileIndex="0" linenr="269" column="8" str="("/>
+    <tok fileIndex="0" linenr="269" column="9" str="st"/>
+    <tok fileIndex="0" linenr="269" column="12" str="!="/>
+    <tok fileIndex="0" linenr="269" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="269" column="28" str="::"/>
+    <tok fileIndex="0" linenr="269" column="30" str="OK"/>
+    <tok fileIndex="0" linenr="269" column="32" str=")"/>
+    <tok fileIndex="0" linenr="270" column="5" str="{"/>
+    <tok fileIndex="0" linenr="271" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="271" column="18" str="("/>
+    <tok fileIndex="0" linenr="271" column="19" str="client"/>
+    <tok fileIndex="0" linenr="271" column="25" str=","/>
+    <tok fileIndex="0" linenr="271" column="27" str="500"/>
+    <tok fileIndex="0" linenr="271" column="30" str=","/>
+    <tok fileIndex="0" linenr="271" column="32" str="&quot;storage error&quot;"/>
+    <tok fileIndex="0" linenr="271" column="47" str=")"/>
+    <tok fileIndex="0" linenr="271" column="48" str=";"/>
+    <tok fileIndex="0" linenr="272" column="9" str="LOG_E"/>
+    <tok fileIndex="0" linenr="272" column="14" str="("/>
+    <tok fileIndex="0" linenr="272" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="272" column="18" str=","/>
+    <tok fileIndex="0" linenr="272" column="20" str="&quot;DELETE %s 500: status=%u&quot;"/>
+    <tok fileIndex="0" linenr="272" column="46" str=","/>
+    <tok fileIndex="0" linenr="273" column="15" str="path"/>
+    <tok fileIndex="0" linenr="273" column="19" str=","/>
+    <tok fileIndex="0" linenr="273" column="21" str="static_cast"/>
+    <tok fileIndex="0" linenr="273" column="32" str="&lt;"/>
+    <tok fileIndex="0" linenr="273" column="33" str="uint32_t"/>
+    <tok fileIndex="0" linenr="273" column="41" str="&gt;"/>
+    <tok fileIndex="0" linenr="273" column="42" str="("/>
+    <tok fileIndex="0" linenr="273" column="43" str="st"/>
+    <tok fileIndex="0" linenr="273" column="45" str=")"/>
+    <tok fileIndex="0" linenr="273" column="46" str=")"/>
+    <tok fileIndex="0" linenr="273" column="47" str=";"/>
+    <tok fileIndex="0" linenr="274" column="9" str="return"/>
+    <tok fileIndex="0" linenr="274" column="15" str=";"/>
+    <tok fileIndex="0" linenr="275" column="5" str="}"/>
+    <tok fileIndex="0" linenr="277" column="5" str="sendNoContent"/>
+    <tok fileIndex="0" linenr="277" column="18" str="("/>
+    <tok fileIndex="0" linenr="277" column="19" str="client"/>
+    <tok fileIndex="0" linenr="277" column="25" str=","/>
+    <tok fileIndex="0" linenr="277" column="27" str="204"/>
+    <tok fileIndex="0" linenr="277" column="30" str=")"/>
+    <tok fileIndex="0" linenr="277" column="31" str=";"/>
+    <tok fileIndex="0" linenr="278" column="5" str="LOG_I"/>
+    <tok fileIndex="0" linenr="278" column="10" str="("/>
+    <tok fileIndex="0" linenr="278" column="11" str="TAG"/>
+    <tok fileIndex="0" linenr="278" column="14" str=","/>
+    <tok fileIndex="0" linenr="278" column="16" str="&quot;DELETE %s 204&quot;"/>
+    <tok fileIndex="0" linenr="278" column="31" str=","/>
+    <tok fileIndex="0" linenr="278" column="33" str="path"/>
+    <tok fileIndex="0" linenr="278" column="37" str=")"/>
+    <tok fileIndex="0" linenr="278" column="38" str=";"/>
+    <tok fileIndex="0" linenr="279" column="1" str="}"/>
+    <tok fileIndex="0" linenr="281" column="1" str="void"/>
+    <tok fileIndex="0" linenr="281" column="6" str="ApiServer"/>
+    <tok fileIndex="0" linenr="281" column="15" str="::"/>
+    <tok fileIndex="0" linenr="281" column="17" str="handleLogDeleteAll"/>
+    <tok fileIndex="0" linenr="281" column="35" str="("/>
+    <tok fileIndex="0" linenr="281" column="36" str="WiFiClient"/>
+    <tok fileIndex="0" linenr="281" column="46" str="&amp;"/>
+    <tok fileIndex="0" linenr="281" column="48" str="client"/>
+    <tok fileIndex="0" linenr="281" column="54" str=")"/>
+    <tok fileIndex="0" linenr="282" column="1" str="{"/>
+    <tok fileIndex="0" linenr="283" column="5" str="// REST-6.1: log deletion only allowed in IDLE"/>
+    <tok fileIndex="0" linenr="284" column="5" str="if"/>
+    <tok fileIndex="0" linenr="284" column="8" str="("/>
+    <tok fileIndex="0" linenr="284" column="9" str="getMode"/>
+    <tok fileIndex="0" linenr="284" column="16" str="("/>
+    <tok fileIndex="0" linenr="284" column="17" str=")"/>
+    <tok fileIndex="0" linenr="284" column="19" str="!="/>
+    <tok fileIndex="0" linenr="284" column="22" str="ares"/>
+    <tok fileIndex="0" linenr="284" column="26" str="::"/>
+    <tok fileIndex="0" linenr="284" column="28" str="OperatingMode"/>
+    <tok fileIndex="0" linenr="284" column="41" str="::"/>
+    <tok fileIndex="0" linenr="284" column="43" str="IDLE"/>
+    <tok fileIndex="0" linenr="284" column="47" str=")"/>
+    <tok fileIndex="0" linenr="285" column="5" str="{"/>
+    <tok fileIndex="0" linenr="286" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="286" column="18" str="("/>
+    <tok fileIndex="0" linenr="286" column="19" str="client"/>
+    <tok fileIndex="0" linenr="286" column="25" str=","/>
+    <tok fileIndex="0" linenr="286" column="27" str="409"/>
+    <tok fileIndex="0" linenr="286" column="30" str=","/>
+    <tok fileIndex="0" linenr="286" column="32" str="&quot;log deletion requires idle mode&quot;"/>
+    <tok fileIndex="0" linenr="286" column="65" str=")"/>
+    <tok fileIndex="0" linenr="286" column="66" str=";"/>
+    <tok fileIndex="0" linenr="287" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="287" column="14" str="("/>
+    <tok fileIndex="0" linenr="287" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="287" column="18" str=","/>
+    <tok fileIndex="0" linenr="287" column="20" str="&quot;DELETE /api/logs 409: not idle&quot;"/>
+    <tok fileIndex="0" linenr="287" column="52" str=")"/>
+    <tok fileIndex="0" linenr="287" column="53" str=";"/>
+    <tok fileIndex="0" linenr="288" column="9" str="return"/>
+    <tok fileIndex="0" linenr="288" column="15" str=";"/>
+    <tok fileIndex="0" linenr="289" column="5" str="}"/>
+    <tok fileIndex="0" linenr="291" column="5" str="if"/>
+    <tok fileIndex="0" linenr="291" column="8" str="("/>
+    <tok fileIndex="0" linenr="291" column="9" str="storage_"/>
+    <tok fileIndex="0" linenr="291" column="18" str="=="/>
+    <tok fileIndex="0" linenr="291" column="21" str="nullptr"/>
+    <tok fileIndex="0" linenr="291" column="28" str=")"/>
+    <tok fileIndex="0" linenr="292" column="5" str="{"/>
+    <tok fileIndex="0" linenr="293" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="293" column="18" str="("/>
+    <tok fileIndex="0" linenr="293" column="19" str="client"/>
+    <tok fileIndex="0" linenr="293" column="25" str=","/>
+    <tok fileIndex="0" linenr="293" column="27" str="500"/>
+    <tok fileIndex="0" linenr="293" column="30" str=","/>
+    <tok fileIndex="0" linenr="293" column="32" str="&quot;storage not available&quot;"/>
+    <tok fileIndex="0" linenr="293" column="55" str=")"/>
+    <tok fileIndex="0" linenr="293" column="56" str=";"/>
+    <tok fileIndex="0" linenr="294" column="9" str="return"/>
+    <tok fileIndex="0" linenr="294" column="15" str=";"/>
+    <tok fileIndex="0" linenr="295" column="5" str="}"/>
+    <tok fileIndex="0" linenr="297" column="5" str="// List and delete each file"/>
+    <tok fileIndex="0" linenr="298" column="5" str="memset"/>
+    <tok fileIndex="0" linenr="298" column="11" str="("/>
+    <tok fileIndex="0" linenr="298" column="12" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="298" column="24" str=","/>
+    <tok fileIndex="0" linenr="298" column="26" str="0"/>
+    <tok fileIndex="0" linenr="298" column="27" str=","/>
+    <tok fileIndex="0" linenr="298" column="29" str="sizeof"/>
+    <tok fileIndex="0" linenr="298" column="35" str="("/>
+    <tok fileIndex="0" linenr="298" column="36" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="298" column="48" str=")"/>
+    <tok fileIndex="0" linenr="298" column="49" str=")"/>
+    <tok fileIndex="0" linenr="298" column="50" str=";"/>
+    <tok fileIndex="0" linenr="299" column="5" str="uint8_t"/>
+    <tok fileIndex="0" linenr="299" column="13" str="count"/>
+    <tok fileIndex="0" linenr="299" column="19" str="="/>
+    <tok fileIndex="0" linenr="299" column="21" str="0"/>
+    <tok fileIndex="0" linenr="299" column="22" str=";"/>
+    <tok fileIndex="0" linenr="301" column="5" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="301" column="19" str="st"/>
+    <tok fileIndex="0" linenr="301" column="22" str="="/>
+    <tok fileIndex="0" linenr="301" column="24" str="storage_"/>
+    <tok fileIndex="0" linenr="301" column="32" str="-&gt;"/>
+    <tok fileIndex="0" linenr="301" column="34" str="listFiles"/>
+    <tok fileIndex="0" linenr="301" column="43" str="("/>
+    <tok fileIndex="0" linenr="302" column="9" str="ares"/>
+    <tok fileIndex="0" linenr="302" column="13" str="::"/>
+    <tok fileIndex="0" linenr="302" column="15" str="LOG_DIR"/>
+    <tok fileIndex="0" linenr="302" column="22" str=","/>
+    <tok fileIndex="0" linenr="302" column="24" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="302" column="36" str=","/>
+    <tok fileIndex="0" linenr="302" column="38" str="ares"/>
+    <tok fileIndex="0" linenr="302" column="42" str="::"/>
+    <tok fileIndex="0" linenr="302" column="44" str="MAX_LOG_FILES"/>
+    <tok fileIndex="0" linenr="302" column="57" str=","/>
+    <tok fileIndex="0" linenr="302" column="59" str="count"/>
+    <tok fileIndex="0" linenr="302" column="64" str=")"/>
+    <tok fileIndex="0" linenr="302" column="65" str=";"/>
+    <tok fileIndex="0" linenr="304" column="5" str="if"/>
+    <tok fileIndex="0" linenr="304" column="8" str="("/>
+    <tok fileIndex="0" linenr="304" column="9" str="st"/>
+    <tok fileIndex="0" linenr="304" column="12" str="=="/>
+    <tok fileIndex="0" linenr="304" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="304" column="28" str="::"/>
+    <tok fileIndex="0" linenr="304" column="30" str="NOT_FOUND"/>
+    <tok fileIndex="0" linenr="304" column="39" str=")"/>
+    <tok fileIndex="0" linenr="305" column="5" str="{"/>
+    <tok fileIndex="0" linenr="306" column="9" str="sendNoContent"/>
+    <tok fileIndex="0" linenr="306" column="22" str="("/>
+    <tok fileIndex="0" linenr="306" column="23" str="client"/>
+    <tok fileIndex="0" linenr="306" column="29" str=","/>
+    <tok fileIndex="0" linenr="306" column="31" str="204"/>
+    <tok fileIndex="0" linenr="306" column="34" str=")"/>
+    <tok fileIndex="0" linenr="306" column="35" str=";"/>
+    <tok fileIndex="0" linenr="307" column="9" str="return"/>
+    <tok fileIndex="0" linenr="307" column="15" str=";"/>
+    <tok fileIndex="0" linenr="308" column="5" str="}"/>
+    <tok fileIndex="0" linenr="309" column="5" str="if"/>
+    <tok fileIndex="0" linenr="309" column="8" str="("/>
+    <tok fileIndex="0" linenr="309" column="9" str="st"/>
+    <tok fileIndex="0" linenr="309" column="12" str="!="/>
+    <tok fileIndex="0" linenr="309" column="15" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="309" column="28" str="::"/>
+    <tok fileIndex="0" linenr="309" column="30" str="OK"/>
+    <tok fileIndex="0" linenr="309" column="32" str=")"/>
+    <tok fileIndex="0" linenr="310" column="5" str="{"/>
+    <tok fileIndex="0" linenr="311" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="311" column="18" str="("/>
+    <tok fileIndex="0" linenr="311" column="19" str="client"/>
+    <tok fileIndex="0" linenr="311" column="25" str=","/>
+    <tok fileIndex="0" linenr="311" column="27" str="500"/>
+    <tok fileIndex="0" linenr="311" column="30" str=","/>
+    <tok fileIndex="0" linenr="311" column="32" str="&quot;storage error&quot;"/>
+    <tok fileIndex="0" linenr="311" column="47" str=")"/>
+    <tok fileIndex="0" linenr="311" column="48" str=";"/>
+    <tok fileIndex="0" linenr="312" column="9" str="return"/>
+    <tok fileIndex="0" linenr="312" column="15" str=";"/>
+    <tok fileIndex="0" linenr="313" column="5" str="}"/>
+    <tok fileIndex="0" linenr="315" column="5" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="315" column="16" str="("/>
+    <tok fileIndex="0" linenr="315" column="17" str="count"/>
+    <tok fileIndex="0" linenr="315" column="23" str="&lt;="/>
+    <tok fileIndex="0" linenr="315" column="26" str="ares"/>
+    <tok fileIndex="0" linenr="315" column="30" str="::"/>
+    <tok fileIndex="0" linenr="315" column="32" str="MAX_LOG_FILES"/>
+    <tok fileIndex="0" linenr="315" column="45" str=")"/>
+    <tok fileIndex="0" linenr="315" column="46" str=";"/>
+    <tok fileIndex="0" linenr="317" column="5" str="uint8_t"/>
+    <tok fileIndex="0" linenr="317" column="13" str="deleted"/>
+    <tok fileIndex="0" linenr="317" column="21" str="="/>
+    <tok fileIndex="0" linenr="317" column="23" str="0"/>
+    <tok fileIndex="0" linenr="317" column="24" str=";"/>
+    <tok fileIndex="0" linenr="318" column="5" str="for"/>
+    <tok fileIndex="0" linenr="318" column="9" str="("/>
+    <tok fileIndex="0" linenr="318" column="10" str="uint8_t"/>
+    <tok fileIndex="0" linenr="318" column="18" str="i"/>
+    <tok fileIndex="0" linenr="318" column="20" str="="/>
+    <tok fileIndex="0" linenr="318" column="22" str="0"/>
+    <tok fileIndex="0" linenr="318" column="23" str=";"/>
+    <tok fileIndex="0" linenr="318" column="25" str="i"/>
+    <tok fileIndex="0" linenr="318" column="27" str="&lt;"/>
+    <tok fileIndex="0" linenr="318" column="29" str="count"/>
+    <tok fileIndex="0" linenr="318" column="34" str=";"/>
+    <tok fileIndex="0" linenr="318" column="36" str="i"/>
+    <tok fileIndex="0" linenr="318" column="37" str="++"/>
+    <tok fileIndex="0" linenr="318" column="39" str=")"/>
+    <tok fileIndex="0" linenr="319" column="5" str="{"/>
+    <tok fileIndex="0" linenr="320" column="9" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="320" column="20" str="("/>
+    <tok fileIndex="0" linenr="320" column="21" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="320" column="33" str="["/>
+    <tok fileIndex="0" linenr="320" column="34" str="i"/>
+    <tok fileIndex="0" linenr="320" column="35" str="]"/>
+    <tok fileIndex="0" linenr="320" column="36" str="."/>
+    <tok fileIndex="0" linenr="320" column="37" str="name"/>
+    <tok fileIndex="0" linenr="320" column="41" str="["/>
+    <tok fileIndex="0" linenr="320" column="42" str="0"/>
+    <tok fileIndex="0" linenr="320" column="43" str="]"/>
+    <tok fileIndex="0" linenr="320" column="45" str="=="/>
+    <tok fileIndex="0" linenr="320" column="48" str="&apos;/&apos;"/>
+    <tok fileIndex="0" linenr="320" column="51" str=")"/>
+    <tok fileIndex="0" linenr="320" column="52" str=";"/>
+    <tok fileIndex="0" linenr="321" column="9" str="if"/>
+    <tok fileIndex="0" linenr="321" column="12" str="("/>
+    <tok fileIndex="0" linenr="321" column="13" str="storage_"/>
+    <tok fileIndex="0" linenr="321" column="21" str="-&gt;"/>
+    <tok fileIndex="0" linenr="321" column="23" str="removeFile"/>
+    <tok fileIndex="0" linenr="321" column="33" str="("/>
+    <tok fileIndex="0" linenr="321" column="34" str="g_logEntries"/>
+    <tok fileIndex="0" linenr="321" column="46" str="["/>
+    <tok fileIndex="0" linenr="321" column="47" str="i"/>
+    <tok fileIndex="0" linenr="321" column="48" str="]"/>
+    <tok fileIndex="0" linenr="321" column="49" str="."/>
+    <tok fileIndex="0" linenr="321" column="50" str="name"/>
+    <tok fileIndex="0" linenr="321" column="54" str=")"/>
+    <tok fileIndex="0" linenr="321" column="56" str="=="/>
+    <tok fileIndex="0" linenr="321" column="59" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="321" column="72" str="::"/>
+    <tok fileIndex="0" linenr="321" column="74" str="OK"/>
+    <tok fileIndex="0" linenr="321" column="76" str=")"/>
+    <tok fileIndex="0" linenr="322" column="9" str="{"/>
+    <tok fileIndex="0" linenr="323" column="13" str="deleted"/>
+    <tok fileIndex="0" linenr="323" column="20" str="++"/>
+    <tok fileIndex="0" linenr="323" column="22" str=";"/>
+    <tok fileIndex="0" linenr="324" column="9" str="}"/>
+    <tok fileIndex="0" linenr="325" column="5" str="}"/>
+    <tok fileIndex="0" linenr="327" column="5" str="sendNoContent"/>
+    <tok fileIndex="0" linenr="327" column="18" str="("/>
+    <tok fileIndex="0" linenr="327" column="19" str="client"/>
+    <tok fileIndex="0" linenr="327" column="25" str=","/>
+    <tok fileIndex="0" linenr="327" column="27" str="204"/>
+    <tok fileIndex="0" linenr="327" column="30" str=")"/>
+    <tok fileIndex="0" linenr="327" column="31" str=";"/>
+    <tok fileIndex="0" linenr="328" column="5" str="LOG_I"/>
+    <tok fileIndex="0" linenr="328" column="10" str="("/>
+    <tok fileIndex="0" linenr="328" column="11" str="TAG"/>
+    <tok fileIndex="0" linenr="328" column="14" str=","/>
+    <tok fileIndex="0" linenr="328" column="16" str="&quot;DELETE /api/logs 204: %u/%u deleted&quot;"/>
+    <tok fileIndex="0" linenr="328" column="53" str=","/>
+    <tok fileIndex="0" linenr="329" column="11" str="static_cast"/>
+    <tok fileIndex="0" linenr="329" column="22" str="&lt;"/>
+    <tok fileIndex="0" linenr="329" column="23" str="uint32_t"/>
+    <tok fileIndex="0" linenr="329" column="31" str="&gt;"/>
+    <tok fileIndex="0" linenr="329" column="32" str="("/>
+    <tok fileIndex="0" linenr="329" column="33" str="deleted"/>
+    <tok fileIndex="0" linenr="329" column="40" str=")"/>
+    <tok fileIndex="0" linenr="329" column="41" str=","/>
+    <tok fileIndex="0" linenr="330" column="11" str="static_cast"/>
+    <tok fileIndex="0" linenr="330" column="22" str="&lt;"/>
+    <tok fileIndex="0" linenr="330" column="23" str="uint32_t"/>
+    <tok fileIndex="0" linenr="330" column="31" str="&gt;"/>
+    <tok fileIndex="0" linenr="330" column="32" str="("/>
+    <tok fileIndex="0" linenr="330" column="33" str="count"/>
+    <tok fileIndex="0" linenr="330" column="38" str=")"/>
+    <tok fileIndex="0" linenr="330" column="39" str=")"/>
+    <tok fileIndex="0" linenr="330" column="40" str=";"/>
+    <tok fileIndex="0" linenr="331" column="1" str="}"/>
+    <tok fileIndex="0" linenr="333" column="1" str="void"/>
+    <tok fileIndex="0" linenr="333" column="6" str="ApiServer"/>
+    <tok fileIndex="0" linenr="333" column="15" str="::"/>
+    <tok fileIndex="0" linenr="333" column="17" str="handleStorageHealth"/>
+    <tok fileIndex="0" linenr="333" column="36" str="("/>
+    <tok fileIndex="0" linenr="333" column="37" str="WiFiClient"/>
+    <tok fileIndex="0" linenr="333" column="47" str="&amp;"/>
+    <tok fileIndex="0" linenr="333" column="49" str="client"/>
+    <tok fileIndex="0" linenr="333" column="55" str=")"/>
+    <tok fileIndex="0" linenr="334" column="1" str="{"/>
+    <tok fileIndex="0" linenr="335" column="5" str="if"/>
+    <tok fileIndex="0" linenr="335" column="8" str="("/>
+    <tok fileIndex="0" linenr="335" column="9" str="storage_"/>
+    <tok fileIndex="0" linenr="335" column="18" str="=="/>
+    <tok fileIndex="0" linenr="335" column="21" str="nullptr"/>
+    <tok fileIndex="0" linenr="335" column="28" str=")"/>
+    <tok fileIndex="0" linenr="336" column="5" str="{"/>
+    <tok fileIndex="0" linenr="337" column="9" str="sendError"/>
+    <tok fileIndex="0" linenr="337" column="18" str="("/>
+    <tok fileIndex="0" linenr="337" column="19" str="client"/>
+    <tok fileIndex="0" linenr="337" column="25" str=","/>
+    <tok fileIndex="0" linenr="337" column="27" str="500"/>
+    <tok fileIndex="0" linenr="337" column="30" str=","/>
+    <tok fileIndex="0" linenr="337" column="32" str="&quot;storage not available&quot;"/>
+    <tok fileIndex="0" linenr="337" column="55" str=")"/>
+    <tok fileIndex="0" linenr="337" column="56" str=";"/>
+    <tok fileIndex="0" linenr="338" column="9" str="LOG_E"/>
+    <tok fileIndex="0" linenr="338" column="14" str="("/>
+    <tok fileIndex="0" linenr="338" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="338" column="18" str=","/>
+    <tok fileIndex="0" linenr="338" column="20" str="&quot;GET /api/storage/health 500: no storage&quot;"/>
+    <tok fileIndex="0" linenr="338" column="61" str=")"/>
+    <tok fileIndex="0" linenr="338" column="62" str=";"/>
+    <tok fileIndex="0" linenr="339" column="9" str="return"/>
+    <tok fileIndex="0" linenr="339" column="15" str=";"/>
+    <tok fileIndex="0" linenr="340" column="5" str="}"/>
+    <tok fileIndex="0" linenr="342" column="5" str="StorageInfo"/>
+    <tok fileIndex="0" linenr="342" column="17" str="info"/>
+    <tok fileIndex="0" linenr="342" column="22" str="="/>
+    <tok fileIndex="0" linenr="342" column="24" str="{"/>
+    <tok fileIndex="0" linenr="342" column="25" str="}"/>
+    <tok fileIndex="0" linenr="342" column="26" str=";"/>
+    <tok fileIndex="0" linenr="343" column="5" str="StorageHealth"/>
+    <tok fileIndex="0" linenr="343" column="19" str="health"/>
+    <tok fileIndex="0" linenr="343" column="26" str="="/>
+    <tok fileIndex="0" linenr="343" column="28" str="{"/>
+    <tok fileIndex="0" linenr="343" column="29" str="}"/>
+    <tok fileIndex="0" linenr="343" column="30" str=";"/>
+    <tok fileIndex="0" linenr="345" column="5" str="const"/>
+    <tok fileIndex="0" linenr="345" column="11" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="345" column="25" str="infoSt"/>
+    <tok fileIndex="0" linenr="345" column="32" str="="/>
+    <tok fileIndex="0" linenr="345" column="34" str="storage_"/>
+    <tok fileIndex="0" linenr="345" column="42" str="-&gt;"/>
+    <tok fileIndex="0" linenr="345" column="44" str="info"/>
+    <tok fileIndex="0" linenr="345" column="48" str="("/>
+    <tok fileIndex="0" linenr="345" column="49" str="info"/>
+    <tok fileIndex="0" linenr="345" column="53" str=")"/>
+    <tok fileIndex="0" linenr="345" column="54" str=";"/>
+    <tok fileIndex="0" linenr="346" column="5" str="const"/>
+    <tok fileIndex="0" linenr="346" column="11" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="346" column="25" str="healthSt"/>
+    <tok fileIndex="0" linenr="346" column="34" str="="/>
+    <tok fileIndex="0" linenr="346" column="36" str="storage_"/>
+    <tok fileIndex="0" linenr="346" column="44" str="-&gt;"/>
+    <tok fileIndex="0" linenr="346" column="46" str="health"/>
+    <tok fileIndex="0" linenr="346" column="52" str="("/>
+    <tok fileIndex="0" linenr="346" column="53" str="health"/>
+    <tok fileIndex="0" linenr="346" column="59" str=")"/>
+    <tok fileIndex="0" linenr="346" column="60" str=";"/>
+    <tok fileIndex="0" linenr="348" column="5" str="if"/>
+    <tok fileIndex="0" linenr="348" column="8" str="("/>
+    <tok fileIndex="0" linenr="348" column="9" str="infoSt"/>
+    <tok fileIndex="0" linenr="348" column="16" str="!="/>
+    <tok fileIndex="0" linenr="348" column="19" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="348" column="32" str="::"/>
+    <tok fileIndex="0" linenr="348" column="34" str="OK"/>
+    <tok fileIndex="0" linenr="348" column="37" str="||"/>
+    <tok fileIndex="0" linenr="348" column="40" str="healthSt"/>
+    <tok fileIndex="0" linenr="348" column="49" str="!="/>
+    <tok fileIndex="0" linenr="348" column="52" str="StorageStatus"/>
+    <tok fileIndex="0" linenr="348" column="65" str="::"/>
+    <tok fileIndex="0" linenr="348" column="67" str="OK"/>
+    <tok fileIndex="0" linenr="348" column="69" str=")"/>
+    <tok fileIndex="0" linenr="349" column="5" str="{"/>
+    <tok fileIndex="0" linenr="350" column="9" str="JsonDocument"/>
+    <tok fileIndex="0" linenr="350" column="22" str="err"/>
+    <tok fileIndex="0" linenr="350" column="25" str=";"/>
+    <tok fileIndex="0" linenr="351" column="9" str="err"/>
+    <tok fileIndex="0" linenr="351" column="12" str="["/>
+    <tok fileIndex="0" linenr="351" column="13" str="&quot;ok&quot;"/>
+    <tok fileIndex="0" linenr="351" column="17" str="]"/>
+    <tok fileIndex="0" linenr="351" column="19" str="="/>
+    <tok fileIndex="0" linenr="351" column="21" str="false"/>
+    <tok fileIndex="0" linenr="351" column="26" str=";"/>
+    <tok fileIndex="0" linenr="352" column="9" str="err"/>
+    <tok fileIndex="0" linenr="352" column="12" str="["/>
+    <tok fileIndex="0" linenr="352" column="13" str="&quot;info_status&quot;"/>
+    <tok fileIndex="0" linenr="352" column="26" str="]"/>
+    <tok fileIndex="0" linenr="352" column="28" str="="/>
+    <tok fileIndex="0" linenr="352" column="30" str="static_cast"/>
+    <tok fileIndex="0" linenr="352" column="41" str="&lt;"/>
+    <tok fileIndex="0" linenr="352" column="42" str="uint32_t"/>
+    <tok fileIndex="0" linenr="352" column="50" str="&gt;"/>
+    <tok fileIndex="0" linenr="352" column="51" str="("/>
+    <tok fileIndex="0" linenr="352" column="52" str="infoSt"/>
+    <tok fileIndex="0" linenr="352" column="58" str=")"/>
+    <tok fileIndex="0" linenr="352" column="59" str=";"/>
+    <tok fileIndex="0" linenr="353" column="9" str="err"/>
+    <tok fileIndex="0" linenr="353" column="12" str="["/>
+    <tok fileIndex="0" linenr="353" column="13" str="&quot;health_status&quot;"/>
+    <tok fileIndex="0" linenr="353" column="28" str="]"/>
+    <tok fileIndex="0" linenr="353" column="30" str="="/>
+    <tok fileIndex="0" linenr="353" column="32" str="static_cast"/>
+    <tok fileIndex="0" linenr="353" column="43" str="&lt;"/>
+    <tok fileIndex="0" linenr="353" column="44" str="uint32_t"/>
+    <tok fileIndex="0" linenr="353" column="52" str="&gt;"/>
+    <tok fileIndex="0" linenr="353" column="53" str="("/>
+    <tok fileIndex="0" linenr="353" column="54" str="healthSt"/>
+    <tok fileIndex="0" linenr="353" column="62" str=")"/>
+    <tok fileIndex="0" linenr="353" column="63" str=";"/>
+    <tok fileIndex="0" linenr="354" column="9" str="memset"/>
+    <tok fileIndex="0" linenr="354" column="15" str="("/>
+    <tok fileIndex="0" linenr="354" column="16" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="354" column="25" str=","/>
+    <tok fileIndex="0" linenr="354" column="27" str="0"/>
+    <tok fileIndex="0" linenr="354" column="28" str=","/>
+    <tok fileIndex="0" linenr="354" column="30" str="sizeof"/>
+    <tok fileIndex="0" linenr="354" column="36" str="("/>
+    <tok fileIndex="0" linenr="354" column="37" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="354" column="46" str=")"/>
+    <tok fileIndex="0" linenr="354" column="47" str=")"/>
+    <tok fileIndex="0" linenr="354" column="48" str=";"/>
+    <tok fileIndex="0" linenr="355" column="9" str="const"/>
+    <tok fileIndex="0" linenr="355" column="15" str="uint32_t"/>
+    <tok fileIndex="0" linenr="355" column="24" str="errLen"/>
+    <tok fileIndex="0" linenr="355" column="31" str="="/>
+    <tok fileIndex="0" linenr="355" column="33" str="serializeJson"/>
+    <tok fileIndex="0" linenr="355" column="46" str="("/>
+    <tok fileIndex="0" linenr="355" column="47" str="err"/>
+    <tok fileIndex="0" linenr="355" column="50" str=","/>
+    <tok fileIndex="0" linenr="355" column="52" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="355" column="61" str=","/>
+    <tok fileIndex="0" linenr="355" column="63" str="sizeof"/>
+    <tok fileIndex="0" linenr="355" column="69" str="("/>
+    <tok fileIndex="0" linenr="355" column="70" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="355" column="79" str=")"/>
+    <tok fileIndex="0" linenr="355" column="80" str=")"/>
+    <tok fileIndex="0" linenr="355" column="81" str=";"/>
+    <tok fileIndex="0" linenr="356" column="9" str="sendJson"/>
+    <tok fileIndex="0" linenr="356" column="17" str="("/>
+    <tok fileIndex="0" linenr="356" column="18" str="client"/>
+    <tok fileIndex="0" linenr="356" column="24" str=","/>
+    <tok fileIndex="0" linenr="356" column="26" str="503"/>
+    <tok fileIndex="0" linenr="356" column="29" str=","/>
+    <tok fileIndex="0" linenr="356" column="31" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="356" column="40" str=","/>
+    <tok fileIndex="0" linenr="356" column="42" str="errLen"/>
+    <tok fileIndex="0" linenr="356" column="48" str=")"/>
+    <tok fileIndex="0" linenr="356" column="49" str=";"/>
+    <tok fileIndex="0" linenr="357" column="9" str="LOG_W"/>
+    <tok fileIndex="0" linenr="357" column="14" str="("/>
+    <tok fileIndex="0" linenr="357" column="15" str="TAG"/>
+    <tok fileIndex="0" linenr="357" column="18" str=","/>
+    <tok fileIndex="0" linenr="357" column="20" str="&quot;GET /api/storage/health 503: info=%u health=%u&quot;"/>
+    <tok fileIndex="0" linenr="357" column="68" str=","/>
+    <tok fileIndex="0" linenr="358" column="15" str="static_cast"/>
+    <tok fileIndex="0" linenr="358" column="26" str="&lt;"/>
+    <tok fileIndex="0" linenr="358" column="27" str="uint32_t"/>
+    <tok fileIndex="0" linenr="358" column="35" str="&gt;"/>
+    <tok fileIndex="0" linenr="358" column="36" str="("/>
+    <tok fileIndex="0" linenr="358" column="37" str="infoSt"/>
+    <tok fileIndex="0" linenr="358" column="43" str=")"/>
+    <tok fileIndex="0" linenr="358" column="44" str=","/>
+    <tok fileIndex="0" linenr="359" column="15" str="static_cast"/>
+    <tok fileIndex="0" linenr="359" column="26" str="&lt;"/>
+    <tok fileIndex="0" linenr="359" column="27" str="uint32_t"/>
+    <tok fileIndex="0" linenr="359" column="35" str="&gt;"/>
+    <tok fileIndex="0" linenr="359" column="36" str="("/>
+    <tok fileIndex="0" linenr="359" column="37" str="healthSt"/>
+    <tok fileIndex="0" linenr="359" column="45" str=")"/>
+    <tok fileIndex="0" linenr="359" column="46" str=")"/>
+    <tok fileIndex="0" linenr="359" column="47" str=";"/>
+    <tok fileIndex="0" linenr="360" column="9" str="return"/>
+    <tok fileIndex="0" linenr="360" column="15" str=";"/>
+    <tok fileIndex="0" linenr="361" column="5" str="}"/>
+    <tok fileIndex="0" linenr="363" column="5" str="JsonDocument"/>
+    <tok fileIndex="0" linenr="363" column="18" str="doc"/>
+    <tok fileIndex="0" linenr="363" column="21" str=";"/>
+    <tok fileIndex="0" linenr="364" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="364" column="8" str="["/>
+    <tok fileIndex="0" linenr="364" column="9" str="&quot;ok&quot;"/>
+    <tok fileIndex="0" linenr="364" column="13" str="]"/>
+    <tok fileIndex="0" linenr="364" column="15" str="="/>
+    <tok fileIndex="0" linenr="364" column="17" str="true"/>
+    <tok fileIndex="0" linenr="364" column="21" str=";"/>
+    <tok fileIndex="0" linenr="365" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="365" column="8" str="["/>
+    <tok fileIndex="0" linenr="365" column="9" str="&quot;mounted&quot;"/>
+    <tok fileIndex="0" linenr="365" column="18" str="]"/>
+    <tok fileIndex="0" linenr="365" column="20" str="="/>
+    <tok fileIndex="0" linenr="365" column="22" str="health"/>
+    <tok fileIndex="0" linenr="365" column="28" str="."/>
+    <tok fileIndex="0" linenr="365" column="29" str="mounted"/>
+    <tok fileIndex="0" linenr="365" column="36" str=";"/>
+    <tok fileIndex="0" linenr="366" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="366" column="8" str="["/>
+    <tok fileIndex="0" linenr="366" column="9" str="&quot;total&quot;"/>
+    <tok fileIndex="0" linenr="366" column="16" str="]"/>
+    <tok fileIndex="0" linenr="366" column="18" str="="/>
+    <tok fileIndex="0" linenr="366" column="20" str="info"/>
+    <tok fileIndex="0" linenr="366" column="24" str="."/>
+    <tok fileIndex="0" linenr="366" column="25" str="totalBytes"/>
+    <tok fileIndex="0" linenr="366" column="35" str=";"/>
+    <tok fileIndex="0" linenr="367" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="367" column="8" str="["/>
+    <tok fileIndex="0" linenr="367" column="9" str="&quot;used&quot;"/>
+    <tok fileIndex="0" linenr="367" column="15" str="]"/>
+    <tok fileIndex="0" linenr="367" column="17" str="="/>
+    <tok fileIndex="0" linenr="367" column="19" str="info"/>
+    <tok fileIndex="0" linenr="367" column="23" str="."/>
+    <tok fileIndex="0" linenr="367" column="24" str="usedBytes"/>
+    <tok fileIndex="0" linenr="367" column="33" str=";"/>
+    <tok fileIndex="0" linenr="368" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="368" column="8" str="["/>
+    <tok fileIndex="0" linenr="368" column="9" str="&quot;free&quot;"/>
+    <tok fileIndex="0" linenr="368" column="15" str="]"/>
+    <tok fileIndex="0" linenr="368" column="17" str="="/>
+    <tok fileIndex="0" linenr="368" column="19" str="info"/>
+    <tok fileIndex="0" linenr="368" column="23" str="."/>
+    <tok fileIndex="0" linenr="368" column="24" str="freeBytes"/>
+    <tok fileIndex="0" linenr="368" column="33" str=";"/>
+    <tok fileIndex="0" linenr="369" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="369" column="8" str="["/>
+    <tok fileIndex="0" linenr="369" column="9" str="&quot;recovery_scanned&quot;"/>
+    <tok fileIndex="0" linenr="369" column="27" str="]"/>
+    <tok fileIndex="0" linenr="369" column="29" str="="/>
+    <tok fileIndex="0" linenr="369" column="31" str="health"/>
+    <tok fileIndex="0" linenr="369" column="37" str="."/>
+    <tok fileIndex="0" linenr="369" column="38" str="recoveryScanned"/>
+    <tok fileIndex="0" linenr="369" column="53" str=";"/>
+    <tok fileIndex="0" linenr="370" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="370" column="8" str="["/>
+    <tok fileIndex="0" linenr="370" column="9" str="&quot;recovered_from_bak&quot;"/>
+    <tok fileIndex="0" linenr="370" column="29" str="]"/>
+    <tok fileIndex="0" linenr="370" column="31" str="="/>
+    <tok fileIndex="0" linenr="370" column="33" str="health"/>
+    <tok fileIndex="0" linenr="370" column="39" str="."/>
+    <tok fileIndex="0" linenr="370" column="40" str="recoveredFromBak"/>
+    <tok fileIndex="0" linenr="370" column="56" str=";"/>
+    <tok fileIndex="0" linenr="371" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="371" column="8" str="["/>
+    <tok fileIndex="0" linenr="371" column="9" str="&quot;removed_tmp&quot;"/>
+    <tok fileIndex="0" linenr="371" column="22" str="]"/>
+    <tok fileIndex="0" linenr="371" column="24" str="="/>
+    <tok fileIndex="0" linenr="371" column="26" str="health"/>
+    <tok fileIndex="0" linenr="371" column="32" str="."/>
+    <tok fileIndex="0" linenr="371" column="33" str="removedTmp"/>
+    <tok fileIndex="0" linenr="371" column="43" str=";"/>
+    <tok fileIndex="0" linenr="372" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="372" column="8" str="["/>
+    <tok fileIndex="0" linenr="372" column="9" str="&quot;removed_bak&quot;"/>
+    <tok fileIndex="0" linenr="372" column="22" str="]"/>
+    <tok fileIndex="0" linenr="372" column="24" str="="/>
+    <tok fileIndex="0" linenr="372" column="26" str="health"/>
+    <tok fileIndex="0" linenr="372" column="32" str="."/>
+    <tok fileIndex="0" linenr="372" column="33" str="removedBak"/>
+    <tok fileIndex="0" linenr="372" column="43" str=";"/>
+    <tok fileIndex="0" linenr="373" column="5" str="doc"/>
+    <tok fileIndex="0" linenr="373" column="8" str="["/>
+    <tok fileIndex="0" linenr="373" column="9" str="&quot;recovery_errors&quot;"/>
+    <tok fileIndex="0" linenr="373" column="26" str="]"/>
+    <tok fileIndex="0" linenr="373" column="28" str="="/>
+    <tok fileIndex="0" linenr="373" column="30" str="health"/>
+    <tok fileIndex="0" linenr="373" column="36" str="."/>
+    <tok fileIndex="0" linenr="373" column="37" str="recoveryErrors"/>
+    <tok fileIndex="0" linenr="373" column="51" str=";"/>
+    <tok fileIndex="0" linenr="375" column="5" str="memset"/>
+    <tok fileIndex="0" linenr="375" column="11" str="("/>
+    <tok fileIndex="0" linenr="375" column="12" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="375" column="21" str=","/>
+    <tok fileIndex="0" linenr="375" column="23" str="0"/>
+    <tok fileIndex="0" linenr="375" column="24" str=","/>
+    <tok fileIndex="0" linenr="375" column="26" str="sizeof"/>
+    <tok fileIndex="0" linenr="375" column="32" str="("/>
+    <tok fileIndex="0" linenr="375" column="33" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="375" column="42" str=")"/>
+    <tok fileIndex="0" linenr="375" column="43" str=")"/>
+    <tok fileIndex="0" linenr="375" column="44" str=";"/>
+    <tok fileIndex="0" linenr="376" column="5" str="const"/>
+    <tok fileIndex="0" linenr="376" column="11" str="uint32_t"/>
+    <tok fileIndex="0" linenr="376" column="20" str="len"/>
+    <tok fileIndex="0" linenr="376" column="24" str="="/>
+    <tok fileIndex="0" linenr="376" column="26" str="serializeJson"/>
+    <tok fileIndex="0" linenr="376" column="39" str="("/>
+    <tok fileIndex="0" linenr="376" column="40" str="doc"/>
+    <tok fileIndex="0" linenr="376" column="43" str=","/>
+    <tok fileIndex="0" linenr="376" column="45" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="376" column="54" str=","/>
+    <tok fileIndex="0" linenr="376" column="56" str="sizeof"/>
+    <tok fileIndex="0" linenr="376" column="62" str="("/>
+    <tok fileIndex="0" linenr="376" column="63" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="376" column="72" str=")"/>
+    <tok fileIndex="0" linenr="376" column="73" str=")"/>
+    <tok fileIndex="0" linenr="376" column="74" str=";"/>
+    <tok fileIndex="0" linenr="377" column="5" str="ARES_ASSERT"/>
+    <tok fileIndex="0" linenr="377" column="16" str="("/>
+    <tok fileIndex="0" linenr="377" column="17" str="len"/>
+    <tok fileIndex="0" linenr="377" column="21" str="&lt;"/>
+    <tok fileIndex="0" linenr="377" column="23" str="sizeof"/>
+    <tok fileIndex="0" linenr="377" column="29" str="("/>
+    <tok fileIndex="0" linenr="377" column="30" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="377" column="39" str=")"/>
+    <tok fileIndex="0" linenr="377" column="40" str=")"/>
+    <tok fileIndex="0" linenr="377" column="41" str=";"/>
+    <tok fileIndex="0" linenr="378" column="5" str="sendJson"/>
+    <tok fileIndex="0" linenr="378" column="13" str="("/>
+    <tok fileIndex="0" linenr="378" column="14" str="client"/>
+    <tok fileIndex="0" linenr="378" column="20" str=","/>
+    <tok fileIndex="0" linenr="378" column="22" str="200"/>
+    <tok fileIndex="0" linenr="378" column="25" str=","/>
+    <tok fileIndex="0" linenr="378" column="27" str="g_jsonBuf"/>
+    <tok fileIndex="0" linenr="378" column="36" str=","/>
+    <tok fileIndex="0" linenr="378" column="38" str="len"/>
+    <tok fileIndex="0" linenr="378" column="41" str=")"/>
+    <tok fileIndex="0" linenr="378" column="42" str=";"/>
+    <tok fileIndex="0" linenr="379" column="5" str="LOG_D"/>
+    <tok fileIndex="0" linenr="379" column="10" str="("/>
+    <tok fileIndex="0" linenr="379" column="11" str="TAG"/>
+    <tok fileIndex="0" linenr="379" column="14" str=","/>
+    <tok fileIndex="0" linenr="379" column="16" str="&quot;GET /api/storage/health 200&quot;"/>
+    <tok fileIndex="0" linenr="379" column="45" str=")"/>
+    <tok fileIndex="0" linenr="379" column="46" str=";"/>
+    <tok fileIndex="0" linenr="380" column="1" str="}"/>
+  </rawtokens>
+  <suppressions>
+    <suppression errorId="missingIncludeSystem" inline="false" />
+    <suppression errorId="unusedFunction" inline="false" />
+    <suppression errorId="*" fileName=".pio/*" inline="false" />
+  </suppressions>
