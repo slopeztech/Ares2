@@ -361,23 +361,23 @@ private:
     void appendLogReportLocked(uint32_t nowMs);
     void sendEventLocked(EventVerb verb, const char* text, uint32_t nowMs);
     bool ensureLogFileLocked(const char* fileName);
-    void applyHkExprToPayloadLocked(ExprKind expr,
-                                    const GpsReading& g,
-                                    GpsStatus gpsSt,
-                                    const BaroReading& b,
-                                    BaroStatus baroSt,
-                                    const ImuReading& imuR,
-                                    ImuStatus imuSt,
-                                    ares::proto::TelemetryPayload& tm);
-    bool formatExprValueLocked(ExprKind expr,
-                               const GpsReading& g,
-                               GpsStatus gpsSt,
-                               const BaroReading& b,
-                               BaroStatus baroSt,
-                               const ImuReading& imuR,
-                               ImuStatus imuSt,
-                               char* out,
-                               uint32_t outSize);
+    static void applyHkExprToPayloadLocked(ExprKind expr,
+                                           const GpsReading& g,
+                                           GpsStatus gpsSt,
+                                           const BaroReading& b,
+                                           BaroStatus baroSt,
+                                           const ImuReading& imuR,
+                                           ImuStatus imuSt,
+                                           ares::proto::TelemetryPayload& tm);
+    static bool formatExprValueLocked(ExprKind expr,
+                                      const GpsReading& g,
+                                      GpsStatus gpsSt,
+                                      const BaroReading& b,
+                                      BaroStatus baroSt,
+                                      const ImuReading& imuR,
+                                      ImuStatus imuSt,
+                                      char* out,
+                                      uint32_t outSize);
 
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
