@@ -181,7 +181,8 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
     // Write the CSV header row once per log file (on the first log write).
     if (!logHeaderWritten_)
     {
-        int hLen = snprintf(line, sizeof(line), "t_ms,state");
+        // MISRA-1: int required by snprintf() C-standard return type.
+        const int hLen = snprintf(line, sizeof(line), "t_ms,state");
         if (hLen > 0)
         {
             uint32_t hPos = static_cast<uint32_t>(hLen);
@@ -206,8 +207,9 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
     }
 
     // Data row: t_ms,state,val1,val2,...
-    int headLen = snprintf(line, sizeof(line),
-                           "%" PRIu32 ",%s", nowMs, st.name);
+    // MISRA-1: int required by snprintf() C-standard return type.
+    const int headLen = snprintf(line, sizeof(line),
+                                 "%" PRIu32 ",%s", nowMs, st.name);
     if (headLen <= 0) { return; }
 
     uint32_t pos = static_cast<uint32_t>(headLen);

@@ -66,17 +66,18 @@ class ApiServer
 public:
     /**
      * Construct the API server.
-     * @param[in] wifi     Reference to the WiFi AP service.
-     * @param[in] baro     Reference to the barometer interface.
-     * @param[in] gps      Reference to the GPS interface.
-     * @param[in] storage  Pointer to storage interface (nullable).
-    * @param[in] mission  Pointer to AMS runtime (nullable).
+     * @param[in] wifi       Reference to the WiFi AP service.
+     * @param[in] baro       Reference to the barometer interface.
+     * @param[in] gps        Reference to the GPS interface.
+     * @param[in] storage    Pointer to storage interface (nullable).
+     * @param[in] mission    Pointer to AMS runtime (nullable).
+     * @param[in] statusLed  Pointer to status LED service (nullable).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
               GpsInterface& gps,
-            StorageInterface* storage = nullptr,
-            ares::ams::MissionScriptEngine* mission = nullptr,
-            StatusLed* statusLed = nullptr);
+              StorageInterface* storage = nullptr,
+              ares::ams::MissionScriptEngine* mission = nullptr,
+              StatusLed* statusLed = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;

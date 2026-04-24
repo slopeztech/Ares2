@@ -70,7 +70,7 @@ public:
 
     /**
      * Return the driver model identifier (e.g. "BMP280", "BMP390").
-    * Used by the AMS engine to validate 'include <MODEL> as BARO'.
+     * Used by the AMS engine to validate 'include <MODEL> as BARO'.
      */
     virtual const char* driverModel() const = 0;
 };

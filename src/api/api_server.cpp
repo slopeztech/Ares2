@@ -55,11 +55,11 @@ static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
 
 ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
                      GpsInterface& gps,
-                                         StorageInterface* storage,
-                                         ares::ams::MissionScriptEngine* mission,
-                                         StatusLed* statusLed)
-        : wifi_(wifi), baro_(baro), gps_(gps),
-            storage_(storage), mission_(mission), statusLed_(statusLed)
+                     StorageInterface* storage,
+                     ares::ams::MissionScriptEngine* mission,
+                     StatusLed* statusLed)
+    : wifi_(wifi), baro_(baro), gps_(gps),
+      storage_(storage), mission_(mission), statusLed_(statusLed)
 {
 }
 
