@@ -469,7 +469,41 @@ StorageStatus LittleFsStorage::appendFile(const char* path,
                                            const uint8_t* data,
                                            uint32_t len)
 {
-    return writeInternal(path, data, len, "a");
+    if (!validatePath(path))        { return StorageStatus::PATH_ERROR; }
+    if (data == nullptr && len > 0) { return StorageStatus::ERROR; }
+    if (len == 0)                   { return StorageStatus::OK; }
+    if (len > MAX_FILE_SIZE)        { return StorageStatus::NO_SPACE; }
+
+    ScopedLock guard(mutex_, MUTEX_TIMEOUT);
+    if (!guard.acquired()) { LOG_W(TAG, "mutex timeout"); return StorageStatus::BUSY; }
+    if (!mounted_)         { return StorageStatus::NOT_READY; }
+
+    if (!ensureParentDirectories(path))
+    {
+        LOG_W(TAG, "mkdir parent failed: %s", path);
+        return StorageStatus::ERROR;
+    }
+
+    // Direct append — no transactional copy needed for sequential log writes.
+    // create=true: VFS creates the file if it does not exist yet.
+    File f = LittleFS.open(path, "a", /*create=*/true);
+    if (!f)
+    {
+        LOG_W(TAG, "open(a) failed: %s", path);
+        return StorageStatus::ERROR;
+    }
+
+    const uint32_t written = static_cast<uint32_t>(f.write(data, len));
+    f.flush();
+    f.close();
+
+    if (written != len)
+    {
+        LOG_W(TAG, "short append: want=%u got=%u path=%s", len, written, path);
+        return StorageStatus::ERROR;
+    }
+
+    return StorageStatus::OK;
 }
 
 StorageStatus LittleFsStorage::writeInternal(const char* path,

@@ -385,12 +385,12 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
         else if (best == 1)
         {
             sendHkReportLocked(nowMs);
-            lastHkMs_ = nowMs;
+            lastHkMs_ += state.hkEveryMs;
         }
         else
         {
             appendLogReportLocked(nowMs);
-            lastLogMs_ = nowMs;
+            lastLogMs_ += state.logEveryMs;
         }
 
         due[static_cast<uint8_t>(best)] = false;
