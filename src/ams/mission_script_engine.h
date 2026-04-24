@@ -42,9 +42,10 @@ enum class EngineStatus : uint8_t
     RUNNING  = 1,   ///< Script is executing and advancing states.
     ERROR    = 2,   ///< Parser or runtime error; check lastError.
     COMPLETE = 3,   ///< Terminal state reached; mission finished normally.
+    LOADED   = 4,   ///< Script parsed and ready; waiting for arm to start execution.
 
     FIRST = IDLE,     // CERT-6.1 — range validation sentinels
-    LAST  = COMPLETE,
+    LAST  = LOADED,
 };
 
 /**

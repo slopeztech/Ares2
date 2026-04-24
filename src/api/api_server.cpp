@@ -108,6 +108,12 @@ ares::OperatingMode ApiServer::getMode() const
     return decodeOperatingMode(mode_.load());
 }
 
+void ApiServer::notifyMissionComplete()
+{
+    armed_.store(false);
+    setMode(ares::OperatingMode::IDLE);
+}
+
 const RuntimeConfig& ApiServer::config() const
 {
     return config_;

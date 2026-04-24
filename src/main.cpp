@@ -130,6 +130,19 @@ void loop()
     // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(now);
 
+    // Auto-return to IDLE when the AMS mission finishes or faults.
+    // Only act once per transition: check that we are currently in FLIGHT.
+    if (apiServer.getMode() == ares::OperatingMode::FLIGHT)
+    {
+        ares::ams::EngineSnapshot snap = {};
+        missionEngine.getSnapshot(snap);
+        if (snap.status == ares::ams::EngineStatus::COMPLETE
+            || snap.status == ares::ams::EngineStatus::ERROR)
+        {
+            apiServer.notifyMissionComplete();
+        }
+    }
+
     // Yield via RTOS delay (avoid Arduino delay() in RTOS task context).
     vTaskDelay(pdMS_TO_TICKS(ares::SENSOR_RATE_MS));
 }

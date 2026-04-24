@@ -112,9 +112,9 @@ bool MissionScriptEngine::activate(const char* fileName)
 
     // Note: ensureLogFileLocked is already called inside loadFromStorageLocked.
 
-    status_ = EngineStatus::RUNNING;
+    status_ = EngineStatus::LOADED;  // armed via POST /api/arm, not yet executing
     running_ = true;
-    executionEnabled_ = true;
+    executionEnabled_ = false;
     pendingTc_ = TcCommand::NONE;
     pendingOnEnterEvent_ = false;
     pendingEventText_[0] = '\0';
@@ -192,6 +192,15 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
     }
 
     executionEnabled_ = enabled;
+    // Transition status with execution enable/disable.
+    if (enabled && status_ == EngineStatus::LOADED)
+    {
+        status_ = EngineStatus::RUNNING;
+    }
+    else if (!enabled && status_ == EngineStatus::RUNNING)
+    {
+        status_ = EngineStatus::LOADED;
+    }
     LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
 }
 

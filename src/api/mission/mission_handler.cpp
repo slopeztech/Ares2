@@ -69,6 +69,7 @@ static const char* toStatusText(ares::ams::EngineStatus st)
     switch (st)
     {
     case ares::ams::EngineStatus::IDLE:     return "idle";
+    case ares::ams::EngineStatus::LOADED:   return "loaded";
     case ares::ams::EngineStatus::RUNNING:  return "running";
     case ares::ams::EngineStatus::COMPLETE: return "complete";
     case ares::ams::EngineStatus::ERROR:    return "error";
@@ -331,9 +332,10 @@ void ApiServer::handleMissionActivate(WiFiClient& client,
         return;
     }
 
-    setMode(ares::OperatingMode::FLIGHT);  // blue LED while AMS is running
+    // Script is loaded and paused (LOADED state). Execution starts on POST /api/arm.
+    // Do NOT set FLIGHT mode here — that happens on arm.
     handleMissionStatus(client);
-    LOG_I(TAG, "POST /api/mission/activate 200: %s", file);
+    LOG_I(TAG, "POST /api/mission/activate 200: %s (awaiting arm)", file);
 }
 
 void ApiServer::handleMissionDeactivate(WiFiClient& client)

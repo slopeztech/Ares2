@@ -103,8 +103,15 @@ public:
     ares::OperatingMode getMode() const;
 
     /**
+     * Called by the main loop when the AMS mission reaches COMPLETE or ERROR.
+     * Resets armed flag and transitions operating mode back to IDLE.
+     * Safe to call from any task (lock-free).
+     */
+    void notifyMissionComplete();
+
+    /**
      * @return Read-only reference to current config.
-     * @warning Not thread-safe — use getConfigCopy() from other tasks.
+     * @warning Not thread-safe -- use getConfigCopy() from other tasks.
      */
     const RuntimeConfig& config() const;
 

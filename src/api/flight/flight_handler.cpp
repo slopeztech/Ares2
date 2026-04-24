@@ -103,15 +103,8 @@ void ApiServer::handleMode(WiFiClient& client,
 
 void ApiServer::handleArm(WiFiClient& client)
 {
-    const auto mode = getMode();
-    const uint8_t rawMode = static_cast<uint8_t>(mode);
+    const uint8_t rawMode = static_cast<uint8_t>(getMode());
     ARES_ASSERT(rawMode <= static_cast<uint8_t>(ares::OperatingMode::LAST));
-    if (mode != ares::OperatingMode::FLIGHT)
-    {
-        sendError(client, 409, "arm requires flight mode");
-        LOG_W(TAG, "POST /api/arm 409: not in flight");
-        return;
-    }
 
     if (armed_.load())
     {
@@ -130,18 +123,17 @@ void ApiServer::handleArm(WiFiClient& client)
 
     ares::ams::EngineSnapshot before = {};
     mission_->getSnapshot(before);
-    if (before.status != ares::ams::EngineStatus::RUNNING)
+    if (before.status != ares::ams::EngineStatus::LOADED)
     {
-        mission_->setExecutionEnabled(false);
         setMode(ares::OperatingMode::ERROR);
-        sendError(client, 409, "cannot arm: AMS not running");
+        sendError(client, 409, "cannot arm: no mission loaded (activate first)");
         LOG_E(TAG,
-              "POST /api/arm 409: AMS status=%u state=%s -> mode=ERROR",
+              "POST /api/arm 409: AMS status=%u state=%s (expected LOADED) -> mode=ERROR",
               static_cast<uint32_t>(before.status), before.stateName);
         return;
     }
 
-    // Auto-inject LAUNCH only when AMS is already active and healthy.
+    // Enable execution: status transitions LOADED -> RUNNING inside setExecutionEnabled.
     mission_->setExecutionEnabled(true);
     const bool injected = mission_->injectTcCommand("LAUNCH");
     if (!injected)
@@ -167,6 +159,7 @@ void ApiServer::handleArm(WiFiClient& client)
     }
 
     armed_.store(true);
+    setMode(ares::OperatingMode::FLIGHT);  // blue LED: AMS is now executing
     LOG_I(TAG, "POST /api/arm: LAUNCH injected into AMS");
 
     handleStatus(client);
