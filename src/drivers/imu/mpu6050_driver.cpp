@@ -19,7 +19,10 @@ namespace mpu6050
     constexpr uint8_t REG_PWR_MGMT_1   = 0x6B;  ///< Power management 1.
     constexpr uint8_t REG_WHO_AM_I     = 0x75;  ///< Device ID register.
 
-    constexpr uint8_t WHO_AM_I_ID      = 0x68;  ///< Expected WHO_AM_I value.
+    constexpr uint8_t WHO_AM_I_ID      = 0x68;  ///< Expected WHO_AM_I value (MPU-6050).
+    constexpr uint8_t WHO_AM_I_ID_ALT  = 0x70;  ///< Common compatible ID seen in MPU-6500-class modules.
+    constexpr uint8_t ADDR_LOW         = 0x68;  ///< AD0 = LOW.
+    constexpr uint8_t ADDR_HIGH        = 0x69;  ///< AD0 = HIGH.
     constexpr uint8_t PWR_WAKE         = 0x00;  ///< Clear sleep bit → normal mode.
 
     // GYRO_CONFIG bits [4:3]: FS_SEL = 00 → ±250 deg/s (datasheet §4.4)
@@ -55,48 +58,67 @@ bool Mpu6050Driver::begin()
 {
     ready_ = false;
 
-    // Wake the device (clears SLEEP bit in PWR_MGMT_1).
-    if (!writeReg(mpu6050::REG_PWR_MGMT_1, mpu6050::PWR_WAKE))
+    auto tryInitAtAddress = [&](uint8_t addr) -> bool
     {
-        return false;
-    }
-    delay(ares::MPU6050_WAKE_DELAY_MS);  // wait for clocks to settle (init-only)
+        addr_ = addr;
 
-    // Verify identity.
-    uint8_t id = 0;
-    uint8_t idBuf[1] = {};
-    if (!readRegs(mpu6050::REG_WHO_AM_I, idBuf, 1U))
-    {
-        return false;
-    }
-    id = idBuf[0];
-    if (id != mpu6050::WHO_AM_I_ID)
-    {
-        return false;
-    }
+        // Wake the device (clears SLEEP bit in PWR_MGMT_1).
+        if (!writeReg(mpu6050::REG_PWR_MGMT_1, mpu6050::PWR_WAKE))
+        {
+            return false;
+        }
+        delay(ares::MPU6050_WAKE_DELAY_MS);  // wait for clocks to settle (init-only)
 
-    // Configure sample rate: 100 Hz.
-    if (!writeReg(mpu6050::REG_SMPLRT_DIV, mpu6050::SAMPLE_RATE_100HZ))
-    {
-        return false;
-    }
+        // Verify identity.
+        uint8_t idBuf[1] = {};
+        if (!readRegs(mpu6050::REG_WHO_AM_I, idBuf, 1U))
+        {
+            return false;
+        }
 
-    // Digital low-pass filter: ~94 Hz accel / ~98 Hz gyro bandwidth.
-    if (!writeReg(mpu6050::REG_CONFIG, mpu6050::DLPF_BW_94HZ))
-    {
-        return false;
-    }
+        const uint8_t id = idBuf[0];
+        if (id != mpu6050::WHO_AM_I_ID && id != mpu6050::WHO_AM_I_ID_ALT)
+        {
+            return false;
+        }
 
-    // Gyro full-scale: ±250 deg/s.
-    if (!writeReg(mpu6050::REG_GYRO_CONFIG, mpu6050::GYRO_FS_250DPS))
-    {
-        return false;
-    }
+        // Configure sample rate: 100 Hz.
+        if (!writeReg(mpu6050::REG_SMPLRT_DIV, mpu6050::SAMPLE_RATE_100HZ))
+        {
+            return false;
+        }
 
-    // Accel full-scale: ±2 g.
-    if (!writeReg(mpu6050::REG_ACCEL_CONFIG, mpu6050::ACCEL_FS_2G))
+        // Digital low-pass filter: ~94 Hz accel / ~98 Hz gyro bandwidth.
+        if (!writeReg(mpu6050::REG_CONFIG, mpu6050::DLPF_BW_94HZ))
+        {
+            return false;
+        }
+
+        // Gyro full-scale: ±250 deg/s.
+        if (!writeReg(mpu6050::REG_GYRO_CONFIG, mpu6050::GYRO_FS_250DPS))
+        {
+            return false;
+        }
+
+        // Accel full-scale: ±2 g.
+        if (!writeReg(mpu6050::REG_ACCEL_CONFIG, mpu6050::ACCEL_FS_2G))
+        {
+            return false;
+        }
+
+        return true;
+    };
+
+    // Try configured/default address first, then fallback to the alternate AD0 address.
+    if (!tryInitAtAddress(addr_))
     {
-        return false;
+        const uint8_t altAddr = (addr_ == mpu6050::ADDR_LOW)
+                              ? mpu6050::ADDR_HIGH
+                              : mpu6050::ADDR_LOW;
+        if (!tryInitAtAddress(altAddr))
+        {
+            return false;
+        }
     }
 
     ready_ = true;
