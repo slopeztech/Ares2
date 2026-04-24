@@ -33,27 +33,30 @@ AMS_MAX_LINE_LEN        = 128
 MISSION_FILENAME_MAX    = 32
 TELEMETRY_INTERVAL_MIN  = 100  # ms
 
-# ── Valid sensor expressions (parseExprKind) ─────────────────────────────────
-VALID_EXPRS = {
-    "GPS.lat", "GPS.lon", "GPS.alt",
-    "BARO.alt", "BARO.temp", "BARO.pressure",
+TC_COMMANDS = {"LAUNCH", "ABORT", "RESET"}
+
+# ── Driver registry: MODEL -> peripheral kind ────────────────────────────────
+# Maps each known model name to its peripheral kind string.
+# Unknown models produce a warning (custom drivers may be valid).
+DRIVER_REGISTRY: dict[str, str] = {
+    "BN220":    "GPS",
+    "BN880":    "GPS",
+    "BMP280":   "BARO",
+    "BMP390":   "BARO",
+    "LORA":     "COM",
+    "DXLR03":   "COM",
+    "MPU6050":  "IMU",
+    "ICM42688": "IMU",
 }
 
-# ── Valid transition conditions (kConds + TC.command) ───────────────────────
-SENSOR_CONDITIONS = {
-    ("BARO.alt",      "<"),
-    ("BARO.alt",      ">"),
-    ("BARO.temp",     "<"),
-    ("BARO.temp",     ">"),
-    ("BARO.pressure", "<"),
-    ("BARO.pressure", ">"),
-    ("GPS.alt",       "<"),
-    ("GPS.alt",       ">"),
-    ("GPS.speed",     ">"),
-    ("GPS.speed",     "<"),
-    ("TIME.elapsed",  ">"),
+# ── Valid sensor fields per peripheral kind ──────────────────────────────────
+SENSOR_FIELDS: dict[str, set[str]] = {
+    "GPS":  {"lat", "lon", "alt", "speed"},
+    "BARO": {"alt", "temp", "pressure"},
+    "COM":  set(),
+    "IMU":  {"accel_x", "accel_y", "accel_z", "accel_mag",
+             "gyro_x", "gyro_y", "gyro_z", "temp"},
 }
-TC_COMMANDS = {"LAUNCH", "ABORT", "RESET"}
 
 # ── APID → node mapping (mapApidToNode) ──────────────────────────────────────
 VALID_APIDS = {0, 1, 2, 3}
@@ -115,6 +118,7 @@ class AmsParser:
         self._current: Optional[StateSummary] = None
         self._block: Optional[str] = None   # "HK" | "LOG" | None
         self._apid: Optional[int] = None
+        self._aliases: dict[str, str] = {}  # alias -> peripheral kind
 
     # ── Public entry point ───────────────────────────────────────────────────
 
@@ -172,8 +176,13 @@ class AmsParser:
             self._block = None
             return
 
+        # include <MODEL> as <KIND>
+        if line.startswith("include "):
+            self._parse_include(line, ln)
+            return
+
         # Ignored directives
-        if line.startswith("include ") or line.startswith("pus.service "):
+        if line.startswith("pus.service "):
             return
 
         # pus.apid
@@ -195,6 +204,36 @@ class AmsParser:
         self._parse_state_scoped(line, ln)
 
     # ── Top-level parsers ─────────────────────────────────────────────────────
+
+    def _parse_include(self, line: str, ln: int) -> None:
+        m = re.match(r"include\s+(\S+)\s+as\s+(\S+)", line)
+        if not m:
+            self._error(ln, "invalid include syntax (expected: include MODEL as ALIAS)")
+            return
+        model = m.group(1)
+        alias = m.group(2)
+
+        if alias in self._aliases:
+            self._error(ln, f"duplicate alias '{alias}' — each alias must be unique")
+            return
+
+        if len(self._aliases) >= 8:  # AMS_MAX_INCLUDES = 8
+            self._error(ln, "too many includes (max 8 per script)")
+            return
+
+        kind = DRIVER_REGISTRY.get(model)
+        if kind is None:
+            known = sorted(DRIVER_REGISTRY.keys())
+            self._warn(
+                ln,
+                f"unrecognised model '{model}' — make sure the driver is compiled "
+                f"into the firmware (known: {known})",
+            )
+            # Still register with a placeholder so downstream validation
+            # doesn't cascade errors on every field/transition referencing it.
+            kind = "UNKNOWN"
+
+        self._aliases[alias] = kind
 
     def _parse_apid(self, line: str, ln: int) -> None:
         m = re.search(r"=\s*(\S+)", line)
@@ -396,20 +435,14 @@ class AmsParser:
         if line == "{":
             return
 
-        # key: EXPR
+        # key: ALIAS.field
         m = re.match(r"^([^:]{1,19}):\s+(\S+)$", line)
         if not m:
-            self._error(ln, f"invalid {ctx} field syntax (expected 'key: EXPR')")
+            self._error(ln, f"invalid {ctx} field syntax (expected 'label: ALIAS.field')")
             return
 
         expr = m.group(2)
-        if expr not in VALID_EXPRS:
-            self._error(
-                ln,
-                f"unsupported {ctx} expression '{expr}' "
-                f"(valid: {sorted(VALID_EXPRS)})",
-            )
-            return
+        self._validate_sensor_expr(expr, ln, ctx)
 
         assert self._current is not None
         if ctx == "HK":
@@ -456,22 +489,49 @@ class AmsParser:
                 )
             return
 
-        # Sensor / time conditions
-        if (lhs, op) not in SENSOR_CONDITIONS:
-            candidates = [f"{l} {o}" for l, o in SENSOR_CONDITIONS if l == lhs]
-            if candidates:
-                self._error(
-                    ln,
-                    f"unsupported operator '{op}' for '{lhs}' "
-                    f"(valid: {candidates})",
-                )
-            else:
-                self._error(
-                    ln,
-                    f"unsupported transition condition '{lhs}' "
-                    f"(valid lhs: "
-                    f"{sorted({l for l, _ in SENSOR_CONDITIONS} | {'TC.command'})})",
-                )
+        # TIME.elapsed > VALUE  (no include needed)
+        if lhs == "TIME.elapsed":
+            if op != ">":
+                self._error(ln, f"TIME.elapsed only supports '>' operator, got '{op}'")
+                return
+            try:
+                val = float(rhs)
+            except ValueError:
+                self._error(ln, f"invalid TIME.elapsed threshold '{rhs}': not a number")
+                return
+            if not math.isfinite(val):
+                self._error(ln, f"invalid TIME.elapsed threshold '{rhs}': must be finite")
+            return
+
+        # ALIAS.field < VALUE  or  ALIAS.field > VALUE
+        dot = lhs.find(".")
+        if dot <= 0:
+            self._error(
+                ln,
+                f"invalid condition LHS '{lhs}' (expected ALIAS.field, "
+                "TC.command, or TIME.elapsed)",
+            )
+            return
+
+        alias = lhs[:dot]
+        field = lhs[dot + 1:]
+
+        if alias not in self._aliases:
+            self._error(ln, f"unknown alias '{alias}' in transition condition — add 'include MODEL as {alias}'")
+            return
+
+        kind = self._aliases[alias]
+        valid_fields = SENSOR_FIELDS.get(kind, set())
+        if field not in valid_fields:
+            self._error(
+                ln,
+                f"field '{field}' not valid for alias '{alias}' (kind={kind}, "
+                f"valid: {sorted(valid_fields)})",
+            )
+            return
+
+        if op not in ("<", ">"):
+            self._error(ln, f"sensor condition only supports '<' or '>' operators, got '{op}'")
             return
 
         # Numeric threshold
@@ -515,6 +575,38 @@ class AmsParser:
             self._warn(0, "pus.apid not set — firmware will use default APID 1 (NODE_ROCKET)")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _validate_sensor_expr(self, expr: str, ln: int, ctx: str) -> None:
+        """Validate an ALIAS.field expression against registered aliases."""
+        dot = expr.find(".")
+        if dot <= 0:
+            self._error(
+                ln,
+                f"invalid {ctx} expression '{expr}' (expected ALIAS.field)",
+            )
+            return
+
+        alias = expr[:dot]
+        field = expr[dot + 1:]
+
+        if alias not in self._aliases:
+            self._error(
+                ln,
+                f"unknown alias '{alias}' in {ctx} field \u2014 add 'include MODEL as {alias}'",
+            )
+            return
+
+        kind = self._aliases[alias]
+        if kind == "UNKNOWN":
+            return  # warning already issued at include time
+
+        valid_fields = SENSOR_FIELDS.get(kind, set())
+        if field not in valid_fields:
+            self._error(
+                ln,
+                f"field '{field}' not valid for alias '{alias}' (kind={kind}, "
+                f"valid: {sorted(valid_fields)})",
+            )
 
     def _error(self, ln: int, msg: str) -> None:
         self._result.diagnostics.append(Diagnostic(ln, msg, is_error=True))

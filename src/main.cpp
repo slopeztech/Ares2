@@ -62,9 +62,20 @@ static StorageInterface&   storageIf = storage;
 static RadioInterface&     radioIf   = radio;
 static ImuInterface&       imuIf     = imu;
 
+// Driver registries — enumerate every physical peripheral available to AMS scripts.
+// Scripts select which driver to use via: include MODEL as ALIAS
+static const ares::ams::GpsEntry  kGpsDrivers[]  = { { "BN220",   &gpsIf   } };
+static const ares::ams::BaroEntry kBaroDrivers[]  = { { "BMP280",  &baroIf  } };
+static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03",  &radioIf } };
+static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", &imuIf   } };
+
 // REST API server — receives references to interfaces.
-static ares::ams::MissionScriptEngine missionEngine(storageIf, gpsIf, baroIf,
-                                                    radioIf, &imuIf);
+static ares::ams::MissionScriptEngine missionEngine(
+    storageIf,
+    kGpsDrivers,  static_cast<uint8_t>(1),
+    kBaroDrivers, static_cast<uint8_t>(1),
+    kComDrivers,  static_cast<uint8_t>(1),
+    kImuDrivers,  static_cast<uint8_t>(1));
 static ApiServer apiServer(wifiAp, baroIf, gpsIf, &storageIf, &missionEngine,
                            &statusLed);
 

@@ -107,6 +107,7 @@ constexpr uint8_t     AMS_MAX_HK_FIELDS    = 16;           ///< Max HK fields in
 constexpr uint8_t     AMS_MAX_CONDITIONS   = 4;            ///< Max guard conditions per state.
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.
+constexpr uint8_t     AMS_MAX_INCLUDES     = 8U;           ///< Max 'include' alias registrations per script.
 constexpr uint16_t    AMS_DEFAULT_APID     = 0x01U;        ///< Default APID for mission runtime (APUS-10: rocket = 0x01).
 constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 50;           ///< Mutex timeout for API/runtime sync.
 

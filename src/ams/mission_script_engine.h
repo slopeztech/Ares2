@@ -19,6 +19,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include "ams/ams_driver_registry.h"
 #include "comms/ares_radio_protocol.h"
 #include "config.h"
 #include "hal/baro/barometer_interface.h"
@@ -37,12 +38,13 @@ namespace ams
  */
 enum class EngineStatus : uint8_t
 {
-    IDLE    = 0,   ///< No script loaded; engine is inactive.
-    RUNNING = 1,   ///< Script is executing and advancing states.
-    ERROR   = 2,   ///< Parser or runtime error; check lastError.
+    IDLE     = 0,   ///< No script loaded; engine is inactive.
+    RUNNING  = 1,   ///< Script is executing and advancing states.
+    ERROR    = 2,   ///< Parser or runtime error; check lastError.
+    COMPLETE = 3,   ///< Terminal state reached; mission finished normally.
 
-    FIRST = IDLE,  // CERT-6.1 — range validation sentinels
-    LAST  = ERROR,
+    FIRST = IDLE,     // CERT-6.1 — range validation sentinels
+    LAST  = COMPLETE,
 };
 
 /**
@@ -91,17 +93,22 @@ class MissionScriptEngine
 public:
     /**
      * Construct the mission script engine.
-     * @param[in] storage  Storage interface for reading .ams files.
-     * @param[in] gps      GPS interface used in transition conditions.
-     * @param[in] baro     Barometer interface used in transition conditions.
-     * @param[in] radio    Radio interface for transmitting APUS frames.
-     * @param[in] imu      IMU interface used in transition conditions (optional, may be nullptr).
+     *
+     * @param[in] storage     Storage interface for reading .ams files.
+     * @param[in] gpsDrivers  Array of compiled-in GPS drivers.
+     * @param[in] gpsCount    Number of entries in @p gpsDrivers.
+     * @param[in] baroDrivers Array of compiled-in barometer drivers.
+     * @param[in] baroCount   Number of entries in @p baroDrivers.
+     * @param[in] comDrivers  Array of compiled-in COM/radio drivers.
+     * @param[in] comCount    Number of entries in @p comDrivers.
+     * @param[in] imuDrivers  Array of compiled-in IMU drivers.
+     * @param[in] imuCount    Number of entries in @p imuDrivers.
      */
-    MissionScriptEngine(StorageInterface& storage,
-                        GpsInterface& gps,
-                        BarometerInterface& baro,
-                        RadioInterface& radio,
-                        ImuInterface* imu = nullptr);
+    MissionScriptEngine(StorageInterface&  storage,
+                        const GpsEntry*    gpsDrivers,  uint8_t gpsCount,
+                        const BaroEntry*   baroDrivers, uint8_t baroCount,
+                        const ComEntry*    comDrivers,  uint8_t comCount,
+                        const ImuEntry*    imuDrivers,  uint8_t imuCount);
 
     MissionScriptEngine(const MissionScriptEngine&)            = delete;
     MissionScriptEngine& operator=(const MissionScriptEngine&) = delete;
@@ -179,51 +186,52 @@ private:
         ON_ERROR   = 4,  ///< Inside an on_error: block.
     };
 
-    enum class ConditionType : uint8_t
+    // ── Peripheral kind ──────────────────────────────────────────────────────
+    enum class PeripheralKind : uint8_t
     {
-        NONE             = 0,
-        TC_COMMAND_EQ    = 1,
-        // Barometer conditions
-        BARO_ALT_LT      = 2,   ///< BARO.alt < threshold
-        BARO_ALT_GT      = 3,   ///< BARO.alt > threshold
-        BARO_TEMP_LT     = 4,   ///< BARO.temp < threshold
-        BARO_TEMP_GT     = 5,   ///< BARO.temp > threshold
-        BARO_PRESS_LT    = 6,   ///< BARO.pressure < threshold
-        BARO_PRESS_GT    = 7,   ///< BARO.pressure > threshold
-        // GPS conditions
-        GPS_ALT_LT       = 8,   ///< GPS.alt < threshold
-        GPS_ALT_GT       = 9,   ///< GPS.alt > threshold
-        GPS_SPEED_GT     = 10,  ///< GPS.speed > threshold (km/h)
-        GPS_SPEED_LT     = 11,  ///< GPS.speed < threshold (km/h)
-        // Time condition — sensor-free (APUS-13.4)
-        TIME_ELAPSED_GT  = 12,  ///< TIME.elapsed > threshold (ms since state entry)
-        // IMU conditions (accelerometer)
-        IMU_ACCEL_X_LT   = 13,  ///< IMU.accel_x < threshold (m/s²)
-        IMU_ACCEL_X_GT   = 14,  ///< IMU.accel_x > threshold (m/s²)
-        IMU_ACCEL_Y_LT   = 15,  ///< IMU.accel_y < threshold (m/s²)
-        IMU_ACCEL_Y_GT   = 16,  ///< IMU.accel_y > threshold (m/s²)
-        IMU_ACCEL_Z_LT   = 17,  ///< IMU.accel_z < threshold (m/s²)
-        IMU_ACCEL_Z_GT   = 18,  ///< IMU.accel_z > threshold (m/s²)
-        IMU_ACCEL_MAG_GT = 19,  ///< IMU.accel_mag > threshold (m/s²) — launch detect
-        IMU_ACCEL_MAG_LT = 20,  ///< IMU.accel_mag < threshold (m/s²)
+        GPS  = 0,
+        BARO = 1,
+        COM  = 2,
+        IMU  = 3,
     };
 
-    enum class ExprKind : uint8_t
+    // ── Sensor field within a peripheral ─────────────────────────────────────
+    enum class SensorField : uint8_t
     {
-        GPS_LAT       = 0,
-        GPS_LON       = 1,
-        GPS_ALT       = 2,
-        BARO_ALT      = 3,
-        BARO_TEMP     = 4,
-        BARO_PRESS    = 5,
-        IMU_ACCEL_X   = 6,   ///< IMU.accel_x  (m/s²)
-        IMU_ACCEL_Y   = 7,   ///< IMU.accel_y  (m/s²)
-        IMU_ACCEL_Z   = 8,   ///< IMU.accel_z  (m/s²)
-        IMU_ACCEL_MAG = 9,   ///< IMU.accel_mag = ||a|| (m/s²)
-        IMU_GYRO_X    = 10,  ///< IMU.gyro_x   (deg/s)
-        IMU_GYRO_Y    = 11,  ///< IMU.gyro_y   (deg/s)
-        IMU_GYRO_Z    = 12,  ///< IMU.gyro_z   (deg/s)
-        IMU_TEMP      = 13,  ///< IMU.temp     (°C)
+        LAT       = 0,  ///< GPS: latitude  (deg)
+        LON       = 1,  ///< GPS: longitude (deg)
+        ALT       = 2,  ///< GPS/BARO: altitude (m)
+        SPEED     = 3,  ///< GPS: speed (km/h)
+        TEMP      = 4,  ///< BARO/IMU: temperature (°C)
+        PRESSURE  = 5,  ///< BARO: pressure (Pa)
+        ACCEL_X   = 6,  ///< IMU: accel X (m/s²)
+        ACCEL_Y   = 7,  ///< IMU: accel Y (m/s²)
+        ACCEL_Z   = 8,  ///< IMU: accel Z (m/s²)
+        ACCEL_MAG = 9,  ///< IMU: ||accel|| (m/s²)
+        GYRO_X    = 10, ///< IMU: gyro X (deg/s)
+        GYRO_Y    = 11, ///< IMU: gyro Y (deg/s)
+        GYRO_Z    = 12, ///< IMU: gyro Z (deg/s)
+        IMU_TEMP  = 13, ///< IMU: die temperature (°C)
+    };
+
+    // ── Unified condition kind ─────────────────────────────────────────────
+    enum class CondKind : uint8_t
+    {
+        NONE      = 0,
+        SENSOR_LT = 1,  ///< alias.field < threshold
+        SENSOR_GT = 2,  ///< alias.field > threshold
+        TC_EQ     = 3,  ///< TC.command == value
+        TIME_GT   = 4,  ///< TIME.elapsed > threshold (ms since state entry)
+    };
+
+    // ── Unified condition expression ───────────────────────────────────────
+    struct CondExpr
+    {
+        CondKind    kind      = CondKind::NONE;
+        char        alias[16] = {};              ///< Peripheral alias (e.g. "GPS", "GPS1").
+        SensorField field     = SensorField::ALT;
+        float       threshold = 0.0f;
+        TcCommand   tcValue   = TcCommand::NONE;
     };
 
     enum class EventVerb : uint8_t
@@ -233,29 +241,44 @@ private:
         ERROR = 2,
     };
 
+    /**
+     * One HK/LOG field: maps a user label to a peripheral alias + sensor field.
+     * The label is used as the CSV column name in log reports.
+     */
     struct HkField
     {
-        ExprKind expr = ExprKind::GPS_ALT;
+        char        label[20] = {};              ///< User-provided key (CSV column name).
+        char        alias[16] = {};              ///< Peripheral alias (e.g. "GPS", "GPS1").
+        SensorField field     = SensorField::ALT;
     };
 
     /**
-     * A single guard condition expression (evaluated every tick).
+     * A single guard condition (evaluated every tick).
      * TC.command is intentionally excluded — use transitions for TC gates.
      */
     struct Condition
     {
-        ConditionType type      = ConditionType::NONE;
-        float         threshold = 0.0f;
+        CondExpr expr = {};
     };
 
     struct Transition
     {
-        ConditionType type = ConditionType::NONE;
-        TcCommand tcValue = TcCommand::NONE;
-        float threshold = 0.0f;
-        char targetName[ares::AMS_MAX_STATE_NAME] = {};
-        uint8_t targetIndex = 0;
-        bool targetResolved = false;
+        CondExpr cond         = {};
+        char     targetName[16] = {};
+        uint8_t  targetIndex  = 0;
+        bool     targetResolved = false;
+    };
+
+    /**
+     * One entry in the per-script alias table.
+     * Created by 'include <MODEL> as <ALIAS>'.
+     */
+    struct AliasEntry
+    {
+        char           alias[16]   = {};    ///< e.g. "GPS", "GPS1", "BARO"
+        char           model[16]   = {};    ///< e.g. "BN220", "BMP280"
+        PeripheralKind kind        = PeripheralKind::GPS;
+        uint8_t        driverIdx   = 0xFFU; ///< Index in registry; 0xFF = not resolved
     };
 
     struct StateDef
@@ -276,10 +299,10 @@ private:
         uint8_t logFieldCount = 0;
         HkField logFields[ares::AMS_MAX_HK_FIELDS] = {};
 
-        uint8_t hkPriority = 2;   // Higher value = higher priority.
-        uint8_t logPriority = 1;  // Keep local log below PUS HK by default.
-        uint8_t eventPriority = 4; // PUS event reporting has highest default priority.
-        uint8_t actionBudget = 2;  // Max actions per tick (EVENT/HK/LOG arbitration).
+        uint8_t hkPriority    = 2;  ///< Higher value = higher priority.
+        uint8_t logPriority   = 1;  ///< Keep local log below PUS HK by default.
+        uint8_t eventPriority = 4;  ///< PUS event reporting has highest default priority.
+        uint8_t actionBudget  = 2;  ///< Max actions per tick (EVENT/HK/LOG arbitration).
 
         bool hasTransition = false;
         Transition transition = {};
@@ -296,10 +319,12 @@ private:
 
     struct Program
     {
-        uint16_t apid = 0x01U;   ///< Active APID (APUS-10: rocket = 0x01).
-        uint8_t nodeId = ares::DEFAULT_NODE_ID;
-        uint8_t stateCount = 0;
-        StateDef states[ares::AMS_MAX_STATES] = {};
+        uint16_t   apid       = 0x01U;  ///< Active APID (APUS-10: rocket = 0x01).
+        uint8_t    nodeId     = ares::DEFAULT_NODE_ID;
+        uint8_t    stateCount = 0;
+        StateDef   states[ares::AMS_MAX_STATES] = {};
+        uint8_t    aliasCount = 0;
+        AliasEntry aliases[ares::AMS_MAX_INCLUDES] = {};
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -312,6 +337,7 @@ private:
     bool parseLineLocked(const char* line,
                          uint8_t& currentState,
                          BlockType& blockType);
+    bool parseIncludeLineLocked(const char* line);
     bool parseStateScopedLineLocked(const char* line,
                                     StateDef& st,
                                     BlockType& blockType);
@@ -346,7 +372,22 @@ private:
     static bool parseUint(const char* text, uint32_t& outValue);
     static bool parseFloatValue(const char* text, float& outValue);
     static bool parseTcCommand(const char* text, TcCommand& out);
-    static bool parseExprKind(const char* text, ExprKind& out);
+    static bool parseSensorField(PeripheralKind kind,
+                                 const char*    fieldStr,
+                                 SensorField&   out);
+    static bool splitAliasDotField(const char* expr,
+                                   char*       aliasOut, uint8_t aliasSize,
+                                   char*       fieldOut,  uint8_t fieldSize);
+
+    const AliasEntry* findAliasLocked(const char* alias) const;
+    bool readSensorFloatLocked(const char*  alias,
+                               SensorField  field,
+                               float&       outVal) const;
+    bool parseCondExprLocked(const char* lhs,
+                             const char* op,
+                             const char* rhs,
+                             bool        allowTc,
+                             CondExpr&   out);
 
     uint8_t findStateByNameLocked(const char* name) const;
 
@@ -361,31 +402,24 @@ private:
     void appendLogReportLocked(uint32_t nowMs);
     void sendEventLocked(EventVerb verb, const char* text, uint32_t nowMs);
     bool ensureLogFileLocked(const char* fileName);
-    static void applyHkExprToPayloadLocked(ExprKind expr,
-                                           const GpsReading& g,
-                                           GpsStatus gpsSt,
-                                           const BaroReading& b,
-                                           BaroStatus baroSt,
-                                           const ImuReading& imuR,
-                                           ImuStatus imuSt,
-                                           ares::proto::TelemetryPayload& tm);
-    static bool formatExprValueLocked(ExprKind expr,
-                                      const GpsReading& g,
-                                      GpsStatus gpsSt,
-                                      const BaroReading& b,
-                                      BaroStatus baroSt,
-                                      const ImuReading& imuR,
-                                      ImuStatus imuSt,
-                                      char* out,
-                                      uint32_t outSize);
+    void applyHkFieldToPayloadLocked(const HkField&               f,
+                                     ares::proto::TelemetryPayload& tm) const;
+    bool formatHkFieldValueLocked(const HkField& f,
+                                  char*          out,
+                                  uint32_t       outSize) const;
 
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
-    StorageInterface& storage_;
-    GpsInterface& gps_;
-    BarometerInterface& baro_;
-    RadioInterface& radio_;
-    ImuInterface* imu_;   ///< Optional IMU (nullptr if not connected).
+    StorageInterface&    storage_;
+    const GpsEntry*      gpsDrivers_;
+    uint8_t              gpsCount_;
+    const BaroEntry*     baroDrivers_;
+    uint8_t              baroCount_;
+    const ComEntry*      comDrivers_;
+    uint8_t              comCount_;
+    const ImuEntry*      imuDrivers_;
+    uint8_t              imuCount_;
+    RadioInterface*      primaryCom_ = nullptr; ///< Active COM driver for frame TX.
 
     StaticSemaphore_t mutexBuf_ = {};
     SemaphoreHandle_t mutex_ = nullptr;

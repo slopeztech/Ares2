@@ -68,14 +68,11 @@ static const char* toStatusText(ares::ams::EngineStatus st)
 {
     switch (st)
     {
-    case ares::ams::EngineStatus::IDLE:
-        return "idle";
-    case ares::ams::EngineStatus::RUNNING:
-        return "running";
-    case ares::ams::EngineStatus::ERROR:
-        return "error";
-    default:
-        return "error";
+    case ares::ams::EngineStatus::IDLE:     return "idle";
+    case ares::ams::EngineStatus::RUNNING:  return "running";
+    case ares::ams::EngineStatus::COMPLETE: return "complete";
+    case ares::ams::EngineStatus::ERROR:    return "error";
+    default:                                return "error";
     }
 }
 

@@ -58,6 +58,7 @@ public:
      * @return Status code (OK, ERROR, or NOT_READY).
      */
     ImuStatus read(ImuReading& out) override;
+    const char* driverModel() const override { return "MPU6050"; }
 
 private:
     /// Write a single register over I2C.

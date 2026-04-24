@@ -94,6 +94,7 @@ public:
      * @return Module MTU in bytes (240 for DX-LR03).
      */
     uint16_t mtu() const override;
+    const char* driverModel() const override { return "LORA"; }
 
 private:
     /**

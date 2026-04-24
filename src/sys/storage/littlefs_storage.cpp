@@ -515,16 +515,14 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
     }
 
     // Clean stale transactional artifacts before new write.
-    if (LittleFS.exists(tmpPath))
-    {
-        (void)LittleFS.remove(tmpPath);
-    }
-    if (LittleFS.exists(bakPath) && LittleFS.exists(path))
-    {
-        (void)LittleFS.remove(bakPath);
-    }
+    // Call remove() directly — it is a no-op when the file does not exist,
+    // and avoids the LittleFS.exists() VFS open(create=false) log noise.
+    (void)LittleFS.remove(tmpPath);
+    (void)LittleFS.remove(bakPath);
 
-    File tmp = LittleFS.open(tmpPath, "w");
+    // create=true: VFS must create the .tmp even if it doesn't exist yet.
+    // Default create=false causes "no permits for creation" on new files.
+    File tmp = LittleFS.open(tmpPath, "w", /*create=*/true);
     if (!tmp)
     {
         LOG_W(TAG, "open(tmp) failed: %s", tmpPath);
@@ -533,17 +531,17 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
 
     uint32_t written = 0;
 
-    if (mode[0] == 'a' && LittleFS.exists(path))
+    if (mode[0] == 'a')
     {
-        // Transactional append: copy original file then append new bytes.
-        File src = LittleFS.open(path, "r");
+        // Transactional append: copy original file (if it exists) then append new bytes.
+        File src = LittleFS.open(path, "r", /*create=*/false);
         if (!src)
         {
-            tmp.close();
-            (void)LittleFS.remove(tmpPath);
-            return StorageStatus::ERROR;
+            // File does not exist yet — treat as empty; just write the new data.
+            // (First append to a brand-new file is valid.)
         }
-
+        else
+        {
         uint8_t copyBuf[COPY_CHUNK_SIZE] = {};
         uint32_t copied = 0;
         const uint32_t originalSize = static_cast<uint32_t>(src.size());
@@ -574,6 +572,7 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
             copied += rd;
         }
         src.close();
+        } // else (src valid)
     }
 
     if (len > 0)
@@ -592,27 +591,15 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
     }
 
     // Atomic swap: path -> bak, tmp -> path, then remove bak.
-    const bool hadOriginal = LittleFS.exists(path);
-    if (hadOriginal)
-    {
-        if (LittleFS.exists(bakPath))
-        {
-            (void)LittleFS.remove(bakPath);
-        }
-
-        if (!LittleFS.rename(path, bakPath))
-        {
-            LOG_W(TAG, "rename to bak failed: %s -> %s", path, bakPath);
-            (void)LittleFS.remove(tmpPath);
-            return StorageStatus::ERROR;
-        }
-    }
+    // Use rename() directly — no exists() needed (rename returns false if src absent).
+    (void)LittleFS.remove(bakPath);  // remove stale bak if present (silent if absent)
+    const bool hadOriginal = LittleFS.rename(path, bakPath);
 
     if (!LittleFS.rename(tmpPath, path))
     {
         LOG_W(TAG, "rename tmp failed: %s -> %s", tmpPath, path);
 
-        if (hadOriginal && LittleFS.exists(bakPath))
+        if (hadOriginal)
         {
             (void)LittleFS.rename(bakPath, path);
         }
@@ -620,10 +607,7 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
         return StorageStatus::ERROR;
     }
 
-    if (LittleFS.exists(bakPath))
-    {
-        (void)LittleFS.remove(bakPath);
-    }
+    (void)LittleFS.remove(bakPath);
 
     return StorageStatus::OK;
 }

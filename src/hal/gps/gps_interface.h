@@ -97,4 +97,10 @@ public:
      * @return true if the receiver has a 2D or 3D fix.
      */
     virtual bool hasFix() const = 0;
+
+    /**
+     * Return the driver model identifier (e.g. "BN220", "BN880").
+    * Used by the AMS engine to validate 'include <MODEL> as GPS'.
+     */
+    virtual const char* driverModel() const = 0;
 };

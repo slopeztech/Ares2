@@ -62,6 +62,7 @@ public:
      * @param[in] hPa  Sea-level pressure in hectopascals (default 1013.25).
      */
     void setSeaLevelPressure(float hPa) override;
+    const char* driverModel() const override { return "BMP280"; }
 
 private:
     /// Write a single register over I2C.

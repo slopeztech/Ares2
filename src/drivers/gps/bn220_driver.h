@@ -68,6 +68,7 @@ public:
      * @return true if the receiver has a 2D or 3D fix.
      */
     bool hasFix() const override;
+    const char* driverModel() const override { return "BN220"; }
 
 private:
     /// Feed one byte into the NMEA state machine.

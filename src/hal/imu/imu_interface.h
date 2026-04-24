@@ -72,4 +72,10 @@ public:
      * @return Status code indicating result (see ImuStatus).
      */
     virtual ImuStatus read(ImuReading& out) = 0;
+
+    /**
+     * Return the driver model identifier (e.g. "MPU6050", "ICM42688").
+    * Used by the AMS engine to validate 'include <MODEL> as IMU'.
+     */
+    virtual const char* driverModel() const = 0;
 };

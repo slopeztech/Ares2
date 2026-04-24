@@ -97,4 +97,10 @@ public:
      * @return Module-specific MTU in bytes.
      */
     virtual uint16_t mtu() const = 0;
+
+    /**
+     * Return the driver model identifier (e.g. "LORA", "DXLR03").
+    * Used by the AMS engine to validate 'include <MODEL> as COM'.
+     */
+    virtual const char* driverModel() const = 0;
 };

@@ -77,9 +77,9 @@ Flight API integration:
 Accepted metadata lines:
 
 ```ams
-include GPS as BN220
-include BARO as BMP280
-include COM as LORA
+include BN220 as GPS
+include BMP280 as BARO
+include LORA as COM
 
 pus.apid = 1
 pus.service 3 as HK

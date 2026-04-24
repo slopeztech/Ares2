@@ -147,12 +147,25 @@ void ApiServer::handleLogsList(WiFiClient& client)
 void ApiServer::handleLogDownload(WiFiClient& client,
                                    const char* filename)
 {
-    // REST-6.2: no downloads during flight
+    // REST-6.2: no downloads during active flight.
+    // Exception: allow download once the AMS mission has completed (COMPLETE
+    // status means the terminal state was reached and the engine is no longer
+    // executing — data is safe to read back).
     if (isFlightLocked())
     {
-        sendError(client, 409, "operation locked during flight");
-        LOG_W(TAG, "GET /api/logs/%s 409: flight locked", filename);
-        return;
+        bool amsComplete = false;
+        if (mission_ != nullptr)
+        {
+            ares::ams::EngineSnapshot snap = {};
+            mission_->getSnapshot(snap);
+            amsComplete = (snap.status == ares::ams::EngineStatus::COMPLETE);
+        }
+        if (!amsComplete)
+        {
+            sendError(client, 409, "operation locked during flight");
+            LOG_W(TAG, "GET /api/logs/%s 409: flight locked", filename);
+            return;
+        }
     }
 
     if (storage_ == nullptr)
