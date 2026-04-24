@@ -38,13 +38,14 @@
 // codebase that knows which sensor hardware is installed.
 static HardwareSerial gpsSerial(ares::GPS_UART_PORT);
 static HardwareSerial loraSerial(ares::LORA_UART_PORT);
+static TwoWire        imuWire(1);
 static Bmp280Driver   baro(Wire, ares::BMP280_I2C_ADDR);
 static Bn220Driver    gps(gpsSerial, ares::PIN_GPS_RX,
                           ares::PIN_GPS_TX, ares::GPS_BAUD);
 static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
                              ares::PIN_LORA_RX, ares::PIN_LORA_AUX,
                              ares::LORA_UART_BAUD);
-static Mpu6050Driver  imu(Wire, ares::MPU6050_I2C_ADDR);
+static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
 static NeopixelDriver led(ares::PIN_LED_RGB);
 static StatusLed      statusLed(led);
 
@@ -76,7 +77,8 @@ static ares::ams::MissionScriptEngine missionEngine(
     kBaroDrivers, static_cast<uint8_t>(1),
     kComDrivers,  static_cast<uint8_t>(1),
     kImuDrivers,  static_cast<uint8_t>(1));
-static ApiServer apiServer(wifiAp, baroIf, gpsIf, &storageIf, &missionEngine,
+static ApiServer apiServer(wifiAp, baroIf, gpsIf, imuIf,
+                           &storageIf, &missionEngine,
                            &statusLed);
 
 // ═══════════════════════════════════════════════════════════
@@ -86,8 +88,11 @@ void setup()
     // emit boot banners or periodic traces in normal operation.
     Serial.begin(ares::SERIAL_BAUD);
 
-    // I2C bus — must be initialised before any I2C driver.
+    // I2C buses — initialise before any I2C driver.
+    // I2C0 (Wire): shared board sensors (BMP280 on GPIO 1/2).
     Wire.begin(ares::PIN_I2C_SDA, ares::PIN_I2C_SCL, ares::I2C_FREQ);
+    // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
+    imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ);
 
     (void)baroIf.begin();
     (void)imuIf.begin();

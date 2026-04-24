@@ -212,7 +212,11 @@ Valid expressions for HK.report and LOG.report:
 - `IMU.temp` — On-chip temperature (°C)
 
 IMU transitions support `IMU.accel_x`, `IMU.accel_y`, `IMU.accel_z`, and `IMU.accel_mag`.
-If no MPU-6050 is connected at runtime, all IMU values read as 0 and transitions evaluate false.
+If no MPU-6050 is connected (or read fails) at runtime:
+- Transition conditions using IMU fields evaluate as false (no transition trigger).
+- Guard conditions in `conditions:` treat missing sensor data as "holds" (no immediate ERROR).
+- LOG.report writes `nan` for unreadable IMU fields to preserve CSV column alignment.
+- HK.report only maps supported payload fields (for IMU, `accel_mag` when available).
 
 `TIME.elapsed` is available in `conditions:` and `transition` guards only (not in `HK.report`/`LOG.report`):
 - `TIME.elapsed > <ms>` — true when the active state has been running for more than the given milliseconds

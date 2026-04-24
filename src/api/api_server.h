@@ -8,6 +8,8 @@
  *
  * Endpoints:
  *   GET    /api/status      — system status and sensor data
+ *   GET    /api/imu         — IMU snapshot
+ *   GET    /api/imu/health  — IMU health only
  *   GET    /api/config      — current runtime configuration
  *   PUT    /api/config      — update runtime configuration
  *   POST   /api/mode        — change operating mode
@@ -35,6 +37,7 @@
 #include "config.h"
 #include "hal/baro/barometer_interface.h"
 #include "hal/gps/gps_interface.h"
+#include "hal/imu/imu_interface.h"
 #include "hal/storage/storage_interface.h"
 #include "sys/wifi/wifi_ap.h"
 
@@ -69,12 +72,13 @@ public:
      * @param[in] wifi       Reference to the WiFi AP service.
      * @param[in] baro       Reference to the barometer interface.
      * @param[in] gps        Reference to the GPS interface.
+    * @param[in] imu        Reference to the IMU interface.
      * @param[in] storage    Pointer to storage interface (nullable).
      * @param[in] mission    Pointer to AMS runtime (nullable).
      * @param[in] statusLed  Pointer to status LED service (nullable).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
-              GpsInterface& gps,
+            GpsInterface& gps, ImuInterface& imu,
               StorageInterface* storage = nullptr,
               ares::ams::MissionScriptEngine* mission = nullptr,
               StatusLed* statusLed = nullptr);
@@ -136,6 +140,8 @@ private:
     // ── Route handlers (implemented in subdirectories) ─────
     // status/
     void handleStatus(class WiFiClient& client);
+    void handleImuGet(class WiFiClient& client);
+    void handleImuHealth(class WiFiClient& client);
     // config/
     void handleConfigGet(class WiFiClient& client);
     void handleConfigPut(class WiFiClient& client,
@@ -197,6 +203,7 @@ private:
     WifiAp&              wifi_;
     BarometerInterface&  baro_;
     GpsInterface&        gps_;
+    ImuInterface&        imu_;
     StorageInterface*    storage_;  ///< Nullable — logs disabled if null.
     ares::ams::MissionScriptEngine* mission_; ///< Nullable — AMS disabled if null.
     StatusLed*           statusLed_; ///< Nullable — LED updates disabled if null.

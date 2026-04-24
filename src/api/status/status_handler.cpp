@@ -69,6 +69,24 @@ void ApiServer::handleStatus(WiFiClient& client)
         gps["satellites"] = gpsData.satellites;
     }
 
+    // IMU snapshot
+    ImuReading imuData;
+    const ImuStatus imuSt = imu_.read(imuData);
+    const bool imuOk = (imuSt == ImuStatus::OK);
+    health["imu"] = imuOk;
+
+    if (imuOk)
+    {
+        JsonObject imu = doc["imu"].to<JsonObject>();
+        imu["accelX"] = imuData.accelX;
+        imu["accelY"] = imuData.accelY;
+        imu["accelZ"] = imuData.accelZ;
+        imu["gyroX"]  = imuData.gyroX;
+        imu["gyroY"]  = imuData.gyroY;
+        imu["gyroZ"]  = imuData.gyroZ;
+        imu["tempC"]  = imuData.tempC;
+    }
+
     // Config snapshot under mutex
     RuntimeConfig cfg;
     if (getConfigCopy(cfg))

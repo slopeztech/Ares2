@@ -57,7 +57,8 @@ System status and flight information.
     "state": true,
     "storage": true,
     "baro": true,
-    "gps": true
+    "gps": true,
+    "imu": true
   },
   "baro": {
     "pressurePa": 101325.0,
@@ -75,12 +76,63 @@ System status and flight information.
     "hdop": 1.2,
     "satellites": 8,
     "timestampMs": 123400
+  },
+  "imu": {
+    "accelX": 0.12,
+    "accelY": -0.03,
+    "accelZ": 9.81,
+    "gyroX": 0.8,
+    "gyroY": -0.2,
+    "gyroZ": 0.1,
+    "tempC": 31.4
   }
 }
 ```
 
 The `baro` object is only present when `health.baro` is `true`.  
 The `gps` object is only present when `health.gps` is `true`.
+The `imu` object is only present when `health.imu` is `true`.
+
+---
+
+### GET /api/imu
+
+Dedicated IMU snapshot endpoint.
+
+**Response** `200 OK`:
+
+```json
+{
+  "ok": true,
+  "status": "ok",
+  "timestampMs": 123456,
+  "accelX": 0.12,
+  "accelY": -0.03,
+  "accelZ": 9.81,
+  "gyroX": 0.8,
+  "gyroY": -0.2,
+  "gyroZ": 0.1,
+  "tempC": 31.4
+}
+```
+
+If `ok` is `false`, the payload includes `status` and `timestampMs` only.
+
+---
+
+### GET /api/imu/health
+
+Lightweight IMU health endpoint.
+
+**Response** `200 OK`:
+
+```json
+{
+  "ok": true,
+  "status": "ok",
+  "timestampMs": 123456
+}
+```
 
 ---
 

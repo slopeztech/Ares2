@@ -31,8 +31,10 @@ namespace ares
 
 constexpr const char* BOARD_NAME     = "ESP32-S3 Zero Mini"; ///< Board identifier.
 constexpr uint8_t     PIN_LED_RGB    = 21;   ///< On-board RGB LED GPIO.
-constexpr uint8_t     PIN_I2C_SDA    = 1;    ///< I2C data GPIO.
-constexpr uint8_t     PIN_I2C_SCL    = 2;    ///< I2C clock GPIO.
+constexpr uint8_t     PIN_I2C_SDA    = 1;    ///< I2C0 data GPIO (barometer bus).
+constexpr uint8_t     PIN_I2C_SCL    = 2;    ///< I2C0 clock GPIO (barometer bus).
+constexpr uint8_t     PIN_IMU_SDA    = 12;   ///< I2C1 data GPIO (dedicated IMU bus).
+constexpr uint8_t     PIN_IMU_SCL    = 13;   ///< I2C1 clock GPIO (dedicated IMU bus).
 constexpr uint8_t     PIN_GPS_RX     = 5;    ///< UART1 RX — GPS TX.
 constexpr uint8_t     PIN_GPS_TX     = 6;    ///< UART1 TX — GPS RX.
 constexpr uint8_t     GPS_UART_PORT  = 1;    ///< HardwareSerial port index.

@@ -139,7 +139,9 @@ class AmsParser:
             )
 
         try:
-            text = raw.decode("utf-8")
+            # Accept both UTF-8 and UTF-8 with BOM so line-1 directives
+            # like 'include ...' are parsed consistently.
+            text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             self._result.diagnostics.append(
                 Diagnostic(0, f"UTF-8 decode error: {exc}")

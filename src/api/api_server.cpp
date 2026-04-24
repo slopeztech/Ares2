@@ -54,11 +54,11 @@ static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
 // ── Constructor ─────────────────────────────────────────────
 
 ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
-                     GpsInterface& gps,
+                                         GpsInterface& gps, ImuInterface& imu,
                      StorageInterface* storage,
                      ares::ams::MissionScriptEngine* mission,
                      StatusLed* statusLed)
-    : wifi_(wifi), baro_(baro), gps_(gps),
+        : wifi_(wifi), baro_(baro), gps_(gps), imu_(imu),
       storage_(storage), mission_(mission), statusLed_(statusLed)
 {
 }
@@ -404,6 +404,28 @@ void ApiServer::routeRequest(WiFiClient& client,
         }
         handleStatus(client);
         LOG_D(TAG, "GET /api/status 200");
+    }
+    else if (strcmp(path, "/api/imu") == 0)
+    {
+        if (strcmp(method, "GET") != 0)
+        {
+            sendError(client, 405, "method not allowed");
+            LOG_W(TAG, "%s %s 405", method, path);
+            return;
+        }
+        handleImuGet(client);
+        LOG_D(TAG, "GET /api/imu 200");
+    }
+    else if (strcmp(path, "/api/imu/health") == 0)
+    {
+        if (strcmp(method, "GET") != 0)
+        {
+            sendError(client, 405, "method not allowed");
+            LOG_W(TAG, "%s %s 405", method, path);
+            return;
+        }
+        handleImuHealth(client);
+        LOG_D(TAG, "GET /api/imu/health 200");
     }
     else if (strcmp(path, "/api/config") == 0)
     {
