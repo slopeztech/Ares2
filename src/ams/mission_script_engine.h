@@ -411,6 +411,10 @@ private:
 
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
+    bool saveResumePointLocked(uint32_t nowMs, bool force);
+    bool tryRestoreResumePointLocked(uint32_t nowMs);
+    void clearResumePointLocked();
+
     StorageInterface&    storage_;
     const GpsEntry*      gpsDrivers_;
     uint8_t              gpsCount_;
@@ -446,6 +450,7 @@ private:
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
     bool logHeaderWritten_ = false;
+    uint32_t lastCheckpointMs_ = 0;
 
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
 };

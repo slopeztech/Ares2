@@ -30,6 +30,7 @@ namespace ams
 using detail::formatScaledFloat;
 
 static constexpr const char* TAG = "AMS";
+static constexpr uint8_t AMS_RESUME_VERSION = 1U;
 
 /**
  * @brief Clamp the per-tick action budget to the valid range [1, 3].
@@ -94,7 +95,19 @@ bool MissionScriptEngine::begin()
 {
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);
     ARES_ASSERT(mutex_ != nullptr);
-    return mutex_ != nullptr;
+    if (mutex_ == nullptr)
+    {
+        return false;
+    }
+
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired())
+    {
+        return false;
+    }
+
+    (void)tryRestoreResumePointLocked(millis());
+    return true;
 }
 
 bool MissionScriptEngine::activate(const char* fileName)
@@ -157,6 +170,7 @@ void MissionScriptEngine::deactivate()
     pendingOnEnterEvent_ = false;
     pendingEventText_[0] = '\0';
     pendingEventTsMs_ = 0;
+    clearResumePointLocked();
 }
 
 bool MissionScriptEngine::injectTcCommand(const char* commandText)
@@ -202,6 +216,8 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
         status_ = EngineStatus::LOADED;
     }
     LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
+
+    (void)saveResumePointLocked(millis(), true);
 }
 
 void MissionScriptEngine::tick(uint32_t nowMs)
@@ -238,6 +254,8 @@ void MissionScriptEngine::tick(uint32_t nowMs)
 
     executeDueActionsLocked(state, nowMs);
 
+    (void)saveResumePointLocked(nowMs, false);
+
     // Terminal state detection: if the current state has no transition,
     // no pending on-enter event, and no periodic HK or LOG actions,
     // the mission is done. Mark COMPLETE so the log download unlocks.
@@ -251,6 +269,7 @@ void MissionScriptEngine::tick(uint32_t nowMs)
             LOG_I(TAG, "mission complete: terminal state=%s", state.name);
             running_ = false;
             status_  = EngineStatus::COMPLETE;
+            clearResumePointLocked();
         }
     }
 }
@@ -593,6 +612,7 @@ void MissionScriptEngine::setErrorLocked(const char* reason)
     lastError_[sizeof(lastError_) - 1U] = '\0';
 
     LOG_E(TAG, "error: %s", lastError_);
+    clearResumePointLocked();
 }
 
 /**
@@ -622,6 +642,173 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
 
     LOG_I(TAG, "state -> %s", program_.states[stateIndex].name);
     sendOnEnterEventLocked(nowMs);
+    (void)saveResumePointLocked(nowMs, true);
+}
+
+bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
+{
+    if (!running_ || activeFile_[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!force && ((nowMs - lastCheckpointMs_) < ares::AMS_CHECKPOINT_INTERVAL_MS))
+    {
+        return true;
+    }
+
+    if (currentState_ >= program_.stateCount)
+    {
+        return false;
+    }
+
+    const uint32_t stateElapsed = nowMs - stateEnterMs_;
+    const uint32_t hkElapsed = nowMs - lastHkMs_;
+    const uint32_t logElapsed = nowMs - lastLogMs_;
+
+    char record[192] = {};
+    const int written = snprintf(record,
+                                 sizeof(record),
+                                 "%u|%s|%u|%u|%u|%u|%u|%lu|%lu|%lu",
+                                 static_cast<unsigned>(AMS_RESUME_VERSION),
+                                 activeFile_,
+                                 static_cast<unsigned>(currentState_),
+                                 executionEnabled_ ? 1U : 0U,
+                                 running_ ? 1U : 0U,
+                                 static_cast<unsigned>(status_),
+                                 static_cast<unsigned>(seq_),
+                                 static_cast<unsigned long>(stateElapsed),
+                                 static_cast<unsigned long>(hkElapsed),
+                                 static_cast<unsigned long>(logElapsed));
+    if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(record))
+    {
+        return false;
+    }
+
+    const StorageStatus st = storage_.writeFile(
+        ares::AMS_RESUME_PATH,
+        reinterpret_cast<const uint8_t*>(record),
+        static_cast<uint32_t>(written));
+    if (st != StorageStatus::OK)
+    {
+        LOG_W(TAG, "checkpoint write failed: %u", static_cast<uint32_t>(st));
+        return false;
+    }
+
+    lastCheckpointMs_ = nowMs;
+    return true;
+}
+
+void MissionScriptEngine::clearResumePointLocked()
+{
+    bool exists = false;
+    const StorageStatus stExists = storage_.exists(ares::AMS_RESUME_PATH, exists);
+    if (stExists != StorageStatus::OK || !exists)
+    {
+        return;
+    }
+
+    const StorageStatus stRemove = storage_.removeFile(ares::AMS_RESUME_PATH);
+    if (stRemove != StorageStatus::OK && stRemove != StorageStatus::NOT_FOUND)
+    {
+        LOG_W(TAG, "checkpoint remove failed: %u", static_cast<uint32_t>(stRemove));
+    }
+}
+
+bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
+{
+    bool exists = false;
+    const StorageStatus stExists = storage_.exists(ares::AMS_RESUME_PATH, exists);
+    if (stExists != StorageStatus::OK || !exists)
+    {
+        return false;
+    }
+
+    char buf[192] = {};
+    uint32_t bytesRead = 0;
+    const StorageStatus stRead = storage_.readFile(
+        ares::AMS_RESUME_PATH,
+        reinterpret_cast<uint8_t*>(buf),
+        sizeof(buf) - 1U,
+        bytesRead);
+    if (stRead != StorageStatus::OK || bytesRead == 0U)
+    {
+        clearResumePointLocked();
+        return false;
+    }
+    buf[bytesRead] = '\0';
+
+    unsigned version = 0U;
+    char fileName[ares::MISSION_FILENAME_MAX + 1U] = {};
+    unsigned stateIdx = 0U;
+    unsigned execEnabled = 0U;
+    unsigned running = 0U;
+    unsigned status = 0U;
+    unsigned seq = 0U;
+    unsigned long stateElapsed = 0UL;
+    unsigned long hkElapsed = 0UL;
+    unsigned long logElapsed = 0UL;
+
+    const int parsed = sscanf(buf,
+                              "%u|%32[^|]|%u|%u|%u|%u|%u|%lu|%lu|%lu",
+                              &version,
+                              fileName,
+                              &stateIdx,
+                              &execEnabled,
+                              &running,
+                              &status,
+                              &seq,
+                              &stateElapsed,
+                              &hkElapsed,
+                              &logElapsed);
+    if (parsed != 10 || version != static_cast<unsigned>(AMS_RESUME_VERSION))
+    {
+        clearResumePointLocked();
+        return false;
+    }
+
+    if (!loadFromStorageLocked(fileName))
+    {
+        clearResumePointLocked();
+        return false;
+    }
+
+    if (stateIdx >= program_.stateCount)
+    {
+        clearResumePointLocked();
+        setErrorLocked("resume state out of range");
+        return false;
+    }
+
+    currentState_ = static_cast<uint8_t>(stateIdx);
+    stateEnterMs_ = nowMs - static_cast<uint32_t>(stateElapsed);
+    lastHkMs_ = nowMs - static_cast<uint32_t>(hkElapsed);
+    lastLogMs_ = nowMs - static_cast<uint32_t>(logElapsed);
+    seq_ = static_cast<uint8_t>(seq & 0xFFU);
+
+    running_ = (running != 0U);
+    executionEnabled_ = (execEnabled != 0U);
+    status_ = static_cast<EngineStatus>(status);
+
+    pendingTc_ = TcCommand::NONE;
+    pendingOnEnterEvent_ = false;
+    pendingEventText_[0] = '\0';
+    pendingEventTsMs_ = 0U;
+    lastError_[0] = '\0';
+    lastCheckpointMs_ = nowMs;
+
+    if (!(running_ && executionEnabled_ && status_ == EngineStatus::RUNNING))
+    {
+        clearResumePointLocked();
+        return false;
+    }
+
+    LOG_W(TAG, "resumed AMS from checkpoint: file=%s state=%s",
+          activeFile_, program_.states[currentState_].name);
+
+    // Persist immediately after restore to validate record freshness.
+    (void)saveResumePointLocked(nowMs, true);
+    return true;
 }
 
 /**

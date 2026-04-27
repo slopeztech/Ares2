@@ -116,6 +116,8 @@ constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buff
 constexpr uint8_t     AMS_MAX_INCLUDES     = 8U;           ///< Max 'include' alias registrations per script.
 constexpr uint16_t    AMS_DEFAULT_APID     = 0x01U;        ///< Default APID for mission runtime (APUS-10: rocket = 0x01).
 constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 50;           ///< Mutex timeout for API/runtime sync.
+constexpr const char* AMS_RESUME_PATH      = "/missions/.ams_resume.chk"; ///< Persistent AMS checkpoint file.
+constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS = 1000;   ///< Periodic checkpoint cadence while RUNNING.
 
 // ── Config field validation bounds (REST-5.4) ───────────────
 constexpr uint32_t    TELEMETRY_INTERVAL_MIN = 100;     ///< Min telemetry interval ms.

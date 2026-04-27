@@ -130,6 +130,12 @@ public:
     void notifyMissionComplete();
 
     /**
+     * Called when AMS is auto-restored after reboot and already RUNNING.
+     * Sets armed flag and FLIGHT mode so API state matches mission runtime.
+     */
+    void notifyMissionResumed();
+
+    /**
      * @return Read-only reference to current config.
      * @warning Not thread-safe -- use getConfigCopy() from other tasks.
      */

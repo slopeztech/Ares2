@@ -125,8 +125,18 @@ void setup()
     // REST API server — start after AMS is ready to avoid init race
     (void)apiServer.begin();
 
-    // All subsystems ready — exit boot blink, go solid green (IDLE)
-    statusLed.setMode(ares::OperatingMode::IDLE);
+    // If AMS restored an in-flight checkpoint after reboot, reflect it in API mode.
+    ares::ams::EngineSnapshot bootSnap = {};
+    missionEngine.getSnapshot(bootSnap);
+    if (bootSnap.status == ares::ams::EngineStatus::RUNNING)
+    {
+        apiServer.notifyMissionResumed();
+    }
+    else
+    {
+        // All subsystems ready — exit boot blink, go solid green (IDLE)
+        statusLed.setMode(ares::OperatingMode::IDLE);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════

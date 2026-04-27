@@ -121,6 +121,12 @@ void ApiServer::notifyMissionComplete()
     setMode(ares::OperatingMode::IDLE);
 }
 
+void ApiServer::notifyMissionResumed()
+{
+    armed_.store(true);
+    setMode(ares::OperatingMode::FLIGHT);
+}
+
 const RuntimeConfig& ApiServer::config() const
 {
     return config_;
