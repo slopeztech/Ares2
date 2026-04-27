@@ -178,12 +178,24 @@ void ApiServer::handleAbort(WiFiClient& client)
         return;
     }
 
-    // Deactivate AMS before changing mode.
+    // Inject ABORT TC so AMS can handle it gracefully (script-defined ABORT
+    // transition fires if present; otherwise the engine intercepts the pending
+    // token on the next tick and calls deactivateLocked()).
+    // The armed flag and mode are updated immediately on the API side.
     if (mission_ != nullptr)
     {
-        mission_->setExecutionEnabled(false);
-        mission_->deactivate();
-        LOG_I(TAG, "POST /api/abort: AMS deactivated");
+        const bool injected = mission_->injectTcCommand("ABORT");
+        if (!injected)
+        {
+            // Fallback: direct deactivation if injection failed.
+            mission_->setExecutionEnabled(false);
+            mission_->deactivate();
+            LOG_W(TAG, "POST /api/abort: ABORT injection failed, deactivated directly");
+        }
+        else
+        {
+            LOG_I(TAG, "POST /api/abort: ABORT TC injected into AMS");
+        }
     }
 
     armed_.store(false);

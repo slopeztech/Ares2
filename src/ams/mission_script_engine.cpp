@@ -150,14 +150,8 @@ bool MissionScriptEngine::activate(const char* fileName)
     return true;
 }
 
-void MissionScriptEngine::deactivate()
+void MissionScriptEngine::deactivateLocked()
 {
-    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
-    if (!guard.acquired())
-    {
-        return;
-    }
-
     LOG_I(TAG, "deactivated");
     running_ = false;
     executionEnabled_ = false;
@@ -172,6 +166,17 @@ void MissionScriptEngine::deactivate()
     pendingEventText_[0] = '\0';
     pendingEventTsMs_ = 0;
     clearResumePointLocked();
+}
+
+void MissionScriptEngine::deactivate()
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired())
+    {
+        return;
+    }
+
+    deactivateLocked();
 }
 
 bool MissionScriptEngine::injectTcCommand(const char* commandText)
@@ -243,6 +248,19 @@ void MissionScriptEngine::tick(uint32_t nowMs)
     StateDef& state = program_.states[currentState_];
     if (evaluateTransitionAndMaybeEnterLocked(state, nowMs))
     {
+        return;
+    }
+
+    // AMS abort intercept: if ABORT TC is still pending after transition
+    // evaluation (i.e. no transition in this state consumes it), the engine
+    // must stop unconditionally.  Scripts that define an explicit ABORT
+    // transition will consume the token inside evaluateTransitionAndMaybeEnterLocked,
+    // so this path only fires when no ABORT transition is defined.
+    if (pendingTc_ == TcCommand::ABORT)
+    {
+        LOG_W(TAG, "ABORT TC not consumed by state=%s: force-deactivating",
+              state.name);
+        deactivateLocked();
         return;
     }
 

@@ -415,6 +415,13 @@ private:
     bool tryRestoreResumePointLocked(uint32_t nowMs);
     void clearResumePointLocked();
 
+    /**
+     * Internal deactivation — must be called with mutex_ already held.
+     * Resets all engine state to IDLE without acquiring the mutex.
+     * @pre  mutex_ is held by the caller.
+     */
+    void deactivateLocked();
+
     StorageInterface&    storage_;
     const GpsEntry*      gpsDrivers_;
     uint8_t              gpsCount_;
