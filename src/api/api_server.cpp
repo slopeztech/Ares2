@@ -267,8 +267,7 @@ static void parseHeaders(WiFiClient& client,
     hasJsonContentType = false;
     uint8_t headerCount = 0;
 
-    while (client.connected()
-           && headerCount < HTTP_MAX_HEADERS)  // PO10-2: bounded
+    while (headerCount < HTTP_MAX_HEADERS)  // PO10-2: bounded
     {
         char hdr[HTTP_HEADER_MAX] = {};
         size_t hLen = client.readBytesUntil('\n', hdr, HTTP_HEADER_MAX - 1U);
@@ -278,7 +277,7 @@ static void parseHeaders(WiFiClient& client,
         }
         hdr[hLen] = '\0';
 
-        if (hLen == 0) { break; }  // Empty line = end of headers
+        if (hLen == 0U) { break; }  // Empty line, close, or timeout
 
         // Content-Length (case-insensitive prefix match)
         if (strncasecmp(hdr, "Content-Length:", 15) == 0)
