@@ -169,7 +169,7 @@ void ApiServer::handleI2cScan(WiFiClient& client)
                      "i2c1",
                      ares::PIN_IMU_SDA,
                      ares::PIN_IMU_SCL,
-                     ares::I2C_FREQ,
+                     ares::I2C_FREQ_IMU,
                      *i2c1_);
     }
 

@@ -68,5 +68,6 @@ private:
 
     TwoWire& wire_;            ///< I2C bus (injected, not owned).
     uint8_t  addr_;            ///< 7-bit I2C slave address.
-    bool     ready_ = false;   ///< true after successful begin().
+    bool     ready_ = false;            ///< true after successful begin().
+    uint32_t lastReinitAttemptMs_ = 0;  ///< millis() of last lazy re-init attempt.
 };

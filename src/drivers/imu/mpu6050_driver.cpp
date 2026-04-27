@@ -5,6 +5,7 @@
 
 #include "drivers/imu/mpu6050_driver.h"
 #include "config.h"
+#include "debug/ares_log.h"
 
 #include <cmath>
 
@@ -36,6 +37,11 @@ namespace mpu6050
 
     constexpr uint8_t BURST_LEN         = 14;  ///< Bytes in accel+temp+gyro burst.
 
+    // PWR_MGMT_1 bit 7: DEVICE_RESET — full register reset, self-clears after ~100ms.
+    constexpr uint8_t PWR_RESET         = 0x80;
+    // Delay after DEVICE_RESET before the oscillator is stable (datasheet §4.28).
+    constexpr uint16_t RESET_SETTLE_MS  = 100;
+
     // Sensitivity scale factors (datasheet §6.2, §6.1)
     constexpr float ACCEL_SCALE        = 16384.0f;  ///< LSB per g at ±2 g.
     constexpr float GYRO_SCALE         = 131.0f;    ///< LSB per deg/s at ±250 deg/s.
@@ -47,6 +53,8 @@ namespace mpu6050
 }
 
 // ── Public ──────────────────────────────────────────────────
+
+static const char* TAG = "IMU";
 
 Mpu6050Driver::Mpu6050Driver(TwoWire& wire, uint8_t addr)
     : wire_(wire)
@@ -62,47 +70,67 @@ bool Mpu6050Driver::begin()
     {
         addr_ = addr;
 
-        // Wake the device (clears SLEEP bit in PWR_MGMT_1).
+        // Step 1: Full device reset (PWR_MGMT_1 bit 7).
+        // This recovers from any previous bad state (e.g. firmware restart, power glitch).
+        // The bit self-clears; we wait RESET_SETTLE_MS for the oscillator to stabilise.
+        if (!writeReg(mpu6050::REG_PWR_MGMT_1, mpu6050::PWR_RESET))
+        {
+            LOG_E(TAG, "no ACK at 0x%02X (I2C write failed)", addr);
+            return false;
+        }
+        delay(mpu6050::RESET_SETTLE_MS);  // wait for reset + oscillator settle (init-only)
+
+        // Step 2: Wake device by clearing SLEEP bit.
         if (!writeReg(mpu6050::REG_PWR_MGMT_1, mpu6050::PWR_WAKE))
         {
+            LOG_E(TAG, "wake write failed at 0x%02X", addr);
             return false;
         }
         delay(ares::MPU6050_WAKE_DELAY_MS);  // wait for clocks to settle (init-only)
 
-        // Verify identity.
+        // Step 3: Verify identity.
         uint8_t idBuf[1] = {};
         if (!readRegs(mpu6050::REG_WHO_AM_I, idBuf, 1U))
         {
+            LOG_E(TAG, "WHO_AM_I read failed at 0x%02X", addr);
             return false;
         }
 
         const uint8_t id = idBuf[0];
         if (id != mpu6050::WHO_AM_I_ID && id != mpu6050::WHO_AM_I_ID_ALT)
         {
+            LOG_E(TAG, "unexpected WHO_AM_I 0x%02X at addr 0x%02X (expected 0x%02X or 0x%02X)",
+                  id, addr, mpu6050::WHO_AM_I_ID, mpu6050::WHO_AM_I_ID_ALT);
             return false;
         }
+
+        LOG_I(TAG, "WHO_AM_I OK (0x%02X) at addr 0x%02X", id, addr);
 
         // Configure sample rate: 100 Hz.
         if (!writeReg(mpu6050::REG_SMPLRT_DIV, mpu6050::SAMPLE_RATE_100HZ))
         {
+            LOG_E(TAG, "SMPLRT_DIV write failed");
             return false;
         }
 
         // Digital low-pass filter: ~94 Hz accel / ~98 Hz gyro bandwidth.
         if (!writeReg(mpu6050::REG_CONFIG, mpu6050::DLPF_BW_94HZ))
         {
+            LOG_E(TAG, "CONFIG write failed");
             return false;
         }
 
         // Gyro full-scale: ±250 deg/s.
         if (!writeReg(mpu6050::REG_GYRO_CONFIG, mpu6050::GYRO_FS_250DPS))
         {
+            LOG_E(TAG, "GYRO_CONFIG write failed");
             return false;
         }
 
         // Accel full-scale: ±2 g.
         if (!writeReg(mpu6050::REG_ACCEL_CONFIG, mpu6050::ACCEL_FS_2G))
         {
+            LOG_E(TAG, "ACCEL_CONFIG write failed");
             return false;
         }
 
@@ -115,13 +143,18 @@ bool Mpu6050Driver::begin()
         const uint8_t altAddr = (addr_ == mpu6050::ADDR_LOW)
                               ? mpu6050::ADDR_HIGH
                               : mpu6050::ADDR_LOW;
+        LOG_W(TAG, "retrying at alternate address 0x%02X", altAddr);
         if (!tryInitAtAddress(altAddr))
         {
+            LOG_E(TAG, "init FAILED — device not found on I2C1 (SDA=%d SCL=%d)",
+                  ares::PIN_IMU_SDA, ares::PIN_IMU_SCL);
             return false;
         }
     }
 
     ready_ = true;
+    LOG_I(TAG, "init OK — addr 0x%02X, I2C1 SDA=%d SCL=%d",
+          addr_, ares::PIN_IMU_SDA, ares::PIN_IMU_SCL);
     return true;
 }
 
@@ -129,7 +162,22 @@ ImuStatus Mpu6050Driver::read(ImuReading& out)
 {
     if (!ready_)
     {
-        return ImuStatus::NOT_READY;
+        // Lazy re-init: retry begin() at most once every IMU_REINIT_INTERVAL_MS.
+        // This recovers from boot-time init failure caused by a late cable connection.
+        const uint32_t now = millis();
+        if ((now - lastReinitAttemptMs_) >= ares::IMU_REINIT_INTERVAL_MS)
+        {
+            lastReinitAttemptMs_ = now;
+            LOG_W(TAG, "not ready — attempting lazy re-init");
+            if (!begin())
+            {
+                return ImuStatus::NOT_READY;
+            }
+        }
+        else
+        {
+            return ImuStatus::NOT_READY;
+        }
     }
 
     uint8_t buf[mpu6050::BURST_LEN] = {};  // MISRA-4.1: zero-init

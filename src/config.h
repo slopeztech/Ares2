@@ -58,7 +58,9 @@ constexpr uint32_t    FLASH_SIZE_KB  = 4096;    ///< Total flash in KiB.
 constexpr uint32_t    SERIAL_BAUD    = 115200;   ///< USB-CDC baud rate.
 
 // ── I2C ─────────────────────────────────────────────────────
-constexpr uint32_t I2C_FREQ    = 400000;  ///< Bus speed in Hz (400 kHz fast mode).
+constexpr uint32_t I2C_FREQ     = 400000;  ///< I2C0 bus speed in Hz (BMP280, 400 kHz fast mode).
+constexpr uint32_t I2C_FREQ_IMU = 100000;  ///< I2C1 bus speed in Hz (MPU-6050, 100 kHz standard mode).
+                                            ///< GY-521 modules use 10 kΩ pull-ups; 400 kHz is unreliable.
 
 // ── Barometer (I2C BMP280) ──────────────────────────────────
 constexpr uint8_t BMP280_I2C_ADDR = 0x77;  ///< SDO → VCC (AHT20+BMP280 default).
@@ -174,6 +176,7 @@ constexpr uint32_t LANDED_STABLE_MS     = 5000;   ///< ms   — velocity must st
 constexpr uint8_t  BMP280_RESET_DELAY_MS   = 10;    ///< Wait for BMP280 soft-reset completion.
 constexpr uint8_t  BMP280_POLL_DELAY_MS    = 2;     ///< Status register poll interval during NVM copy.
 constexpr uint8_t  MPU6050_WAKE_DELAY_MS   = 10;    ///< Wait after waking MPU-6050 from sleep.
+constexpr uint32_t IMU_REINIT_INTERVAL_MS  = 5000;  ///< Min interval between lazy re-init attempts in read().
 constexpr uint8_t  SERIAL_WAIT_DELAY_MS    = 10;    ///< USB-CDC host poll interval in setup().
 constexpr uint16_t SERIAL_WAIT_TIMEOUT_MS  = 3000;  ///< Max wait for USB-CDC host before continuing.
 constexpr uint16_t TEST_LOOP_DELAY_MS      = 1000;  ///< Test sketch main-loop print interval.
