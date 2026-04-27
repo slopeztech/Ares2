@@ -473,6 +473,11 @@ private:
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
 
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
+
+    // Current line number during script parsing (1-based).
+    // Zero when the engine is not actively parsing.
+    // Used by setErrorLocked() to emit "Parse Error (line N): ..." messages.
+    uint32_t parseLineNum_ = 0U;
 };
 
 } // namespace ams

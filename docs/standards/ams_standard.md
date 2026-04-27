@@ -285,6 +285,65 @@ When any active state guard condition fails:
 - Engine status becomes `ERROR`
 - Runtime progression stops until external recovery/deactivation
 
+#### Sensor-unavailable (NaN) behavior
+
+If a sensor referenced in a `conditions:` block cannot be read (driver failure,
+I2C timeout, GPS loss-of-fix), the guard condition evaluates to **"holds"** —
+no false alarm is raised.  This is the fail-safe default: transient sensor
+outages do not trigger `on_error`.
+
+The same applies to `transition` conditions: if the sensor read fails, the
+transition **does not fire**.
+
+> ⚠️ **Implication**: a permanently-failed sensor will never violate its guard
+> condition.  If a mission relies on `IMU.accel_mag > 50` to detect launch, a
+> dead IMU will silently prevent that transition from ever firing.  Pair sensor
+> guards with a `TIME.elapsed` watchdog as backup.
+
+#### Design recommendation — RECOVERY / SAFE state
+
+The AMS engine halts on guard violation and emits an `on_error` event, but
+provides **no built-in automatic recovery**.  In a real mission, halting without
+periodic telemetry leaves the vehicle unreachable.
+
+**Recommended pattern**: define a `SAFE` or `RECOVERY` state and add an
+`ABORT` transition in every critical state:
+
+```ams
+state FLIGHT:
+  conditions:
+    BARO.temp < 85
+    GPS.speed < 400
+  on_error:
+    EVENT.error "FLIGHT guard violated — operator intervention required"
+
+  transition to SAFE when TC.command == ABORT
+  transition to RECOVERY when TIME.elapsed > 180000
+
+state SAFE:
+  on_enter:
+    EVENT.warning "Entered safe mode"
+  priorities event=4 hk=3 log=1 budget=2
+  // No guard conditions — engine must never halt in SAFE
+  every 5000ms:
+    HK.report {
+      gps_lat: GPS.lat
+      gps_lon: GPS.lon
+      gps_alt: GPS.alt
+    }
+  // Terminal: awaits ground recovery, no automatic transition
+```
+
+Rules for fault-tolerant AMS missions:
+- Every state that can fail must have `transition to SAFE when TC.command == ABORT`.
+- The `SAFE`/`RECOVERY` state must have **no** `conditions:` block so the
+  engine never stops while waiting for ground intervention.
+- Use `EVENT.error` in `on_error:` to alert the ground station.
+- The ground operator injects `ABORT` via
+  `POST /api/mission/command {"command":"ABORT"}` to force the SAFE transition
+  from any state that does not already handle its guard violation via `on_error`.
+
+
 ---
 
 ## AMS-6 PUS/APUS Mapping
@@ -353,3 +412,68 @@ Not implemented in current AMS profile:
 - Complex arithmetic expressions in fields
 - Absolute time scheduling
 - Automatic log rotation/partitioning
+
+---
+
+## AMS-11 Execution Log
+
+The AMS engine emits structured diagnostic messages through the serial ARES log
+system (`debug/ares_log.h`).  All messages use the `AMS` subsystem tag.
+
+Output line format: `[uptime_ms] L AMS: message`
+- `uptime_ms` — `millis()`, right-aligned 7 digits.
+- `L` — single-character severity: `E` error, `W` warning, `I` info.
+
+### AMS-11.1 Parse-time messages
+
+Parse errors include the 1-based source line number of the failing statement.
+
+| Severity | Pattern | Meaning |
+|---|---|---|
+| `E` | `Parse Error (line N): <reason>` | Parser rejected a line or detected a semantic error |
+| `I` | `activated script=<file> states=<N>` | Script loaded successfully |
+
+Examples:
+```
+[  1024] E AMS: Parse Error (line 42): Unknown state 'FLIGTH'
+[  1025] E AMS: Parse Error (line 17): TC.command not valid in conditions block
+[  1026] E AMS: Parse Error (line 5): script has no states
+[  2001] I AMS: activated script=flight_test.ams states=3
+```
+
+### AMS-11.2 Runtime messages
+
+| Severity | Pattern | Meaning |
+|---|---|---|
+| `I` | `state -> <NAME>` | State entered (initial entry or after a transition) |
+| `I` | `Transition: '<FROM>' -> '<TO>' at t=<ms>ms` | State transition condition fired |
+| `W` | `Guard Violation: State '<S>', Condition '<C>' failed (Value: <V>)` | Guard condition violated; engine entering ERROR |
+| `W` | `ABORT TC not consumed by state=<S>: force-deactivating` | Unhandled ABORT telecommand; engine deactivated |
+| `I` | `mission complete: terminal state=<S>` | Mission reached a terminal state (status → COMPLETE) |
+| `I` | `deactivated` | Engine deactivated via API or ABORT |
+| `W` | `resumed AMS from checkpoint: file=<F> state=<S>` | Engine state restored from persistent checkpoint |
+
+Examples:
+```
+[ 60042] I AMS: Transition: 'FLIGHT_TEST' -> 'RECOVERY' at t=60042ms
+[ 60042] I AMS: state -> RECOVERY
+[ 91500] W AMS: Guard Violation: State 'FLIGHT', Condition 'BARO.temp < 85' failed (Value: 92.400)
+[ 91500] W AMS: Guard Violation: State 'ASCENT', Condition 'TIME.elapsed > 120000' failed (Value: 125300.000ms)
+[180001] I AMS: mission complete: terminal state=END
+[180001] I AMS: deactivated
+```
+
+### AMS-11.3 Guard condition text format
+
+| Condition kind | Log format |
+|---|---|
+| Sensor limit | `<ALIAS>.<field> < <threshold>` or `<ALIAS>.<field> > <threshold>` |
+| Time watchdog | `TIME.elapsed > <threshold>` |
+
+The `Value` field shows the sensor reading or elapsed time (in ms for
+`TIME.elapsed`) at the moment the violation was detected.
+
+If a sensor is **unavailable** when a guard is evaluated, the condition is
+treated as "holds" — no log message is emitted and no error is raised
+(see AMS-5.6 sensor-unavailable behavior).
+

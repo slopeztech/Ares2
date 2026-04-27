@@ -374,6 +374,10 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
         return true;
     }
 
+    LOG_I(TAG, "Transition: '%s' -> '%s' at t=%" PRIu32 "ms",
+          state.name,
+          program_.states[state.transition.targetIndex].name,
+          nowMs);
     enterStateLocked(state.transition.targetIndex, nowMs);
     return true;
 }
@@ -519,6 +523,10 @@ bool MissionScriptEngine::listScripts(FileEntry* entries,
     return true;
 }
 
+/// Return a human-readable field name for use in guard violation log messages.
+/// Defined as a static helper inside the member function to access the private
+/// SensorField enum without changing the class interface.
+
 /**
  * @brief Evaluate all guard conditions for the current state (AMS-4.7).
  *
@@ -540,10 +548,35 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
         return false;
     }
 
+    // Lambda: maps SensorField to a human-readable name for log messages.
+    // Defined here to access the private SensorField enum without API changes.
+    auto fieldName = [](SensorField f) -> const char*
+    {
+        switch (f)
+        {
+        case SensorField::LAT:       return "lat";
+        case SensorField::LON:       return "lon";
+        case SensorField::ALT:       return "alt";
+        case SensorField::SPEED:     return "speed";
+        case SensorField::TEMP:      return "temp";
+        case SensorField::PRESSURE:  return "pressure";
+        case SensorField::ACCEL_X:   return "accel_x";
+        case SensorField::ACCEL_Y:   return "accel_y";
+        case SensorField::ACCEL_Z:   return "accel_z";
+        case SensorField::ACCEL_MAG: return "accel_mag";
+        case SensorField::GYRO_X:    return "gyro_x";
+        case SensorField::GYRO_Y:    return "gyro_y";
+        case SensorField::GYRO_Z:    return "gyro_z";
+        case SensorField::IMU_TEMP:  return "temp";
+        default:                     return "?";
+        }
+    };
+
     for (uint8_t i = 0; i < state.conditionCount; i++)  // PO10-2: bounded
     {
         const CondExpr& expr = state.conditions[i].expr;
-        bool holds = true;  // default: condition satisfied
+        bool holds = true;   // default: condition satisfied
+        float actualVal = 0.0f;  // actual sensor / elapsed value (for logging)
 
         switch (expr.kind)
         {
@@ -551,23 +584,22 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
             // TIME.elapsed > N in a conditions: block is a watchdog.
             // The condition HOLDS (is safe) while elapsed <= threshold.
             // It FIRES (triggers on_error) once the deadline is exceeded.
-            holds = ((nowMs - stateEnterMs_) <= static_cast<uint32_t>(expr.threshold));
+            actualVal = static_cast<float>(nowMs - stateEnterMs_);
+            holds = (static_cast<uint32_t>(actualVal)
+                     <= static_cast<uint32_t>(expr.threshold));
             break;
 
         case CondKind::SENSOR_LT:
         case CondKind::SENSOR_GT:
-        {
-            float val = 0.0f;
-            if (readSensorFloatLocked(expr.alias, expr.field, val))
+            if (readSensorFloatLocked(expr.alias, expr.field, actualVal))
             {
                 holds = (expr.kind == CondKind::SENSOR_LT)
-                      ? (val < expr.threshold)
-                      : (val > expr.threshold);
+                      ? (actualVal < expr.threshold)
+                      : (actualVal > expr.threshold);
             }
             // Sensor not available: treat as "holds" (don't fire on_error
-            // for missing optional sensors).
+            // for missing optional sensors — AMS-5.6).
             break;
-        }
 
         default:
             break;
@@ -575,14 +607,43 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
 
         if (!holds)
         {
-            LOG_W(TAG, "condition[%u] violated in state=%s",
-                  static_cast<uint32_t>(i), state.name);
+            // Emit structured guard violation log with condition text and value.
+            char valText[16] = {};
+            char thrText[16] = {};
+            if (!formatScaledFloat(actualVal,      3U, valText, sizeof(valText)))
+            {
+                strncpy(valText, "?", sizeof(valText) - 1U);
+                valText[sizeof(valText) - 1U] = '\0';
+            }
+            if (!formatScaledFloat(expr.threshold, 3U, thrText, sizeof(thrText)))
+            {
+                strncpy(thrText, "?", sizeof(thrText) - 1U);
+                thrText[sizeof(thrText) - 1U] = '\0';
+            }
+
+            if (expr.kind == CondKind::TIME_GT)
+            {
+                LOG_W(TAG,
+                      "Guard Violation: State '%s', Condition "
+                      "'TIME.elapsed > %s' failed (Value: %sms)",
+                      state.name, thrText, valText);
+            }
+            else
+            {
+                const char* opStr = (expr.kind == CondKind::SENSOR_LT) ? "<" : ">";
+                LOG_W(TAG,
+                      "Guard Violation: State '%s', Condition "
+                      "'%s.%s %s %s' failed (Value: %s)",
+                      state.name, expr.alias,
+                      fieldName(expr.field), opStr, thrText, valText);
+            }
+
             if (state.hasOnErrorEvent)
             {
                 // Send immediately — setErrorLocked halts the engine next.
                 sendEventLocked(state.onErrorVerb, state.onErrorText, nowMs);
             }
-            setErrorLocked("condition violated");
+            setErrorLocked("guard condition violated");
             return true;
         }
     }
@@ -630,7 +691,15 @@ void MissionScriptEngine::setErrorLocked(const char* reason)
     strncpy(lastError_, reason, sizeof(lastError_) - 1U);
     lastError_[sizeof(lastError_) - 1U] = '\0';
 
-    LOG_E(TAG, "error: %s", lastError_);
+    if (parseLineNum_ > 0U)
+    {
+        LOG_E(TAG, "Parse Error (line %" PRIu32 "): %s", parseLineNum_, lastError_);
+        parseLineNum_ = 0U;  // consume parse context so runtime errors don't inherit it
+    }
+    else
+    {
+        LOG_E(TAG, "error: %s", lastError_);
+    }
     clearResumePointLocked();
 }
 

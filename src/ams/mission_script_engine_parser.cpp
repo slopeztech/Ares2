@@ -139,8 +139,10 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
     uint8_t currentState  = ares::AMS_MAX_STATES;
 
     uint32_t offset = 0;
+    parseLineNum_ = 0U;
     while (offset < length)
     {
+        parseLineNum_++;
         char line[ares::AMS_MAX_LINE_LEN] = {};
         if (!readNextScriptLineLocked(script, length, offset,
                                       line, sizeof(line)))
@@ -154,6 +156,7 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
             return false;
         }
     }
+    parseLineNum_ = 0U;  // clear: errors after this point are runtime, not parse
 
     if (program_.stateCount == 0U)
     {
