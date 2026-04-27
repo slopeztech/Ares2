@@ -223,12 +223,21 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
         const uint32_t nowMs = static_cast<uint32_t>(millis());
         if ((nowMs - imuCacheTsMs_) >= IMU_CACHE_MAX_AGE_MS)
         {
-            ImuReading r = {};
-            if (imu->read(r) != ImuStatus::OK) { return false; }
+            // Always update the timestamp — even on failure — so subsequent
+            // fields in the same LOG row skip the Wire attempt instead of
+            // each incurring their own timeout (up to 8x overhead).
+            imuCacheTsMs_ = nowMs;
+            ImuReading r  = {};
+            if (imu->read(r) != ImuStatus::OK)
+            {
+                imuCacheValid_ = false;
+                return false;
+            }
             imuCachedReading_ = r;
-            imuCacheTsMs_     = nowMs;
+            imuCacheValid_    = true;
         }
 
+        if (!imuCacheValid_) { return false; }
         const ImuReading& r = imuCachedReading_;
         switch (field)
         {

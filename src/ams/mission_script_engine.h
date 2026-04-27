@@ -466,10 +466,10 @@ private:
     // single read, reducing I2C traffic and eliminating the partial-nan pattern
     // caused by each field independently succeeding or failing.
     mutable ImuReading imuCachedReading_ = {};  ///< Last successful IMU burst.
-    mutable uint32_t   imuCacheTsMs_     = 0;   ///< millis() when cache was filled.
-    // Max age (ms) before the cache is considered stale.  Must be much shorter
-    // than log_every so multiple rows each get a fresh read, but long enough to
-    // cover all fields within a single report (< 2 ms in practice).
+    mutable uint32_t   imuCacheTsMs_     = 0;   ///< millis() when last attempt was made.
+    mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
+    // Max age (ms) before a new read attempt is made.  Updated on both success
+    // and failure so all fields in one report share a single attempt (no 8x timeout).
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
 
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};

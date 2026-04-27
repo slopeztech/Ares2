@@ -59,8 +59,10 @@ constexpr uint32_t    SERIAL_BAUD    = 115200;   ///< USB-CDC baud rate.
 
 // ── I2C ─────────────────────────────────────────────────────
 constexpr uint32_t I2C_FREQ     = 400000;  ///< I2C0 bus speed in Hz (BMP280, 400 kHz fast mode).
-constexpr uint32_t I2C_FREQ_IMU = 100000;  ///< I2C1 bus speed in Hz (MPU-6050, 100 kHz standard mode).
-                                            ///< GY-521 modules use 10 kΩ pull-ups; 400 kHz is unreliable.
+constexpr uint32_t I2C_FREQ_IMU =  50000;  ///< I2C1 bus speed in Hz (MPU-6050, 50 kHz).
+                                            ///< GY-521 modules use 10 kΩ pull-ups; t_rise ~0.85 µs is
+                                            ///< marginal at 100 kHz (spec: 1 µs max).  50 kHz doubles
+                                            ///< the allowed rise time to 2 µs, eliminating NACK storms.
 constexpr uint16_t I2C_TIMEOUT_MS = 5;     ///< Max I2C transaction stall before fail-fast recovery.
 
 // ── Barometer (I2C BMP280) ──────────────────────────────────

@@ -8,6 +8,7 @@
 #include "debug/ares_log.h"
 
 #include <cmath>
+#include <cstring>
 #include <freertos/task.h>
 
 // ── MPU-6050 register map (PS-MPU-6000A-00, Table 3) ────────
@@ -184,7 +185,18 @@ ImuStatus Mpu6050Driver::read(ImuReading& out)
     }
 
     uint8_t buf[mpu6050::BURST_LEN] = {};  // MISRA-4.1: zero-init
-    if (!readRegs(mpu6050::REG_ACCEL_XOUT_H, buf, mpu6050::BURST_LEN))
+
+    // Retry up to 3 times: a flaky I2C bus (weak pull-ups, cable noise) often
+    // recovers after one failed transaction.  No delay between attempts is
+    // needed because the Wire stack releases and re-arbitrates the bus.
+    static constexpr uint8_t MAX_READ_ATTEMPTS = 3U;
+    bool readOk = false;
+    for (uint8_t attempt = 0U; attempt < MAX_READ_ATTEMPTS && !readOk; ++attempt)
+    {
+        (void)memset(buf, 0, sizeof(buf));
+        readOk = readRegs(mpu6050::REG_ACCEL_XOUT_H, buf, mpu6050::BURST_LEN);
+    }
+    if (!readOk)
     {
         return ImuStatus::ERROR;
     }
