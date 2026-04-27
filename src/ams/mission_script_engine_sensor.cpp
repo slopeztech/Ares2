@@ -16,6 +16,7 @@
 #include "ares_assert.h"
 #include "debug/ares_log.h"
 
+#include <Arduino.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -214,8 +215,21 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
         if (ae->driverIdx >= imuCount_)      { return false; }
         ImuInterface* imu = imuDrivers_[ae->driverIdx].iface;
         if (imu == nullptr)                  { return false; }
-        ImuReading r = {};
-        if (imu->read(r) != ImuStatus::OK)   { return false; }
+
+        // Re-use the cached burst if it was filled within IMU_CACHE_MAX_AGE_MS.
+        // This ensures all fields in a single LOG/HK report row share one I2C
+        // read, eliminating the partial-nan scatter caused by each field failing
+        // independently on a flaky connection.
+        const uint32_t nowMs = static_cast<uint32_t>(millis());
+        if ((nowMs - imuCacheTsMs_) >= IMU_CACHE_MAX_AGE_MS)
+        {
+            ImuReading r = {};
+            if (imu->read(r) != ImuStatus::OK) { return false; }
+            imuCachedReading_ = r;
+            imuCacheTsMs_     = nowMs;
+        }
+
+        const ImuReading& r = imuCachedReading_;
         switch (field)
         {
         case SensorField::ACCEL_X:   outVal = r.accelX; return true;

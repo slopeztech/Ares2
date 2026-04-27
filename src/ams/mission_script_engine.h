@@ -459,6 +459,19 @@ private:
     bool logHeaderWritten_ = false;
     uint32_t lastCheckpointMs_ = 0;
 
+    // ── IMU read cache ────────────────────────────────────────────────────────
+    // When a LOG.report or HK.report contains multiple IMU fields, each field
+    // would otherwise trigger a separate I2C burst.  These mutable members
+    // cache the last successful burst so all fields in one report share a
+    // single read, reducing I2C traffic and eliminating the partial-nan pattern
+    // caused by each field independently succeeding or failing.
+    mutable ImuReading imuCachedReading_ = {};  ///< Last successful IMU burst.
+    mutable uint32_t   imuCacheTsMs_     = 0;   ///< millis() when cache was filled.
+    // Max age (ms) before the cache is considered stale.  Must be much shorter
+    // than log_every so multiple rows each get a fresh read, but long enough to
+    // cover all fields within a single report (< 2 ms in practice).
+    static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
+
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
 };
 
