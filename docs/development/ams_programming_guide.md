@@ -82,6 +82,7 @@ log_every 200ms:
     baro_alt: BARO.alt
     pressure: BARO.pressure
   }
+```
 
 ### 2.5 conditions + on_error
 
@@ -351,6 +352,19 @@ Typical API flow:
 Abort flow:
 - `POST /api/mission/deactivate` stops execution and deactivates the active mission
 - `POST /api/mission/command {"command":"..."}` injects an arbitrary TC command
+
+Resume flow after reboot:
+1. On boot, AMS attempts to restore `/missions/.ams_resume.chk`.
+2. Restore is accepted only for a valid in-flight snapshot (`running=1`, `executionEnabled=1`, `status=RUNNING`).
+3. If accepted, mission state index and elapsed timers are recovered, and execution continues automatically.
+4. Main startup mirrors this in API mode by setting FLIGHT when restored status is RUNNING.
+5. If checkpoint is invalid/corrupt/stale, it is discarded and AMS remains non-running.
+
+Checkpoint cadence details:
+- Forced checkpoint when entering a new state.
+- Forced checkpoint when execution is enabled/disabled.
+- Periodic checkpoint while RUNNING every `AMS_CHECKPOINT_INTERVAL_MS`.
+- Checkpoint is removed on mission completion (`COMPLETE`) and on explicit deactivation.
 
 ---
 

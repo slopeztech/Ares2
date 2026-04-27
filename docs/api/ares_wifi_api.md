@@ -335,6 +335,95 @@ Abort the current flight.
 
 ---
 
+## AMS Mission Endpoints
+
+### GET /api/mission and GET /api/missions/active
+
+Return current AMS runtime snapshot.
+
+**Response** `200 OK`:
+
+```json
+{
+  "active": true,
+  "executionEnabled": true,
+  "activeFile": "mission.ams",
+  "state": "FLIGHT",
+  "error": ""
+}
+```
+
+### GET /api/missions
+
+List mission files available in `/missions`.
+
+### GET /api/missions/{file}
+
+Download a mission script file.
+
+### PUT /api/missions/{file}
+
+Upload or replace a mission script file (`.ams` plain text body).
+
+### DELETE /api/missions/{file}
+
+Delete a mission script file.
+
+### POST /api/mission/activate
+
+Activate a script without starting execution.
+
+**Request body:**
+
+```json
+{
+  "file": "mission.ams"
+}
+```
+
+### POST /api/mission/deactivate
+
+Deactivate current script and clear any pending AMS resume checkpoint.
+
+### POST /api/mission/command
+
+Inject telecommand token consumed by AMS transitions.
+
+**Request body:**
+
+```json
+{
+  "command": "LAUNCH"
+}
+```
+
+---
+
+## AMS Persistence and Auto-Resume
+
+AMS stores a persistent checkpoint at:
+- `/missions/.ams_resume.chk`
+
+Checkpoint cadence:
+- Forced on state entry.
+- Forced when execution enabled/disabled changes.
+- Periodic while RUNNING every `AMS_CHECKPOINT_INTERVAL_MS` (default `1000 ms`).
+
+Restore behavior on boot:
+- AMS attempts restore during engine initialization.
+- Restore is accepted only for valid in-flight records (`running=1`, `executionEnabled=1`, `status=RUNNING`).
+- If accepted, mission state and elapsed timers are recovered and execution continues.
+- If rejected (invalid/corrupt/stale), checkpoint is discarded.
+
+Cleanup behavior:
+- Checkpoint is removed on explicit mission deactivation.
+- Checkpoint is removed when mission reaches terminal `COMPLETE` state.
+
+Operational note:
+- After successful auto-resume, API mode is aligned to FLIGHT so `/api/status` reflects the resumed mission state.
+
+---
+
 ## Error Responses
 
 All errors follow the format:

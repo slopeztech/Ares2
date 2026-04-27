@@ -48,14 +48,27 @@ Mission local log file:
 - Created or overwritten on activation
 - Line format: `t_ms=<ms>,state=<state>,field=value,...`
 
+Persistent resume checkpoint:
+- Path: `/missions/.ams_resume.chk`
+- Format: `version|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed`
+- Write policy:
+  - Forced write on state entry and execution enable/disable changes
+  - Periodic write while running using `AMS_CHECKPOINT_INTERVAL_MS`
+- Clear policy:
+  - On explicit `deactivate()`
+  - On terminal mission completion (`COMPLETE`)
+  - On invalid/corrupt checkpoint record
+
 ---
 
 ## AMS-3 Engine Lifecycle
 
 Engine status values:
 - `IDLE`
+- `LOADED`
 - `RUNNING`
 - `ERROR`
+- `COMPLETE`
 
 Lifecycle:
 1. `activate(file)` loads, parses, resolves transitions, and prepares log file
@@ -67,6 +80,17 @@ Lifecycle:
 Flight API integration:
 - `POST /api/arm` enables execution and injects `LAUNCH`
 - `POST /api/abort` disables execution and deactivates script
+
+Boot restore integration:
+1. `begin()` attempts restore from `/missions/.ams_resume.chk`
+2. Restore is accepted only when all conditions hold:
+  - checkpoint version matches firmware parser version
+  - script can be loaded from storage
+  - state index is valid
+  - status enum is within declared range
+  - restored tuple is exactly: `running=1`, `executionEnabled=1`, `status=RUNNING`
+3. If accepted, AMS continues from the persisted state/timers and rewrites checkpoint immediately
+4. If rejected, checkpoint is discarded and AMS remains non-running
 
 ---
 
