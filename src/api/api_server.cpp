@@ -54,12 +54,19 @@ static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
 // ── Constructor ─────────────────────────────────────────────
 
 ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
-                                         GpsInterface& gps, ImuInterface& imu,
+                     GpsInterface& gps, ImuInterface& imu,
                      StorageInterface* storage,
                      ares::ams::MissionScriptEngine* mission,
-                     StatusLed* statusLed)
+                     StatusLed* statusLed,
+                     TwoWire* i2c0,
+                     TwoWire* i2c1,
+                     HardwareSerial* gpsUart,
+                     HardwareSerial* loraUart,
+                     RadioInterface* radio)
         : wifi_(wifi), baro_(baro), gps_(gps), imu_(imu),
-      storage_(storage), mission_(mission), statusLed_(statusLed)
+          storage_(storage), mission_(mission), statusLed_(statusLed),
+          i2c0_(i2c0), i2c1_(i2c1), gpsUart_(gpsUart),
+          loraUart_(loraUart), radio_(radio)
 {
 }
 
@@ -473,6 +480,26 @@ void ApiServer::routeRequest(WiFiClient& client,
             return;
         }
         handleAbort(client);
+    }
+    else if (strcmp(path, "/api/scans/i2c") == 0)
+    {
+        if (strcmp(method, "POST") != 0)
+        {
+            sendError(client, 405, "method not allowed");
+            LOG_W(TAG, "%s %s 405", method, path);
+            return;
+        }
+        handleI2cScan(client);
+    }
+    else if (strcmp(path, "/api/scans/uart") == 0)
+    {
+        if (strcmp(method, "POST") != 0)
+        {
+            sendError(client, 405, "method not allowed");
+            LOG_W(TAG, "%s %s 405", method, path);
+            return;
+        }
+        handleUartScan(client);
     }
     else if (strncmp(path, "/api/logs", 9) == 0)
     {

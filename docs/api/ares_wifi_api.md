@@ -136,6 +136,89 @@ Lightweight IMU health endpoint.
 
 ---
 
+### POST /api/scans/i2c
+
+On-demand scan of configured I2C buses.
+
+**Request:** No body required.
+
+**Response** `200 OK`:
+
+```json
+{
+  "scan": "i2c",
+  "timestampMs": 123456,
+  "buses": [
+    {
+      "name": "i2c0",
+      "sda": 1,
+      "scl": 2,
+      "frequencyHz": 400000,
+      "foundCount": 1,
+      "reportedCount": 1,
+      "truncated": false,
+      "found": [119]
+    },
+    {
+      "name": "i2c1",
+      "sda": 12,
+      "scl": 13,
+      "frequencyHz": 400000,
+      "foundCount": 1,
+      "reportedCount": 1,
+      "truncated": false,
+      "found": [104]
+    }
+  ]
+}
+```
+
+If no buses are available, returns `500` with an `error` field.
+
+---
+
+### POST /api/scans/uart
+
+On-demand passive scan of configured UART ports.
+
+**Request:** No body required.
+
+**Response** `200 OK`:
+
+```json
+{
+  "scan": "uart",
+  "timestampMs": 123456,
+  "ports": [
+    {
+      "name": "gps",
+      "uart": 1,
+      "baud": 9600,
+      "available": true,
+      "rxBuffered": 0,
+      "hasData": false
+    },
+    {
+      "name": "lora",
+      "uart": 2,
+      "baud": 9600,
+      "available": true,
+      "rxBuffered": 2,
+      "hasData": true,
+      "peekHex": "3A"
+    }
+  ],
+  "gpsDriver": "BN220",
+  "gpsStatus": "ok",
+  "radioDriver": "LORA",
+  "radioReady": true
+}
+```
+
+If no UART ports are available, returns `500` with an `error` field.
+
+---
+
 ### GET /api/config
 
 Current runtime configuration.

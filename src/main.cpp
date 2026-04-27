@@ -79,7 +79,10 @@ static ares::ams::MissionScriptEngine missionEngine(
     kImuDrivers,  static_cast<uint8_t>(1));
 static ApiServer apiServer(wifiAp, baroIf, gpsIf, imuIf,
                            &storageIf, &missionEngine,
-                           &statusLed);
+                           &statusLed,
+                           &Wire, &imuWire,
+                           &gpsSerial, &loraSerial,
+                           &radioIf);
 
 // ═══════════════════════════════════════════════════════════
 void setup()

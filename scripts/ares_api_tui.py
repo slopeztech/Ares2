@@ -101,6 +101,8 @@ ENDPOINTS: list[EndpointDef] = [
         "application/json",
         "Inject TC command",
     ),
+    EndpointDef("Scan I2C buses", "POST", "/api/scans/i2c", "", "application/json", "Probe I2C0 and I2C1 buses"),
+    EndpointDef("Scan UART ports", "POST", "/api/scans/uart", "", "application/json", "Inspect GPS/LoRa UART state"),
 ]
 
 

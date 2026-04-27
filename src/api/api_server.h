@@ -15,6 +15,8 @@
  *   POST   /api/mode        — change operating mode
  *   POST   /api/arm         — arm flight FSM
  *   POST   /api/abort       — abort current flight
+ *   POST   /api/scans/i2c   — scan configured I2C buses
+ *   POST   /api/scans/uart  — scan configured UART ports
  *   GET    /api/logs        — list log files (REST-12)
  *   GET    /api/logs/:id    — download log file
  *   DELETE /api/logs        — delete all logs
@@ -38,10 +40,13 @@
 #include "hal/baro/barometer_interface.h"
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
+#include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
 #include "sys/wifi/wifi_ap.h"
 
 class StatusLed;  ///< Forward declaration — avoids circular headers.
+class TwoWire;
+class HardwareSerial;
 
 /**
  * Runtime configuration struct.
@@ -72,16 +77,26 @@ public:
      * @param[in] wifi       Reference to the WiFi AP service.
      * @param[in] baro       Reference to the barometer interface.
      * @param[in] gps        Reference to the GPS interface.
-    * @param[in] imu        Reference to the IMU interface.
+     * @param[in] imu        Reference to the IMU interface.
      * @param[in] storage    Pointer to storage interface (nullable).
      * @param[in] mission    Pointer to AMS runtime (nullable).
      * @param[in] statusLed  Pointer to status LED service (nullable).
+     * @param[in] i2c0       Pointer to I2C0 bus (nullable).
+     * @param[in] i2c1       Pointer to I2C1 bus (nullable).
+     * @param[in] gpsUart    Pointer to GPS UART port (nullable).
+     * @param[in] loraUart   Pointer to LoRa UART port (nullable).
+     * @param[in] radio      Pointer to radio interface (nullable).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
-            GpsInterface& gps, ImuInterface& imu,
+              GpsInterface& gps, ImuInterface& imu,
               StorageInterface* storage = nullptr,
               ares::ams::MissionScriptEngine* mission = nullptr,
-              StatusLed* statusLed = nullptr);
+              StatusLed* statusLed = nullptr,
+              TwoWire* i2c0 = nullptr,
+              TwoWire* i2c1 = nullptr,
+              HardwareSerial* gpsUart = nullptr,
+              HardwareSerial* loraUart = nullptr,
+              RadioInterface* radio = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;
@@ -151,6 +166,8 @@ private:
                     const char* body, uint32_t bodyLen);
     void handleArm(class WiFiClient& client);
     void handleAbort(class WiFiClient& client);
+    void handleI2cScan(class WiFiClient& client);
+    void handleUartScan(class WiFiClient& client);
     // storage/
     void handleLogsList(class WiFiClient& client);
     void handleLogDownload(class WiFiClient& client,
@@ -207,6 +224,11 @@ private:
     StorageInterface*    storage_;  ///< Nullable — logs disabled if null.
     ares::ams::MissionScriptEngine* mission_; ///< Nullable — AMS disabled if null.
     StatusLed*           statusLed_; ///< Nullable — LED updates disabled if null.
+    TwoWire*             i2c0_;      ///< Nullable — board I2C0 bus.
+    TwoWire*             i2c1_;      ///< Nullable — board I2C1 bus.
+    HardwareSerial*      gpsUart_;   ///< Nullable — UART1 monitor handle.
+    HardwareSerial*      loraUart_;  ///< Nullable — UART2 monitor handle.
+    RadioInterface*      radio_;     ///< Nullable — radio health probe.
 
     // ── Shared state ────────────────────────────────────────
     RuntimeConfig config_ = {};
