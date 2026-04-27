@@ -61,6 +61,7 @@ constexpr uint32_t    SERIAL_BAUD    = 115200;   ///< USB-CDC baud rate.
 constexpr uint32_t I2C_FREQ     = 400000;  ///< I2C0 bus speed in Hz (BMP280, 400 kHz fast mode).
 constexpr uint32_t I2C_FREQ_IMU = 100000;  ///< I2C1 bus speed in Hz (MPU-6050, 100 kHz standard mode).
                                             ///< GY-521 modules use 10 kΩ pull-ups; 400 kHz is unreliable.
+constexpr uint16_t I2C_TIMEOUT_MS = 5;     ///< Max I2C transaction stall before fail-fast recovery.
 
 // ── Barometer (I2C BMP280) ──────────────────────────────────
 constexpr uint8_t BMP280_I2C_ADDR = 0x77;  ///< SDO → VCC (AHT20+BMP280 default).
@@ -78,6 +79,7 @@ constexpr uint32_t FIRE_DURATION_MS = 1000;  ///< Pyro channel fire pulse durati
 constexpr float    LORA_FREQ_MHZ          = 433.125f; ///< CH=23: 410.125+23.
 constexpr int8_t   LORA_TX_POWER          = 20;       ///< Transmit power in dBm.
 constexpr uint32_t LORA_UART_BAUD         = 9600;     ///< Module serial baud rate.
+constexpr uint32_t LORA_AUX_TIMEOUT_MS    = 50;       ///< Max AUX wait before TX proceeds in degraded mode.
 constexpr uint32_t TELEMETRY_INTERVAL_MS  = 500;      ///< Downlink interval.
 
 // ── WiFi AP (ground configuration) ─────────────────────────

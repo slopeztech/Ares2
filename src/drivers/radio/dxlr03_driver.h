@@ -20,6 +20,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "config.h"
 
 #include "hal/radio/radio_interface.h"
 
@@ -116,5 +117,5 @@ private:
     static constexpr uint16_t MODULE_MTU = 240;
 
     /// AUX wait timeout when starting a transmission (ms).
-    static constexpr uint32_t AUX_TIMEOUT_MS = 2000;
+    static constexpr uint32_t AUX_TIMEOUT_MS = ares::LORA_AUX_TIMEOUT_MS;
 };

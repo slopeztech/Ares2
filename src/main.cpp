@@ -94,9 +94,11 @@ void setup()
     // I2C buses — initialise before any I2C driver.
     // I2C0 (Wire): shared board sensors (BMP280 on GPIO 1/2).
     Wire.begin(ares::PIN_I2C_SDA, ares::PIN_I2C_SCL, ares::I2C_FREQ);
+    Wire.setTimeOut(ares::I2C_TIMEOUT_MS);
     // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
     // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
+    imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
 
     (void)baroIf.begin();
     (void)imuIf.begin();
