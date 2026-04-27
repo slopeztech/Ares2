@@ -97,7 +97,7 @@ void ApiServer::handleStatus(WiFiClient& client)
     }
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
     ARES_ASSERT(len < sizeof(buf));
-    sendJson(client, 200, buf, len);
+    sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 }

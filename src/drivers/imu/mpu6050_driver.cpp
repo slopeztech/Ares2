@@ -8,6 +8,7 @@
 #include "debug/ares_log.h"
 
 #include <cmath>
+#include <freertos/task.h>
 
 // ── MPU-6050 register map (PS-MPU-6000A-00, Table 3) ────────
 namespace mpu6050
@@ -54,7 +55,7 @@ namespace mpu6050
 
 // ── Public ──────────────────────────────────────────────────
 
-static const char* TAG = "IMU";
+static constexpr const char* TAG = "IMU";  // MISRA-7: named constant
 
 Mpu6050Driver::Mpu6050Driver(TwoWire& wire, uint8_t addr)
     : wire_(wire)
@@ -78,7 +79,8 @@ bool Mpu6050Driver::begin()
             LOG_E(TAG, "no ACK at 0x%02X (I2C write failed)", addr);
             return false;
         }
-        delay(mpu6050::RESET_SETTLE_MS);  // wait for reset + oscillator settle (init-only)
+        // RTOS-1: deviation — vTaskDelay required by MPU-6050 DEVICE_RESET oscillator settle time.
+        vTaskDelay(pdMS_TO_TICKS(mpu6050::RESET_SETTLE_MS));
 
         // Step 2: Wake device by clearing SLEEP bit.
         if (!writeReg(mpu6050::REG_PWR_MGMT_1, mpu6050::PWR_WAKE))
@@ -86,7 +88,8 @@ bool Mpu6050Driver::begin()
             LOG_E(TAG, "wake write failed at 0x%02X", addr);
             return false;
         }
-        delay(ares::MPU6050_WAKE_DELAY_MS);  // wait for clocks to settle (init-only)
+        // RTOS-1: deviation — vTaskDelay required for I2C clock settle after wake.
+        vTaskDelay(pdMS_TO_TICKS(ares::MPU6050_WAKE_DELAY_MS));
 
         // Step 3: Verify identity.
         uint8_t idBuf[1] = {};

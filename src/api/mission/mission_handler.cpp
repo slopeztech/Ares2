@@ -95,10 +95,10 @@ void ApiServer::handleMissionStatus(WiFiClient& client)
     doc["error"] = snap.lastError;
 
     memset(g_missionJsonBuf, 0, sizeof(g_missionJsonBuf));
-    const uint32_t len = serializeJson(doc, g_missionJsonBuf,
+    const size_t len = serializeJson(doc, g_missionJsonBuf,
                                        sizeof(g_missionJsonBuf));
     ARES_ASSERT(len < sizeof(g_missionJsonBuf));
-    sendJson(client, 200, g_missionJsonBuf, len);
+    sendJson(client, 200U, g_missionJsonBuf, static_cast<uint32_t>(len));
 }
 
 void ApiServer::handleMissionList(WiFiClient& client)
@@ -131,10 +131,10 @@ void ApiServer::handleMissionList(WiFiClient& client)
     }
 
     memset(g_missionJsonBuf, 0, sizeof(g_missionJsonBuf));
-    const uint32_t len = serializeJson(doc, g_missionJsonBuf,
+    const size_t len = serializeJson(doc, g_missionJsonBuf,
                                        sizeof(g_missionJsonBuf));
     ARES_ASSERT(len < sizeof(g_missionJsonBuf));
-    sendJson(client, 200, g_missionJsonBuf, len);
+    sendJson(client, 200U, g_missionJsonBuf, static_cast<uint32_t>(len));
 }
 
 void ApiServer::handleMissionDownload(WiFiClient& client,

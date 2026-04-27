@@ -138,9 +138,9 @@ void ApiServer::handleLogsList(WiFiClient& client)
     }
 
     memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
-    const uint32_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
+    const size_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
     ARES_ASSERT(len < sizeof(g_jsonBuf));
-    sendJson(client, 200, g_jsonBuf, len);
+    sendJson(client, 200U, g_jsonBuf, static_cast<uint32_t>(len));
     LOG_D(TAG, "GET /api/logs 200: %u files", static_cast<uint32_t>(count));
 }
 
@@ -386,8 +386,8 @@ void ApiServer::handleStorageHealth(WiFiClient& client)
     doc["recovery_errors"] = health.recoveryErrors;
 
     memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
-    const uint32_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
+    const size_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
     ARES_ASSERT(len < sizeof(g_jsonBuf));
-    sendJson(client, 200, g_jsonBuf, len);
+    sendJson(client, 200U, g_jsonBuf, static_cast<uint32_t>(len));
     LOG_D(TAG, "GET /api/storage/health 200");
 }

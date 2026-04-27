@@ -10,6 +10,10 @@
 #include <ArduinoJson.h>
 #include <WiFiClient.h>
 
+/** @brief Convert ImuStatus enum to a lowercase JSON-safe string.
+ *  @param[in] st  Status value to convert.
+ *  @return        Null-terminated constant string (never NULL).
+ */
 static const char* imuStatusToString(ImuStatus st)
 {
     switch (st)
@@ -47,9 +51,9 @@ void ApiServer::handleImuGet(WiFiClient& client)
     }
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
     ARES_ASSERT(len < sizeof(buf));
-    sendJson(client, 200, buf, len);
+    sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 }
 
 void ApiServer::handleImuHealth(WiFiClient& client)
@@ -63,7 +67,7 @@ void ApiServer::handleImuHealth(WiFiClient& client)
     doc["timestampMs"] = millis();
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
     ARES_ASSERT(len < sizeof(buf));
-    sendJson(client, 200, buf, len);
+    sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 }

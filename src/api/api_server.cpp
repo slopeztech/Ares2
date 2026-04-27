@@ -700,7 +700,8 @@ void ApiServer::sendError(WiFiClient& client, uint16_t code,
     doc["error"] = message;
 
     char buf[256] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
+    ARES_ASSERT(len < sizeof(buf));
 
     const char* reason = "Error";
     switch (code)
@@ -716,7 +717,7 @@ void ApiServer::sendError(WiFiClient& client, uint16_t code,
 
     client.printf("HTTP/1.1 %u %s\r\n", code, reason);
     client.print("Content-Type: application/json\r\n");
-    client.printf("Content-Length: %" PRIu32 "\r\n", len);
+    client.printf("Content-Length: %" PRIu32 "\r\n", static_cast<uint32_t>(len));
     client.print(CORS_HEADERS);
     client.print("Connection: close\r\n");
     client.print("\r\n");

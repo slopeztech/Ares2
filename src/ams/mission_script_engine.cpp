@@ -19,6 +19,7 @@
 #include "debug/ares_log.h"
 
 #include <Arduino.h>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -669,18 +670,20 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     char record[192] = {};
     const int written = snprintf(record,
                                  sizeof(record),
-                                 "%u|%s|%u|%u|%u|%u|%u|%lu|%lu|%lu",
-                                 static_cast<unsigned>(AMS_RESUME_VERSION),
+                                 "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
+                                 "|%" PRIu32 "|%" PRIu32 "|%" PRIu32
+                                 "|%" PRIu32 "|%" PRIu32 "|%" PRIu32,
+                                 static_cast<uint32_t>(AMS_RESUME_VERSION),
                                  activeFile_,
-                                 static_cast<unsigned>(currentState_),
+                                 static_cast<uint32_t>(currentState_),
                                  executionEnabled_ ? 1U : 0U,
                                  running_ ? 1U : 0U,
-                                 static_cast<unsigned>(status_),
-                                 static_cast<unsigned>(seq_),
-                                 static_cast<unsigned long>(stateElapsed),
-                                 static_cast<unsigned long>(hkElapsed),
-                                 static_cast<unsigned long>(logElapsed));
-    if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(record))
+                                 static_cast<uint32_t>(status_),
+                                 static_cast<uint32_t>(seq_),
+                                 stateElapsed,
+                                 hkElapsed,
+                                 logElapsed);
+    if (written <= 0 || static_cast<size_t>(written) >= sizeof(record))
     {
         return false;
     }
@@ -738,19 +741,21 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     }
     buf[bytesRead] = '\0';
 
-    unsigned version = 0U;
+    uint32_t version = 0U;
     char fileName[ares::MISSION_FILENAME_MAX + 1U] = {};
-    unsigned stateIdx = 0U;
-    unsigned execEnabled = 0U;
-    unsigned running = 0U;
-    unsigned status = 0U;
-    unsigned seq = 0U;
-    unsigned long stateElapsed = 0UL;
-    unsigned long hkElapsed = 0UL;
-    unsigned long logElapsed = 0UL;
+    uint32_t stateIdx = 0U;
+    uint32_t execEnabled = 0U;
+    uint32_t running = 0U;
+    uint32_t status = 0U;
+    uint32_t seq = 0U;
+    uint32_t stateElapsed = 0U;
+    uint32_t hkElapsed = 0U;
+    uint32_t logElapsed = 0U;
 
     const int parsed = sscanf(buf,
-                              "%u|%32[^|]|%u|%u|%u|%u|%u|%lu|%lu|%lu",
+                              "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
+                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
+                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
                               &version,
                               fileName,
                               &stateIdx,
@@ -761,7 +766,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
                               &stateElapsed,
                               &hkElapsed,
                               &logElapsed);
-    if (parsed != 10 || version != static_cast<unsigned>(AMS_RESUME_VERSION))
+    if (parsed != 10 || version != static_cast<uint32_t>(AMS_RESUME_VERSION))
     {
         clearResumePointLocked();
         return false;
@@ -781,13 +786,20 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     }
 
     currentState_ = static_cast<uint8_t>(stateIdx);
-    stateEnterMs_ = nowMs - static_cast<uint32_t>(stateElapsed);
-    lastHkMs_ = nowMs - static_cast<uint32_t>(hkElapsed);
-    lastLogMs_ = nowMs - static_cast<uint32_t>(logElapsed);
+    stateEnterMs_ = nowMs - stateElapsed;
+    lastHkMs_ = nowMs - hkElapsed;
+    lastLogMs_ = nowMs - logElapsed;
     seq_ = static_cast<uint8_t>(seq & 0xFFU);
 
     running_ = (running != 0U);
     executionEnabled_ = (execEnabled != 0U);
+    // CERT-1: validate enum range before cast to prevent undefined behaviour.
+    if (status > static_cast<uint32_t>(EngineStatus::LAST))
+    {
+        LOG_W(TAG, "resume: invalid status field %" PRIu32 " — discarding checkpoint", status);
+        clearResumePointLocked();
+        return false;
+    }
     status_ = static_cast<EngineStatus>(status);
 
     pendingTc_ = TcCommand::NONE;

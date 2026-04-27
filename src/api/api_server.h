@@ -123,15 +123,23 @@ public:
     ares::OperatingMode getMode() const;
 
     /**
-     * Called by the main loop when the AMS mission reaches COMPLETE or ERROR.
+     * @brief  Notify that the active AMS mission has reached COMPLETE or ERROR.
+     *
+     * Called by the main loop when the AMS engine terminates normally or faults.
      * Resets armed flag and transitions operating mode back to IDLE.
      * Safe to call from any task (lock-free).
+     *
+     * @post   `isArmed()` returns false; operating mode is IDLE.
      */
     void notifyMissionComplete();
 
     /**
-     * Called when AMS is auto-restored after reboot and already RUNNING.
+     * @brief  Notify that a persisted AMS mission has been auto-resumed after reboot.
+     *
+     * Called when AMS is auto-restored and already RUNNING.
      * Sets armed flag and FLIGHT mode so API state matches mission runtime.
+     *
+     * @post   `isArmed()` returns true; operating mode is FLIGHT.
      */
     void notifyMissionResumed();
 

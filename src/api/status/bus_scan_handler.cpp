@@ -55,6 +55,10 @@ static I2cScanResult scanI2cBus(TwoWire& bus)
     return result;
 }
 
+/** @brief Convert GpsStatus enum to a lowercase JSON-safe string.
+ *  @param[in] st  Status value to convert.
+ *  @return        Null-terminated constant string (never NULL).
+ */
 static const char* gpsStatusToString(GpsStatus st)
 {
     switch (st)
@@ -68,6 +72,14 @@ static const char* gpsStatusToString(GpsStatus st)
     }
 }
 
+/** @brief Scan one I2C bus and append the result as a JSON object to @p buses.
+ *  @param[in,out] buses        JSON array to append to.
+ *  @param[in]     name         Human-readable bus label.
+ *  @param[in]     sda          SDA GPIO number.
+ *  @param[in]     scl          SCL GPIO number.
+ *  @param[in]     frequencyHz  Bus clock frequency in Hz.
+ *  @param[in]     bus          TwoWire instance to scan.
+ */
 static void appendI2cBus(JsonArray& buses,
                          const char* name,
                          uint8_t sda,
@@ -93,6 +105,13 @@ static void appendI2cBus(JsonArray& buses,
     }
 }
 
+/** @brief Append UART port status as a JSON object to @p ports.
+ *  @param[in,out] ports      JSON array to append to.
+ *  @param[in]     name       Human-readable port label.
+ *  @param[in]     uartIndex  Hardware UART index (0-based).
+ *  @param[in]     baud       Configured baud rate.
+ *  @param[in]     serial     Pointer to HardwareSerial instance, or NULL if unavailable.
+ */
 static void appendUartPort(JsonArray& ports,
                            const char* name,
                            uint8_t uartIndex,
@@ -174,9 +193,9 @@ void ApiServer::handleI2cScan(WiFiClient& client)
     }
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
     ARES_ASSERT(len < sizeof(buf));
-    sendJson(client, 200, buf, len);
+    sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 
     LOG_I(TAG, "POST /api/scans/i2c 200");
 }
@@ -220,9 +239,9 @@ void ApiServer::handleUartScan(WiFiClient& client)
     }
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t len = serializeJson(doc, buf, sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf));
     ARES_ASSERT(len < sizeof(buf));
-    sendJson(client, 200, buf, len);
+    sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 
     LOG_I(TAG, "POST /api/scans/uart 200");
 }
