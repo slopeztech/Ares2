@@ -36,7 +36,6 @@ ARES is an embedded flight computer for amateur rockets. It combines in a single
 - **Wireless telemetry** — LoRa downlink with a custom binary protocol (ARES Radio Protocol v2)
 - **Programmable missions** — AMS script engine that lets you define flight logic in plain text
 - **Ground configuration** — HTTP REST API over an integrated WiFi AP
-- **Status LED** — RGB Neopixel with per-mode patterns
 
 The design applies safety-critical software disciplines (NASA JPL Power of 10, DO-178C, MISRA C, CERT C) adapted to the amateur scale, because **a software failure can destroy the rocket or injure people**. Formal certification is not the goal — the discipline it enforces is.
 
