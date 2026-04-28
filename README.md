@@ -82,6 +82,8 @@ Related documents:
 | **MPU-6050**        | I2C       | 6-axis IMU (accelerometer ±2g + gyro ±250°/s) |
 | **WS2812B**         | GPIO 21   | RGB status LED (Neopixel)                      |
 
+Note: The BMP280 and, especially, the MPU-6050 are currently being used for testing purposes. They are planned to be replaced with higher-precision hardware, and support (drivers) for these new sensors will be added in future versions.
+
 ### Pin Map
 
 | GPIO | Function       | Notes                              |
