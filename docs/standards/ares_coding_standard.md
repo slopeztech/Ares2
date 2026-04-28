@@ -236,5 +236,5 @@ build_flags =
 | Hardware registry | [hardware/hardware_registry.md](../hardware/hardware_registry.md) |
 | GPS module | [hardware/gps_bn220.md](../hardware/gps_bn220.md) |
 | Radio protocol | [architecture/ares_radio_protocol.md](../architecture/ares_radio_protocol.md) |
-| Wi-Fi API | [api/ares_wifi_api.md](../api/ares_wifi_api.md) |
+| Wi-Fi API | [api/wifi_api_endpoints.md](../api/wifi_api_endpoints.md) |
 | Testing guide | [development/how_to_test.md](../development/how_to_test.md) |
