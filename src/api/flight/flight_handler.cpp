@@ -123,6 +123,19 @@ void ApiServer::handleArm(WiFiClient& client)
 
     ares::ams::EngineSnapshot before = {};
     mission_->getSnapshot(before);
+
+    if (before.status == ares::ams::EngineStatus::RUNNING)
+    {
+        // AMS is already executing (e.g. checkpoint restored on boot and
+        // notifyMissionResumed() wasn't reached, or a duplicate arm call).
+        // Adopt the running state rather than faulting into ERROR mode.
+        armed_.store(true);
+        setMode(ares::OperatingMode::FLIGHT);
+        LOG_I(TAG, "POST /api/arm: AMS already RUNNING — adopting running state");
+        handleStatus(client);
+        return;
+    }
+
     if (before.status != ares::ams::EngineStatus::LOADED)
     {
         setMode(ares::OperatingMode::ERROR);
@@ -133,15 +146,14 @@ void ApiServer::handleArm(WiFiClient& client)
         return;
     }
 
-    // Enable execution: status transitions LOADED -> RUNNING inside setExecutionEnabled.
-    mission_->setExecutionEnabled(true);
-    const bool injected = mission_->injectTcCommand("LAUNCH");
-    if (!injected)
+    // Enable execution and inject LAUNCH atomically.  A single mutex
+    // acquisition prevents tick() from grabbing the lock between the two
+    // operations and causing a mutex timeout on the LAUNCH inject.
+    if (!mission_->arm())
     {
-        mission_->setExecutionEnabled(false);
         setMode(ares::OperatingMode::ERROR);
-        sendError(client, 500, "failed to inject LAUNCH into AMS");
-        LOG_E(TAG, "POST /api/arm 500: LAUNCH injection failed -> mode=ERROR");
+        sendError(client, 500, "arm failed: mutex timeout or status changed");
+        LOG_E(TAG, "POST /api/arm 500: arm() failed -> mode=ERROR");
         return;
     }
 
@@ -160,7 +172,7 @@ void ApiServer::handleArm(WiFiClient& client)
 
     armed_.store(true);
     setMode(ares::OperatingMode::FLIGHT);  // blue LED: AMS is now executing
-    LOG_I(TAG, "POST /api/arm: LAUNCH injected into AMS");
+    LOG_I(TAG, "POST /api/arm: armed");
 
     handleStatus(client);
     LOG_I(TAG, "POST /api/arm 200: armed");

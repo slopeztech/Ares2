@@ -50,7 +50,6 @@ Mission local log file:
 
 Persistent resume checkpoint:
 - Path: `/missions/.ams_resume.chk`
-- Format: `version|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed`
 - Write policy:
   - Forced write on state entry and execution enable/disable changes
   - Periodic write while running using `AMS_CHECKPOINT_INTERVAL_MS`
@@ -58,6 +57,36 @@ Persistent resume checkpoint:
   - On explicit `deactivate()`
   - On terminal mission completion (`COMPLETE`)
   - On invalid/corrupt checkpoint record
+
+**Checkpoint format v1** (legacy — accepted on restore, no longer written):
+```
+1|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed
+```
+
+**Checkpoint format v2** (current — `AMS_RESUME_VERSION = 2`):
+```
+2|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed[|varCount|name1=value1=valid1|...|nameN=valueN=validN]
+```
+Fields:
+| Field | Description |
+|---|---|
+| `version` | Format version (`1` legacy, `2` current) |
+| `file` | Script filename (e.g. `flight_test.ams`) |
+| `stateIdx` | Zero-based index of active state |
+| `executionEnabled` | `1` if armed and executing; `0` if paused |
+| `running` | `1` if engine is active |
+| `status` | Numeric `EngineStatus` value |
+| `seq` | HK frame sequence counter |
+| `stateElapsed` | ms since state entry |
+| `hkElapsed` | ms since last HK transmission |
+| `logElapsed` | ms since last LOG write |
+| `varCount` | Number of variable entries (v2 only) |
+| `name=value=valid` | Per-variable: name, float value, `0`/`1` valid flag (v2 only) |
+
+Restore rules:
+- v1 checkpoints are restored without variable data
+- v2 checkpoints restore global variable state
+- Checkpoint is discarded if `!(running && executionEnabled && status == RUNNING)`
 
 ---
 
@@ -196,13 +225,25 @@ Supported expressions in both HK and LOG blocks:
 
 ### AMS-4.6 Transitions
 
-General form:
+Full extended syntax:
 
 ```ams
-transition to <STATE> when <LHS> <OP> <RHS>
+transition to <STATE> when <COND> [or|and <COND> ...] [for <N>ms]
 ```
 
-Supported conditions:
+Where each `<COND>` may be one of:
+
+| Form | Meaning |
+|---|---|
+| `TC.command == LAUNCH\|ABORT\|RESET` | TC one-shot gate |
+| `BARO.alt < x` / `BARO.alt > x` | Absolute sensor threshold |
+| `BARO.temp < x` / `BARO.pressure < x` | (and any other BARO/GPS/IMU field) |
+| `ALIAS.field delta < x` | Inter-sample delta < x (AMS-4.6.2) |
+| `ALIAS.field delta > x` | Inter-sample delta > x |
+| `ALIAS.field falling` | Sugar: delta < 0 |
+| `ALIAS.field rising` | Sugar: delta > 0 |
+
+Supported fields for standard comparisons:
 - `TC.command == LAUNCH|ABORT|RESET`
 - `BARO.alt < x`, `BARO.alt > x`
 - `BARO.temp < x`, `BARO.temp > x`
@@ -216,6 +257,74 @@ Supported conditions:
 
 Transition targets are resolved after parse.
 Unknown targets cause `ERROR` status.
+
+### AMS-4.6.1 Persistence Modifier (`for <N>ms`)
+
+An optional persistence window can be appended to any sensor transition:
+
+```ams
+transition to <STATE> when <LHS> <OP> <RHS> for <N>ms
+```
+
+Example:
+
+```ams
+transition to APOGEE when BARO.alt > 3000 for 500ms
+```
+
+Semantics:
+- The **compound** condition must evaluate as **true on every consecutive tick**
+  for at least `N` milliseconds before the transition fires.
+- If the compound falls false before the window elapses, the hold timer resets.
+- Omitting `for Nms` preserves the existing single-sample (immediate) behaviour.
+- `for Nms` is **ignored** for transitions whose only condition is `TC.command`.
+- Minimum value: `1 ms`. Zero is rejected at parse time.
+
+Runtime state:
+- `transitionCondHolding_` — set when the compound first becomes true.
+- `transitionCondMetMs_` — timestamp of the first true sample.
+- Both fields are reset on every state entry and on `deactivate()`.
+
+### AMS-4.6.2 Delta / Trend Conditions
+
+Delta conditions compare the **difference between the current sensor reading
+and the previous reading** (taken on the previous tick) against a threshold.
+
+Forms:
+
+```ams
+ALIAS.field delta < VALUE
+ALIAS.field delta > VALUE
+ALIAS.field falling         // delta < 0 (descending)
+ALIAS.field rising          // delta > 0 (ascending)
+```
+
+Semantics:
+- `delta = current_reading − previous_reading`
+- On the first tick after entering a state, no previous reading is available —
+  the condition evaluates to **false** (no spurious trigger on entry).
+- If the sensor read fails, the condition evaluates to **false** and the
+  previous value is **not** updated (the baseline is preserved for the next tick).
+- The delta previous-value table is reset on every state entry.
+
+### AMS-4.6.3 Compound Conditions (`or` / `and`)
+
+Multiple conditions can be combined in a single transition using `or` or `and`:
+
+```ams
+transition to DESCENT when BARO.alt falling or GPS.alt falling
+transition to ABORT when BARO.temp > 90 and IMU.accel_mag > 200
+```
+
+Rules:
+- Up to `AMS_MAX_TRANSITION_CONDS` (4) sub-conditions per transition.
+- Logic must be **homogeneous**: mixing `or` and `and` in one transition is
+  a parse error.
+- `TC.command` may appear in compound conditions, but is consumed only when
+  the overall compound evaluates to true and the transition fires.
+- `for Nms` applies to the **compound result**: the compound must stay true
+  for the full window.
+- Single-condition transitions remain fully backward-compatible.
 
 ### AMS-4.7 Guard Conditions and on_error
 
@@ -242,8 +351,84 @@ Rules:
   - `GPS.alt < x`, `GPS.alt > x`
   - `GPS.speed < x`, `GPS.speed > x`
   - `TIME.elapsed > x`
+  - Variable RHS forms: `BARO.alt < varname`, `BARO.alt < (varname + offset)` (AMS-4.8).
 - `TC.command` is not valid inside `conditions:`.
 - `on_error:` currently accepts only one action type: `EVENT.info|warning|error "text"`.
+
+---
+
+## AMS-4.8 Global Variables
+
+### AMS-4.8.1 Declaration
+
+Global variables are declared in the metadata section (before any `state` block):
+
+```ams
+var NAME = VALUE
+```
+
+- `NAME`: identifier, up to 15 characters (no dots, no reserved names `TIME`/`TC`).
+- `VALUE`: floating-point literal (initial value); variable is **invalid** until
+  a `set` action fires.
+- Maximum `AMS_MAX_VARS` (8) variables per script.
+- Duplicate names are rejected at parse time.
+
+### AMS-4.8.2 Set Actions
+
+Variables are assigned inside an `on_enter:` block using `set`:
+
+```ams
+on_enter:
+  set ground_alt = BARO.alt
+```
+
+Or using the calibration form (N-sample average, 1 ≤ N ≤ 10):
+
+```ams
+on_enter:
+  set ground_alt = CALIBRATE(BARO.alt, 5)
+```
+
+Rules:
+- The variable must be declared before its first use.
+- `ALIAS.field` must reference a declared alias and a valid field for that alias.
+- `set` actions execute synchronously at state entry, before the `on_enter` EVENT is dispatched.
+- Up to `AMS_MAX_SET_ACTIONS` (4) set actions per `on_enter` block.
+- For `CALIBRATE(ALIAS.field, N)`: the engine reads the sensor N times and stores
+  the arithmetic mean of valid readings.  Sensors with firmware-level caching may
+  return the same sample on rapid successive reads.
+- If all reads fail (sensor error / NaN): the variable is left unchanged, an
+  `EVENT.warning` is queued, and execution continues (NaN guard — AMS-5.7).
+
+### AMS-4.8.3 Variable RHS in Conditions
+
+Transition conditions and guard conditions may use a declared variable as the
+right-hand side threshold:
+
+```ams
+transition to LANDED when BARO.alt < ground_alt
+transition to LANDED when BARO.alt < (ground_alt + 10)
+transition to LANDED when BARO.alt < (ground_alt - 5)
+```
+
+- The variable reference is validated at **parse time** (variable must be declared).
+- At **runtime**, if the variable has not yet been set (`.valid == false`), the
+  condition evaluates to **false** (cannot fire).  This prevents spurious
+  transitions before the calibration state has executed.
+- The offset form `(varname ± offset)` is evaluated as `var.value + offset`.
+
+### AMS-4.8.4 Checkpoint Persistence (v2)
+
+Variables are persisted in the AMS checkpoint file (version 2):
+
+```
+2|fileName|stateIdx|exec|running|status|seq|stateElap|hkElap|logElap|varCount|name1=val1=valid1|...|nameN=valN=validN
+```
+
+On restore:
+- Variables are matched by name against the loaded program's variable table.
+- If a persisted variable is not found in the current script, it is silently skipped.
+- v1 checkpoints (no variable data) are still accepted; variables start invalid.
 
 ---
 
@@ -253,16 +438,36 @@ Rules:
 
 Tick execution order:
 1. Validate runtime context
-2. Evaluate transition condition
-3. If transition occurs, enter next state and end tick
-4. Evaluate guard conditions (`conditions:`)
-5. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
-6. Otherwise, evaluate due actions and run arbitration
+2. Evaluate each sub-condition in the transition (up to `AMS_MAX_TRANSITION_CONDS`):
+   - For delta conditions: read current value, compare against previous; update previous on success.
+   - For sensor/TC/time conditions: evaluate as defined in AMS-4.6.
+3. Combine sub-condition results using `or`/`and` logic (AMS-4.6.3).
+4. If `for Nms` is active and the compound is true: arm/check hold timer; proceed
+   only when the window has fully elapsed (AMS-4.6.1).  If compound drops false,
+   reset the hold timer.
+5. If transition fires: consume TC token (if any), enter next state, end tick.
+6. Evaluate guard conditions (`conditions:`)
+7. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
+8. Otherwise, evaluate due actions and run arbitration
 
 ### AMS-5.2 On-Enter Event Queueing
 
 `on_enter` event is queued, not sent immediately.
 It is consumed by arbitration as an EVENT due action.
+
+> **Note (AMS-4.8):** `set` actions execute before the event is queued.
+> The variable value is therefore available to the arbitration tick that
+> dispatches the event.
+
+### AMS-5.7 Variable NaN Guard
+
+If a `set` or `CALIBRATE` action fails to produce a valid reading:
+
+- The target variable retains its previous value (or remains invalid if never set).
+- An `EVENT.warning` frame is queued.
+- Execution continues; the engine does not enter ERROR state for a failed `set`.
+- Transition/guard conditions that reference a still-invalid variable evaluate to
+  **false** (condition cannot fire), providing safe default behaviour.
 
 ### AMS-5.3 TC One-Shot Consumption
 
@@ -411,9 +616,7 @@ Not implemented in current AMS profile:
 - Boolean compound conditions (`AND`/`OR`)
 - Complex arithmetic expressions in fields
 - Absolute time scheduling
-- Automatic log rotation/partitioning
-
----
+- Automatic log rotation/partitioning---
 
 ## AMS-11 Execution Log
 

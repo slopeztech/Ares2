@@ -170,7 +170,124 @@ transition to LANDED when GPS.speed < 1
 
 Use sensor transitions for autonomy and TC transitions for operator gates.
 
-### 5.3 Guard Conditions (in-state safety)
+### 5.3 Sensor-driven with Persistence (`for <N>ms`)
+
+Sensor readings can contain momentary noise that would cause a transition to
+fire prematurely.  Add `for <N>ms` to require the condition to hold
+continuously for a minimum window before the transition triggers.
+
+```ams
+transition to APOGEE when BARO.alt > 3000 for 500ms
+```
+
+In this example the engine only transitions to `APOGEE` after altitude stays
+above 3000 m for at least 500 ms without interruption.  If the reading drops
+below the threshold at any point during the window, the timer resets.
+
+Rules:
+- `for Nms` is optional.  Omitting it preserves the existing single-sample behaviour.
+- The minimum value is `1 ms`.  `0` is rejected at parse time.
+- The modifier applies only to sensor (`BARO.*`, `GPS.*`, `IMU.*`) and
+  `TIME.elapsed` transitions.  It has no effect on `TC.command` transitions.
+
+Recommended values:
+- Short bursts of noise (barometer jitter): `for 200ms` to `for 500ms`
+- Stable phase detection (apogee, landing): `for 500ms` to `for 2000ms`
+
+### 5.4 Delta / Trend Operators
+
+Sometimes you need to detect that a sensor is **going up or down** rather than
+comparing it against a fixed absolute threshold.  The `delta` operator, and its
+syntactic shortcuts `falling` / `rising`, test the **inter-sample change**
+computed between two consecutive ticks.
+
+#### 5.4.1 Syntax
+
+```ams
+ALIAS.field delta < VALUE     // fires when (current - previous) < VALUE
+ALIAS.field delta > VALUE     // fires when (current - previous) > VALUE
+ALIAS.field falling           // sugar for: delta < 0  (decreasing)
+ALIAS.field rising            // sugar for: delta > 0  (increasing)
+```
+
+#### 5.4.2 Typical Use-cases
+
+**Detect apogee without knowing the deployment altitude:**
+
+```ams
+transition to DESCENT when BARO.alt falling for 500ms
+```
+
+The rocket crosses apogee and the barometer starts decreasing — no hard-coded
+altitude constant is needed.  The `for 500ms` window prevents a transient noise
+spike from triggering early.
+
+**Detect significant altitude drop (dual-sensor redundancy):**
+
+```ams
+transition to DESCENT when BARO.alt delta < -2 or GPS.alt delta < -2
+```
+
+Fires when either barometer or GPS registers a drop of more than 2 m in one
+tick.  If either sensor fails, the other still covers the transition.
+
+**Detect rapid acceleration at launch:**
+
+```ams
+transition to POWERED_FLIGHT when IMU.accel_mag delta > 5
+```
+
+Fires when the acceleration magnitude increases by more than 5 m/s² in one
+sample period.
+
+#### 5.4.3 Behaviour Notes
+
+- **First tick in a state** always evaluates to false — there is no previous
+  sample after a state entry, so no spurious transition can occur.
+- **Failed sensor read**: the condition evaluates to false and the previous
+  value baseline is preserved for the next tick.
+- **Combined with `for Nms`**: the compound delta condition must remain true on
+  every consecutive tick for the full hold window.
+- **`falling` / `rising`**: these are exact aliases for `delta < 0` and
+  `delta > 0`; they accept the same field names as any other sensor condition.
+
+### 5.5 Compound Conditions (`or` / `and`)
+
+Multiple conditions can be joined in a single transition using `or` or `and`.
+This allows sensor-fusion logic and redundancy without additional states.
+
+```ams
+transition to DESCENT when BARO.alt falling or GPS.alt falling
+transition to SAFE when BARO.alt < 10 and GPS.speed < 2
+```
+
+Rules:
+- Logic must be **homogeneous**: you cannot mix `or` and `and` in one
+  `transition` line.  Create a helper state if you need mixed logic.
+- Maximum **4 sub-conditions** per transition (`AMS_MAX_TRANSITION_CONDS`).
+- `TC.command` may be combined with other conditions; the token is consumed
+  only when the overall compound evaluates to true and the transition fires.
+- `for Nms` applies to the **compound result** — all sub-conditions must remain
+  satisfied simultaneously throughout the hold window (AND logic), or at least
+  one must remain satisfied (OR logic).
+
+**Example — multi-sensor apogee:**
+
+```ams
+state COAST:
+  every 500ms:
+    HK.report { baro_alt: BARO.alt, gps_alt: GPS.alt }
+  transition to APOGEE when BARO.alt falling or GPS.alt falling for 500ms
+```
+
+**Example — dual-gate operator abort:**
+
+```ams
+state FLIGHT:
+  transition to ABORT when TC.command == ABORT or IMU.accel_mag > 350
+```
+
+### 5.6 Guard Conditions (in-state safety)
 
 Transitions move the FSM to the next phase.
 Guards (`conditions:`) enforce safety invariants while remaining in the same phase.
@@ -190,6 +307,107 @@ Runtime behavior:
 - Guard checks run next
 - If any guard fails, AMS emits `on_error` event (if defined) and enters `ERROR`
 - Periodic actions (EVENT/HK/LOG arbitration) run only when guards pass
+
+---
+
+## 5.7 Global Variables and Calibration (AMS-4.8)
+
+Global variables allow a mission script to capture sensor readings at runtime
+and use them as dynamic thresholds in subsequent transitions or guard conditions.
+
+### Declaration
+
+Declare variables in the metadata section (before any `state` block):
+
+```ams
+apid 0x01
+node_id 1
+var ground_alt = 0.0
+var apogee_alt = 0.0
+```
+
+The initial value is a fallback only — variables are marked **invalid** until a
+`set` action fires.  Conditions that reference invalid variables evaluate to
+`false` (they cannot fire), which protects against spurious transitions during
+early states before calibration has occurred.
+
+### Set actions
+
+Assign a sensor reading inside an `on_enter:` block:
+
+```ams
+state PAD:
+  on_enter:
+    EVENT.info "Capturing ground altitude"
+    set ground_alt = CALIBRATE(BARO.alt, 5)
+```
+
+`CALIBRATE(ALIAS.field, N)` reads the sensor N times (1–10) and stores the
+arithmetic mean of valid readings.  Use `set ground_alt = BARO.alt` for a
+single instantaneous read.
+
+### Using variables as thresholds
+
+Reference a variable on the right-hand side of a transition or guard condition:
+
+```ams
+state DESCENT:
+  transition to LANDED when BARO.alt < ground_alt
+  transition to LANDED when BARO.alt < (ground_alt + 10)
+```
+
+Parentheses with an additive or subtractive offset are supported:
+`(varname + 50)`, `(varname - 20)`.
+
+### Full example: apogee-relative landing detection
+
+```ams
+apid 0x01
+node_id 1
+
+var ground_alt = 0.0
+
+state PAD:
+  on_enter:
+    EVENT.info "PAD: calibrating ground alt"
+    set ground_alt = CALIBRATE(BARO.alt, 10)
+  transition to BOOST when IMU.accel_mag > 30
+
+state BOOST:
+  on_enter:
+    EVENT.info "BOOST: engine firing"
+  transition to COAST when IMU.accel_mag < 5
+
+state COAST:
+  on_enter:
+    EVENT.info "COAST: coasting"
+  transition to DESCENT when falling BARO.alt > 2
+
+state DESCENT:
+  on_enter:
+    EVENT.info "DESCENT: descending"
+  transition to LANDED when BARO.alt < (ground_alt + 15)
+
+state LANDED:
+  on_enter:
+    EVENT.info "LANDED: mission complete"
+  every 5000ms:
+    HK.report { baro_alt: BARO.alt }
+```
+
+### NaN guard rules
+
+If a sensor read fails during a `set` or `CALIBRATE` action:
+1. The variable retains its current value (or remains invalid if never set).
+2. An `EVENT.warning` is queued (no ERROR state for a failed `set`).
+3. Conditions referencing a still-invalid variable evaluate to `false` —
+   safe default for early mission states before calibration completes.
+
+### Checkpoint persistence
+
+Variables are saved to the AMS checkpoint file (v2 format) on every periodic
+save cycle.  On firmware reboot mid-mission, variables are restored along with
+the state index so relative-altitude logic continues correctly.
 
 ---
 

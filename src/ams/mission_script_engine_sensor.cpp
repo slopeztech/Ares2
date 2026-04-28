@@ -371,13 +371,6 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
         return false;
     }
 
-    float thr = 0.0f;
-    if (!parseFloatValue(rhs, thr))
-    {
-        setErrorLocked("invalid sensor threshold value");
-        return false;
-    }
-
     if (strcmp(op, "<") == 0)
     {
         out.kind = CondKind::SENSOR_LT;
@@ -394,8 +387,108 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
 
     strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
     out.alias[sizeof(out.alias) - 1U] = '\0';
-    out.field     = sf;
-    out.threshold = thr;
+    out.field = sf;
+
+    // AMS-4.8: RHS can be a literal float OR a variable reference:
+    //   ALIAS.field OP varname
+    //   ALIAS.field OP (varname + offset)
+    //   ALIAS.field OP (varname - offset)
+    float thr = 0.0f;
+    if (parseFloatValue(rhs, thr))
+    {
+        // Plain numeric literal — existing behaviour.
+        out.threshold = thr;
+        return true;
+    }
+
+    // Try variable reference forms.
+    // Strip optional parentheses.
+    const char* varExpr = rhs;
+    char stripped[ares::AMS_MAX_LINE_LEN] = {};
+    if (rhs[0] == '(')
+    {
+        const char* close = strchr(rhs, ')');
+        if (close == nullptr)
+        {
+            setErrorLocked("condition RHS: unclosed '(' in variable expression");
+            return false;
+        }
+        const ptrdiff_t innerLen = close - (rhs + 1);
+        if (innerLen <= 0 || innerLen >= static_cast<ptrdiff_t>(sizeof(stripped)))
+        {
+            setErrorLocked("condition RHS: variable expression too long");
+            return false;
+        }
+        memcpy(stripped, rhs + 1, static_cast<size_t>(innerLen));
+        stripped[static_cast<size_t>(innerLen)] = '\0';
+        trimInPlace(stripped);
+        varExpr = stripped;
+    }
+
+    // Attempt "varname +/- offset" or bare "varname".
+    char varName[ares::AMS_VAR_NAME_LEN] = {};
+    float offset = 0.0f;
+    bool hasOffset = false;
+
+    const char* plus  = strstr(varExpr, " + ");
+    const char* minus = strstr(varExpr, " - ");
+
+    if (plus != nullptr || minus != nullptr)
+    {
+        // Pick whichever separator appears first.
+        const char* sep   = (minus != nullptr && (plus == nullptr || minus < plus)) ? minus : plus;
+        const bool  isNeg = (sep == minus);
+        const ptrdiff_t nameLen = sep - varExpr;
+        if (nameLen <= 0 || nameLen >= static_cast<ptrdiff_t>(ares::AMS_VAR_NAME_LEN))
+        {
+            setErrorLocked("condition RHS: variable name too long");
+            return false;
+        }
+        memcpy(varName, varExpr, static_cast<size_t>(nameLen));
+        varName[static_cast<size_t>(nameLen)] = '\0';
+        trimInPlace(varName);
+
+        const char* offStr = sep + 3;  // skip " + " or " - "
+        if (!parseFloatValue(offStr, offset))
+        {
+            setErrorLocked("condition RHS: invalid offset value");
+            return false;
+        }
+        if (isNeg) { offset = -offset; }
+        hasOffset = true;
+    }
+    else
+    {
+        // Bare variable name.
+        strncpy(varName, varExpr, sizeof(varName) - 1U);
+        varName[sizeof(varName) - 1U] = '\0';
+        trimInPlace(varName);
+    }
+
+    if (varName[0] == '\0')
+    {
+        setErrorLocked("condition RHS: empty variable name");
+        return false;
+    }
+
+    // Validate that the variable exists in the program at parse time.
+    bool found = false;
+    for (uint8_t i = 0; i < program_.varCount; i++)
+    {
+        if (strcmp(program_.vars[i].name, varName) == 0) { found = true; break; }
+    }
+    if (!found)
+    {
+        char msg[64] = {};
+        snprintf(msg, sizeof(msg), "condition RHS: undefined variable '%s'", varName);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    out.useVar    = true;
+    out.varOffset = hasOffset ? offset : 0.0f;
+    strncpy(out.varName, varName, sizeof(out.varName) - 1U);
+    out.varName[sizeof(out.varName) - 1U] = '\0';
     return true;
 }
 

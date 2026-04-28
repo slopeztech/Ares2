@@ -148,6 +148,15 @@ public:
     bool injectTcCommand(const char* commandText);
 
     /**
+     * Atomically enable execution and inject the LAUNCH TC in a single
+     * mutex acquisition.  Equivalent to setExecutionEnabled(true) followed
+     * by injectTcCommand("LAUNCH") but without a race window between them.
+     * @return true if the engine was in LOADED state and LAUNCH was queued.
+     * @note  Called by POST /api/arm after validating the mission state.
+     */
+    bool arm();
+
+    /**
      * Execute one engine tick: evaluate transitions and run due actions.
      * Must be called from the mission task at the configured rate.
      * @param[in] nowMs  Current millis() timestamp.
@@ -185,6 +194,7 @@ private:
         LOG        = 2,
         CONDITIONS = 3,  ///< Inside a conditions: block.
         ON_ERROR   = 4,  ///< Inside an on_error: block.
+        ON_ENTER   = 5,  ///< Inside an on_enter: block (EVENT.* and set actions).
     };
 
     // ── Peripheral kind ──────────────────────────────────────────────────────
@@ -218,11 +228,20 @@ private:
     // ── Unified condition kind ─────────────────────────────────────────────
     enum class CondKind : uint8_t
     {
-        NONE      = 0,
-        SENSOR_LT = 1,  ///< alias.field < threshold
-        SENSOR_GT = 2,  ///< alias.field > threshold
-        TC_EQ     = 3,  ///< TC.command == value
-        TIME_GT   = 4,  ///< TIME.elapsed > threshold (ms since state entry)
+        NONE           = 0,
+        SENSOR_LT      = 1,  ///< alias.field < threshold
+        SENSOR_GT      = 2,  ///< alias.field > threshold
+        TC_EQ          = 3,  ///< TC.command == value
+        TIME_GT        = 4,  ///< TIME.elapsed > threshold (ms since state entry)
+        SENSOR_DELTA_LT = 5, ///< (alias.field[n] - alias.field[n-1]) < threshold (AMS-4.6.2)
+        SENSOR_DELTA_GT = 6, ///< (alias.field[n] - alias.field[n-1]) > threshold (AMS-4.6.2)
+    };
+
+    // ── Logical operator for compound transitions (AMS-4.6.2) ─────────────
+    enum class TransitionLogic : uint8_t
+    {
+        AND = 0,  ///< All sub-conditions must be true.
+        OR  = 1,  ///< Any sub-condition being true is sufficient.
     };
 
     // ── Unified condition expression ───────────────────────────────────────
@@ -231,8 +250,37 @@ private:
         CondKind    kind      = CondKind::NONE;
         char        alias[16] = {};              ///< Peripheral alias (e.g. "GPS", "GPS1").
         SensorField field     = SensorField::ALT;
-        float       threshold = 0.0f;
+        float       threshold = 0.0f;            ///< Literal RHS value (used when !useVar).
         TcCommand   tcValue   = TcCommand::NONE;
+
+        // AMS-4.8: variable reference in RHS.
+        bool  useVar  = false;                   ///< true = compare against (varValue + varOffset).
+        char  varName[ares::AMS_VAR_NAME_LEN] = {}; ///< Variable name (used when useVar).
+        float varOffset = 0.0f;                  ///< Additive offset: compare against var+offset.
+    };
+
+    /**
+     * Global scalar variable declared in the script metadata section (AMS-4.8).
+     * Memory is reserved at parse time; no dynamic allocation.
+     */
+    struct VarEntry
+    {
+        char  name[ares::AMS_VAR_NAME_LEN] = {};  ///< Variable name.
+        float value = 0.0f;                        ///< Current value (init or last set).
+        bool  valid = false;                       ///< false until first successful set fires.
+    };
+
+    /**
+     * A single @c set action inside an @c on_enter: block (AMS-4.8).
+     * Captures a sensor reading (or average) into a global variable.
+     */
+    struct SetAction
+    {
+        char        varName[ares::AMS_VAR_NAME_LEN] = {};  ///< Target variable name.
+        char        alias[16]     = {};                     ///< Sensor peripheral alias.
+        SensorField field         = SensorField::ALT;       ///< Sensor field to read.
+        bool        calibrate     = false;  ///< true = CALIBRATE(sensor, N) form.
+        uint8_t     calibSamples  = 1U;     ///< Number of samples to average (1-10).
     };
 
     enum class EventVerb : uint8_t
@@ -264,10 +312,13 @@ private:
 
     struct Transition
     {
-        CondExpr cond         = {};
-        char     targetName[16] = {};
-        uint8_t  targetIndex  = 0;
-        bool     targetResolved = false;
+        uint8_t         condCount      = 0;
+        TransitionLogic logic          = TransitionLogic::AND;
+        CondExpr        conds[ares::AMS_MAX_TRANSITION_CONDS] = {};
+        char            targetName[16] = {};
+        uint8_t         targetIndex    = 0;
+        bool            targetResolved = false;
+        uint32_t        holdMs         = 0;  ///< Persistence window in ms (0 = immediate, AMS-4.6.1).
     };
 
     /**
@@ -316,6 +367,10 @@ private:
         bool      hasOnErrorEvent = false;
         EventVerb onErrorVerb     = EventVerb::ERROR;
         char      onErrorText[ares::AMS_MAX_EVENT_TEXT] = {};
+
+        // ── on_enter set actions (AMS-4.8) ──────────────────
+        uint8_t   setActionCount = 0;
+        SetAction setActions[ares::AMS_MAX_SET_ACTIONS] = {};
     };
 
     struct Program
@@ -326,6 +381,8 @@ private:
         StateDef   states[ares::AMS_MAX_STATES] = {};
         uint8_t    aliasCount = 0;
         AliasEntry aliases[ares::AMS_MAX_INCLUDES] = {};
+        uint8_t    varCount   = 0;
+        VarEntry   vars[ares::AMS_MAX_VARS] = {};  ///< Global variables (AMS-4.8).
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -358,8 +415,11 @@ private:
                               uint8_t& count,
                               const char* ctxName);
     bool parseTransitionLineLocked(const char* line, StateDef& st);
+    bool parseOneConditionLocked(const char* condStr, bool allowTc, CondExpr& out);
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
+    bool parseVarLineLocked(const char* line);
+    bool parseSetActionLineLocked(const char* line, StateDef& st);
     static bool mapApidToNode(uint16_t apid, uint8_t& nodeId);
     bool resolveTransitionsLocked();
 
@@ -398,6 +458,10 @@ private:
     void executeDueActionsLocked(const StateDef& state, uint32_t nowMs);
 
     void sendOnEnterEventLocked(uint32_t nowMs);
+    void executeSetActionsLocked(const StateDef& st, uint32_t nowMs);
+    bool resolveVarThresholdLocked(const CondExpr& cond, float& outThreshold) const;
+    VarEntry*       findVarLocked(const char* name);
+    const VarEntry* findVarLocked(const char* name) const;
     bool evaluateConditionsLocked(const StateDef& state, uint32_t nowMs);
     void sendHkReportLocked(uint32_t nowMs);
     void appendLogReportLocked(uint32_t nowMs);
@@ -456,6 +520,17 @@ private:
     TcCommand pendingTc_ = TcCommand::NONE;
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
+
+    // ── Transition hold (debounce) state (AMS-4.6.1) ─────────────────────────
+    bool     transitionCondHolding_ = false;  ///< true while condition is being timed.
+    uint32_t transitionCondMetMs_   = 0;      ///< millis() when condition first became true.
+
+    // ── Transition delta tracking (AMS-4.6.2) ────────────────────────────────
+    // Previous sensor readings indexed by condition slot [0..AMS_MAX_TRANSITION_CONDS-1].
+    // Reset on every state entry so delta is always relative to the state-entry baseline.
+    float transitionPrevVal_[ares::AMS_MAX_TRANSITION_CONDS]   = {};
+    bool  transitionPrevValid_[ares::AMS_MAX_TRANSITION_CONDS] = {};
+
     bool logHeaderWritten_ = false;
     uint32_t lastCheckpointMs_ = 0;
 

@@ -9,6 +9,7 @@
 
 #include <LittleFS.h>
 #include <cstring>
+#include <sys/stat.h>
 
 // ── Log tag ─────────────────────────────────────────────────
 static constexpr const char* TAG = "STOR";
@@ -16,6 +17,23 @@ static constexpr const char* TMP_SUFFIX = ".tmp";
 static constexpr const char* BAK_SUFFIX = ".bak";
 static constexpr uint8_t MAX_RECOVERY_SCAN_FILES = 64;
 static constexpr uint16_t COPY_CHUNK_SIZE = 512;
+/// LittleFS POSIX mount prefix (matches LittleFS.begin() default).
+static constexpr const char* LITTLEFS_MOUNT = "/littlefs";
+
+/**
+ * @brief Probe file existence via POSIX stat() without triggering Arduino VFS
+ *        error logging.  Arduino's LittleFS.exists() calls open() internally
+ *        which emits [E][vfs_api.cpp:105] when the file is absent.  stat()
+ *        goes through the VFS HAL directly and does not log on ENOENT.
+ */
+static bool silentExists(const char* path)
+{
+    // STORAGE_MAX_PATH=64 + "/littlefs" (9) + NUL = 74; use 80 for safety.
+    char posixPath[80] = {};
+    (void)snprintf(posixPath, sizeof(posixPath), "%s%s", LITTLEFS_MOUNT, path);
+    struct stat st = {};
+    return stat(posixPath, &st) == 0;
+}
 
 struct RecoveryCounters
 {
@@ -549,10 +567,10 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
     }
 
     // Clean stale transactional artifacts before new write.
-    // Call remove() directly — it is a no-op when the file does not exist,
-    // and avoids the LittleFS.exists() VFS open(create=false) log noise.
-    (void)LittleFS.remove(tmpPath);
-    (void)LittleFS.remove(bakPath);
+    // Use silentExists() (POSIX stat) instead of LittleFS.exists() to avoid
+    // [E][vfs_api.cpp] log spam when the files are absent (the normal case).
+    if (silentExists(tmpPath)) { (void)LittleFS.remove(tmpPath); }
+    if (silentExists(bakPath)) { (void)LittleFS.remove(bakPath); }
 
     // create=true: VFS must create the .tmp even if it doesn't exist yet.
     // Default create=false causes "no permits for creation" on new files.
@@ -625,9 +643,9 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
     }
 
     // Atomic swap: path -> bak, tmp -> path, then remove bak.
-    // Use rename() directly — no exists() needed (rename returns false if src absent).
-    (void)LittleFS.remove(bakPath);  // remove stale bak if present (silent if absent)
-    const bool hadOriginal = LittleFS.rename(path, bakPath);
+    // Guard the rename with silentExists to avoid VFS [E] log on first write when
+    // the main file does not yet exist (rename of missing source logs an error).
+    const bool hadOriginal = silentExists(path) && LittleFS.rename(path, bakPath);
 
     if (!LittleFS.rename(tmpPath, path))
     {
@@ -641,7 +659,8 @@ StorageStatus LittleFsStorage::writeInternal(const char* path,
         return StorageStatus::ERROR;
     }
 
-    (void)LittleFS.remove(bakPath);
+    // bakPath was created by the rename only if hadOriginal; skip if not present.
+    if (hadOriginal) { (void)LittleFS.remove(bakPath); }
 
     return StorageStatus::OK;
 }

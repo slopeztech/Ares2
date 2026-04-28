@@ -6,12 +6,14 @@
  * Reads accelerometer (±2 g, full scale), gyroscope (±250 deg/s),
  * and die temperature via I2C using a single 14-byte burst read.
  *
- * Thread safety: NOT thread-safe.  Must be accessed from a single
- *                task or protected externally (CERT-13).
+ * Thread safety: thread-safe.  An internal FreeRTOS mutex serialises
+ *                concurrent read() calls across tasks (CERT-13).
  */
 #pragma once
 
 #include <Wire.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "hal/imu/imu_interface.h"
 
@@ -65,9 +67,13 @@ private:
     bool writeReg(uint8_t reg, uint8_t value);
     /// Burst-read @p len consecutive registers starting at @p reg.
     bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len);
+    /// Inner read implementation — called while imuMutex_ is held.
+    ImuStatus readLocked(ImuReading& out);
 
     TwoWire& wire_;            ///< I2C bus (injected, not owned).
     uint8_t  addr_;            ///< 7-bit I2C slave address.
     bool     ready_ = false;            ///< true after successful begin().
     uint32_t lastReinitAttemptMs_ = 0;  ///< millis() of last lazy re-init attempt.
+    uint8_t  consecutiveErrors_   = 0U; ///< Counter of consecutive readRegs() failures.
+    SemaphoreHandle_t imuMutex_   = nullptr; ///< Serialises concurrent read() calls (CERT-13).
 };

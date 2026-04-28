@@ -147,26 +147,11 @@ void ApiServer::handleLogsList(WiFiClient& client)
 void ApiServer::handleLogDownload(WiFiClient& client,
                                    const char* filename)
 {
-    // REST-6.2: no downloads during active flight.
-    // Exception: allow download once the AMS mission has completed (COMPLETE
-    // status means the terminal state was reached and the engine is no longer
-    // executing — data is safe to read back).
-    if (isFlightLocked())
-    {
-        bool amsComplete = false;
-        if (mission_ != nullptr)
-        {
-            ares::ams::EngineSnapshot snap = {};
-            mission_->getSnapshot(snap);
-            amsComplete = (snap.status == ares::ams::EngineStatus::COMPLETE);
-        }
-        if (!amsComplete)
-        {
-            sendError(client, 409, "operation locked during flight");
-            LOG_W(TAG, "GET /api/logs/%s 409: flight locked", filename);
-            return;
-        }
-    }
+    // REST-6.2: log file downloads are permitted during active flight.
+    // LittleFS access is serialised by the storage mutex (each readFileChunk()
+    // and appendFile() call takes and releases the mutex independently), so
+    // concurrent read-during-append is safe and produces a consistent
+    // snapshot of the file up to its size at download start.
 
     if (storage_ == nullptr)
     {

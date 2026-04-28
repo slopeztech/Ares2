@@ -65,6 +65,17 @@ Mpu6050Driver::Mpu6050Driver(TwoWire& wire, uint8_t addr)
 
 bool Mpu6050Driver::begin()
 {
+    // CERT-13: create the driver mutex on first begin() call.
+    if (imuMutex_ == nullptr)
+    {
+        imuMutex_ = xSemaphoreCreateMutex();
+        if (imuMutex_ == nullptr)
+        {
+            LOG_E(TAG, "mutex create failed");
+            return false;
+        }
+    }
+
     ready_ = false;
 
     auto tryInitAtAddress = [&](uint8_t addr) -> bool
@@ -163,6 +174,19 @@ bool Mpu6050Driver::begin()
 
 ImuStatus Mpu6050Driver::read(ImuReading& out)
 {
+    // CERT-13: serialise concurrent calls from AMS task and HTTP server task.
+    if (imuMutex_ == nullptr
+     || xSemaphoreTake(imuMutex_, pdMS_TO_TICKS(ares::IMU_LOCK_TIMEOUT_MS)) != pdTRUE)
+    {
+        return ImuStatus::NOT_READY;
+    }
+    const ImuStatus result = readLocked(out);
+    xSemaphoreGive(imuMutex_);
+    return result;
+}
+
+ImuStatus Mpu6050Driver::readLocked(ImuReading& out)
+{
     if (!ready_)
     {
         // Lazy re-init: retry begin() at most once every IMU_REINIT_INTERVAL_MS.
@@ -186,6 +210,17 @@ ImuStatus Mpu6050Driver::read(ImuReading& out)
     uint8_t buf[mpu6050::BURST_LEN] = {};  // MISRA-4.1: zero-init
     if (!readRegs(mpu6050::REG_ACCEL_XOUT_H, buf, mpu6050::BURST_LEN))
     {
+        consecutiveErrors_++;
+        if (consecutiveErrors_ >= ares::IMU_MAX_CONSECUTIVE_ERRORS)
+        {
+            // Suppress Wire.cpp spam: mark not-ready so the lazy re-init
+            // path (IMU_REINIT_INTERVAL_MS throttle) takes over.
+            LOG_W(TAG, "read failed %u times — marking not-ready, will retry in %lu ms",
+                  static_cast<unsigned>(consecutiveErrors_),
+                  static_cast<unsigned long>(ares::IMU_REINIT_INTERVAL_MS));
+            ready_             = false;
+            consecutiveErrors_ = 0U;
+        }
         return ImuStatus::ERROR;
     }
 
@@ -223,6 +258,7 @@ ImuStatus Mpu6050Driver::read(ImuReading& out)
         return ImuStatus::ERROR;
     }
 
+    consecutiveErrors_ = 0U;  // successful read — reset error counter
     return ImuStatus::OK;
 }
 
@@ -245,7 +281,13 @@ bool Mpu6050Driver::readRegs(uint8_t reg, uint8_t* buf, uint8_t len)
 
     wire_.beginTransmission(addr_);
     wire_.write(reg);
-    if (wire_.endTransmission(false) != 0)   // repeated-start
+    // Send STOP (true) instead of repeated-START (false).
+    // A repeated-START leaves the bus in an uncertain state when the slave
+    // NAKs or times out, causing every subsequent transaction to fail until
+    // the bus idle recovers.  The MPU-6050 supports both read-protocol forms;
+    // using STOP+START ensures the bus always returns to SDA=SCL=HIGH after
+    // each write phase, making I2C reads robust at high call rates (AMS ~3 Hz).
+    if (wire_.endTransmission(true) != 0)
     {
         return false;
     }

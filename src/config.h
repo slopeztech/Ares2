@@ -112,12 +112,16 @@ constexpr uint8_t     AMS_MAX_STATES       = 10;           ///< Max states per m
 constexpr uint8_t     AMS_MAX_STATE_NAME   = 16;           ///< Max state name length.
 constexpr uint8_t     AMS_MAX_EVENT_TEXT   = 64;           ///< Max EVENT message text.
 constexpr uint8_t     AMS_MAX_HK_FIELDS    = 16;           ///< Max HK fields inside report block.
-constexpr uint8_t     AMS_MAX_CONDITIONS   = 4;            ///< Max guard conditions per state.
+constexpr uint8_t     AMS_MAX_CONDITIONS        = 4;  ///< Max guard conditions per state.
+constexpr uint8_t     AMS_MAX_TRANSITION_CONDS = 4;  ///< Max sub-conditions in one transition (AMS-4.6.2).
+constexpr uint8_t     AMS_MAX_VARS             = 8U; ///< Max global variables per script (AMS-4.8).
+constexpr uint8_t     AMS_VAR_NAME_LEN         = 16U;///< Max variable name length including NUL (AMS-4.8).
+constexpr uint8_t     AMS_MAX_SET_ACTIONS      = 4U; ///< Max set actions per on_enter block (AMS-4.8).
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.
 constexpr uint8_t     AMS_MAX_INCLUDES     = 8U;           ///< Max 'include' alias registrations per script.
 constexpr uint16_t    AMS_DEFAULT_APID     = 0x01U;        ///< Default APID for mission runtime (APUS-10: rocket = 0x01).
-constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 50;           ///< Mutex timeout for API/runtime sync.
+constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 250;          ///< Mutex timeout for API/runtime sync (must exceed LittleFS write latency ~100 ms).
 constexpr const char* AMS_RESUME_PATH      = "/missions/.ams_resume.chk"; ///< Persistent AMS checkpoint file.
 constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS = 1000;   ///< Periodic checkpoint cadence while RUNNING.
 
@@ -183,6 +187,8 @@ constexpr uint8_t  BMP280_RESET_DELAY_MS   = 10;    ///< Wait for BMP280 soft-re
 constexpr uint8_t  BMP280_POLL_DELAY_MS    = 2;     ///< Status register poll interval during NVM copy.
 constexpr uint8_t  MPU6050_WAKE_DELAY_MS   = 10;    ///< Wait after waking MPU-6050 from sleep.
 constexpr uint32_t IMU_REINIT_INTERVAL_MS  = 5000;  ///< Min interval between lazy re-init attempts in read().
+constexpr uint8_t  IMU_MAX_CONSECUTIVE_ERRORS = 3U; ///< Read failures before marking device not-ready and silencing Wire log spam.
+constexpr uint32_t IMU_LOCK_TIMEOUT_MS        = 300U; ///< Max wait for IMU driver mutex (CERT-13). Must exceed begin() reinit time (~110 ms).
 constexpr uint8_t  SERIAL_WAIT_DELAY_MS    = 10;    ///< USB-CDC host poll interval in setup().
 constexpr uint16_t SERIAL_WAIT_TIMEOUT_MS  = 3000;  ///< Max wait for USB-CDC host before continuing.
 constexpr uint16_t TEST_LOOP_DELAY_MS      = 1000;  ///< Test sketch main-loop print interval.
