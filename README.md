@@ -384,22 +384,9 @@ The ESP32 runs a WiFi Access Point. The ground station connects directly to conf
 | Port      | `80` (HTTP)                    |
 | Clients   | Max. 4 simultaneous            |
 
-### Main Endpoints
+Complete endpoint documentation (including when to use each route in pre-flight, flight, and post-flight operations) is available in:
 
-| Method | Route                        | Description                         |
-|--------|------------------------------|-------------------------------------|
-| GET    | `/api/status`                | Full system status                  |
-| GET    | `/api/config`                | Runtime configuration               |
-| POST   | `/api/config`                | Update configuration                |
-| POST   | `/api/arm`                   | Arm system and inject LAUNCH TC     |
-| GET    | `/api/mission`               | AMS engine status                   |
-| GET    | `/api/missions`              | List available mission scripts      |
-| PUT    | `/api/missions/<name>.ams`   | Upload raw `.ams` script to flash   |
-| POST   | `/api/mission/activate`      | Activate script by filename         |
-| POST   | `/api/mission/deactivate`    | Stop and deactivate active mission  |
-| POST   | `/api/mission/command`       | Inject TC command into AMS engine   |
-| GET    | `/api/storage/list`          | List log files                      |
-| GET    | `/api/storage/download?file=`| Download a flight log               |
+- [WiFi API endpoint guide](docs/api/wifi_api_endpoints.md)
 
 WiFi is automatically disabled when transitioning to flight mode (`WIFI_DISABLE_IN_FLIGHT = true`).
 
