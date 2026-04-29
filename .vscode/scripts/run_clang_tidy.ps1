@@ -57,9 +57,16 @@ $latestFile   = Join-Path $latestDir 'clang-tidy.txt'
 # HeaderFilterRegex in .clang-tidy, and framework .cpp files are skipped here.
 
 $db    = Get-Content $compileDb -Raw | ConvertFrom-Json
+# compile_commands.json may contain relative paths (e.g. "src\main.cpp").
+# Resolve each entry to an absolute path so the filter and clang-tidy invocation
+# both work regardless of whether PlatformIO wrote relative or absolute paths.
 $files = $db |
-         Where-Object { $_.file -like "$srcDir\*" -and $_.file -like '*.cpp' } |
          Select-Object -ExpandProperty file |
+         ForEach-Object {
+             if ([System.IO.Path]::IsPathRooted($_)) { $_ }
+             else { Join-Path $projectRoot $_ }
+         } |
+         Where-Object { $_ -like "$srcDir\*" -and $_ -like '*.cpp' } |
          Sort-Object -Unique
 
 if ($files.Count -eq 0) {
@@ -67,7 +74,7 @@ if ($files.Count -eq 0) {
     exit 1
 }
 
-Write-Host ("clang-tidy {0} — analysing {1} file(s) in src/" -f (& $clangTidy --version | Select-Object -First 1), $files.Count)
+Write-Host ("clang-tidy {0} - analysing {1} file(s) in src/" -f (& $clangTidy --version | Select-Object -First 1), $files.Count)
 Write-Host ("Output: {0}" -f $runFile)
 Write-Host ''
 
@@ -81,7 +88,7 @@ $warningCount = 0
 $sw          = [System.Diagnostics.Stopwatch]::StartNew()
 
 $header = @(
-    "clang-tidy analysis — ARES",
+    "clang-tidy analysis - ARES",
     ("Date  : {0}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')),
     ("Files : {0}" -f $files.Count),
     ("Tool  : {0}" -f (& $clangTidy --version | Select-Object -First 1)),
