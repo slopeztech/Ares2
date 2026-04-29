@@ -63,12 +63,7 @@ bool MissionScriptEngine::isSafeFileName(const char* fileName)
         if (!ok) { return false; }
     }
 
-    if (strstr(fileName, "..") != nullptr)
-    {
-        return false;
-    }
-
-    return true;
+    return strstr(fileName, "..") == nullptr;
 }
 
 // ── buildMissionPath ─────────────────────────────────────────────────────────

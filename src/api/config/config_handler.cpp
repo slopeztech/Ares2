@@ -70,7 +70,8 @@ void ApiServer::handleConfigPut(WiFiClient& client,
 
     if (doc["telemetryIntervalMs"].is<uint32_t>())
     {
-        const uint32_t val = doc["telemetryIntervalMs"].as<uint32_t>();
+        uint32_t val = 0U;
+        val = doc["telemetryIntervalMs"].as<uint32_t>();
         if (val < ares::TELEMETRY_INTERVAL_MIN
             || val > ares::TELEMETRY_INTERVAL_MAX)
         {
@@ -90,7 +91,8 @@ void ApiServer::handleConfigPut(WiFiClient& client,
 
     if (doc["nodeId"].is<uint8_t>())
     {
-        const uint8_t val = doc["nodeId"].as<uint8_t>();
+        uint8_t val = 0U;
+        val = doc["nodeId"].as<uint8_t>();
         if (val < ares::NODE_ID_MIN || val > ares::NODE_ID_MAX)
         {
             sendError(client, 400,

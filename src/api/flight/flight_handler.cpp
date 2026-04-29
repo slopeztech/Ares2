@@ -47,7 +47,8 @@ void ApiServer::handleMode(WiFiClient& client,
         return;
     }
 
-    const char* target = doc["mode"].as<const char*>();
+    const char* target = nullptr;
+    target = doc["mode"].as<const char*>();
     const auto current = getMode();
     const uint8_t rawCurrent = static_cast<uint8_t>(current);
     ARES_ASSERT(rawCurrent <= static_cast<uint8_t>(ares::OperatingMode::LAST));

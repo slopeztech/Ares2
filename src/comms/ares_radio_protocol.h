@@ -72,6 +72,7 @@ constexpr uint16_t MAX_FRAG_TOTAL   = 65535;  ///< Maximum number of fragments p
 // Maps ARES frame TYPE to ECSS-E-ST-70-41C service numbers.
 enum class MsgType : uint8_t
 {
+    NONE      = 0x00,   ///< Uninitialised sentinel — must not be transmitted.
     FIRST     = 0x01,
     TELEMETRY = 0x01,   ///< ST[3]  HK report (rocket → ground).
     EVENT     = 0x02,   ///< ST[5]  event report (rocket → ground).

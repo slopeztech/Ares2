@@ -53,7 +53,7 @@ void emitV(char levelChar, const char* tag, const char* fmt, va_list args)
     }
 
     // Phase 2: append the caller’s formatted message
-    va_list argsCopy;
+    va_list argsCopy;  // NOLINT(cppcoreguidelines-init-variables) -- initialised by va_copy below
     va_copy(argsCopy, args);
     int32_t msgLen = vsnprintf(
         logBuf_ + pos,
@@ -81,7 +81,7 @@ void emitV(char levelChar, const char* tag, const char* fmt, va_list args)
 
 void emit(char levelChar, const char* tag, const char* fmt, ...)
 {
-    va_list args;
+    va_list args;  // NOLINT(cppcoreguidelines-init-variables) -- initialised by va_start below
     va_start(args, fmt);
     emitV(levelChar, tag, fmt, args);
     va_end(args);

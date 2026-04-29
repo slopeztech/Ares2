@@ -208,8 +208,9 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
 
     // Data row: t_ms,state,val1,val2,...
     // MISRA-1: int required by snprintf() C-standard return type.
-    const int headLen = snprintf(line, sizeof(line),
-                                 "%" PRIu32 ",%s", nowMs, st.name);
+    int headLen = 0;
+    headLen = snprintf(line, sizeof(line),
+                       "%" PRIu32 ",%s", nowMs, st.name);
     if (headLen <= 0) { return; }
 
     uint32_t pos = static_cast<uint32_t>(headLen);

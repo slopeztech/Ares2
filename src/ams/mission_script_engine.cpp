@@ -343,8 +343,8 @@ void MissionScriptEngine::tick(uint32_t nowMs)
     if (!state.hasTransition
         && !state.hasFallback
         && !pendingOnEnterEvent_
-        && !(state.hasHkEvery  && state.hkEveryMs  > 0U && state.hkFieldCount  > 0U)
-        && !(state.hasLogEvery && state.logEveryMs > 0U && state.logFieldCount > 0U))
+        && (!state.hasHkEvery  || state.hkEveryMs  == 0U || state.hkFieldCount  == 0U)
+        && (!state.hasLogEvery || state.logEveryMs == 0U || state.logFieldCount == 0U))
     {
         if (status_ == EngineStatus::RUNNING)
         {
@@ -937,7 +937,8 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
     //   |varCount|name1=value1=valid1|...|nameN=valueN=validN
     char record[400] = {};
-    int written = snprintf(record,
+    int written = 0;
+    written = snprintf(record,
                            sizeof(record),
                            "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
                            "|%" PRIu32 "|%" PRIu32 "|%" PRIu32
@@ -960,7 +961,8 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     // Append variable data (AMS-4.8 checkpoint v2).
     if (program_.varCount > 0U)
     {
-        int w2 = snprintf(record + written,
+        int w2 = 0;
+        w2 = snprintf(record + written,
                           sizeof(record) - static_cast<size_t>(written),
                           "|%" PRIu32,
                           static_cast<uint32_t>(program_.varCount));
@@ -1049,7 +1051,8 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     uint32_t hkElapsed = 0U;
     uint32_t logElapsed = 0U;
 
-    const int parsed = sscanf(buf,
+    int parsed = 0;
+    parsed = sscanf(buf,
                               "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
@@ -1108,7 +1111,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     lastError_[0] = '\0';
     lastCheckpointMs_ = nowMs;
 
-    if (!(running_ && executionEnabled_ && status_ == EngineStatus::RUNNING))
+    if (!running_ || !executionEnabled_ || status_ != EngineStatus::RUNNING)
     {
         clearResumePointLocked();
         return false;
@@ -1131,7 +1134,8 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
         {
             uint32_t vcStored = 0U;
             // cppcheck-suppress [cert-err34-c]
-            const int vc = sscanf(cursor, "%" SCNu32, &vcStored);
+            int vc = 0;
+            vc = sscanf(cursor, "%" SCNu32, &vcStored);
             if (vc == 1 && vcStored > 0U)
             {
                 // Advance past varCount token.

@@ -73,7 +73,7 @@ static const char* toStatusText(ares::ams::EngineStatus st)
     case ares::ams::EngineStatus::RUNNING:  return "running";
     case ares::ams::EngineStatus::COMPLETE: return "complete";
     case ares::ams::EngineStatus::ERROR:    return "error";
-    default:                                return "error";
+    default:                                return "unknown";
     }
 }
 
@@ -316,7 +316,8 @@ void ApiServer::handleMissionActivate(WiFiClient& client,
         return;
     }
 
-    const char* file = doc["file"].as<const char*>();
+    const char* file = nullptr;
+    file = doc["file"].as<const char*>();
     const uint32_t fileLen = static_cast<uint32_t>(
         strnlen(file, ares::MISSION_FILENAME_MAX + 1U));
     if (fileLen == 0U || fileLen > ares::MISSION_FILENAME_MAX)
@@ -376,7 +377,8 @@ void ApiServer::handleMissionCommand(WiFiClient& client,
         return;
     }
 
-    const char* command = doc["command"].as<const char*>();
+    const char* command = nullptr;
+    command = doc["command"].as<const char*>();
     const uint32_t cmdLen = static_cast<uint32_t>(
         strnlen(command, MAX_COMMAND_TEXT + 1U));
     if (cmdLen == 0U || cmdLen > MAX_COMMAND_TEXT)

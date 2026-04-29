@@ -905,7 +905,8 @@ bool MissionScriptEngine::parsePrioritiesValuesLocked(const char* line,
                                                       uint32_t&   budget,
                                                       const StateDef& st)
 {
-    int n = sscanf(line,
+    int n = 0;
+    n = sscanf(line,
                    "priorities event=%" SCNu32 " hk=%" SCNu32
                    " log=%" SCNu32 " budget=%" SCNu32,
                    &event, &hk, &log, &budget);

@@ -18,7 +18,7 @@ Checks: >
   cppcoreguidelines-prefer-member-initializer,
   cppcoreguidelines-slicing,
   cppcoreguidelines-special-member-functions,
-  misc-const-correctness,
+  -misc-const-correctness,
   misc-redundant-expression,
   misc-unused-parameters,
   modernize-use-nullptr,

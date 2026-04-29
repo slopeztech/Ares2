@@ -68,13 +68,7 @@ static bool isValidLogFilename(const char* name)
         }
     }
 
-    // Reject ".." anywhere in the name (path traversal)
-    if (strstr(name, "..") != nullptr)
-    {
-        return false;
-    }
-
-    return true;
+    return strstr(name, "..") == nullptr;
 }
 
 /**
