@@ -4,7 +4,7 @@
     {
       "label": "Build: PlatformIO",
       "type": "shell",
-      "command": "C:/Users/Sergio/.platformio/penv/Scripts/platformio.exe",
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/platformio.exe",
       "args": [
         "run"
       ],
@@ -16,7 +16,7 @@
     {
       "label": "MISRA: Generate compile database",
       "type": "shell",
-      "command": "C:/Users/Sergio/.platformio/penv/Scripts/platformio.exe",
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/platformio.exe",
       "args": [
         "run",
         "-t",
@@ -97,6 +97,48 @@
         "Build: PlatformIO",
         "MISRA: Generate compile database",
         "Cppcheck: Practical (no MISRA addon)"
+      ]
+    },
+    {
+      "label": "clang-tidy: Analyze",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".vscode/scripts/run_clang_tidy.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": {
+        "owner": "clang-tidy",
+        "fileLocation": ["absolute"],
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(warning|error|note):\\s+(.+)\\s+\\[(.+)\\]$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5,
+          "code": 6
+        }
+      }
+    },
+    {
+      "label": "clang-tidy: Build + Analyze",
+      "type": "shell",
+      "command": "echo",
+      "args": [
+        "Running clang-tidy pipeline..."
+      ],
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build: PlatformIO",
+        "MISRA: Generate compile database",
+        "clang-tidy: Analyze"
       ]
     }
   ]

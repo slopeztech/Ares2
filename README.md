@@ -518,16 +518,31 @@ Active level: `ARES_LOG_LEVEL=4` (Debug) in `platformio.ini`.
 
 Formal unit and hardware integration tests are planned for a future milestone. The test infrastructure (PlatformIO Unity runner, native environment for protocol tests) is already in place and will be expanded as the project matures.
 
-Static analysis is available today via VS Code tasks:
+### Static analysis
 
-| Task                         | Description                          |
-|------------------------------|--------------------------------------|
-| `MISRA: Build + Cppcheck`    | Full build + MISRA addon analysis    |
-| `Build + Cppcheck practical` | Practical analysis without MISRA addon|
+Static analysis is the primary verification tool today. Two analysers are configured and run via VS Code tasks:
+
+#### Cppcheck
+
+| Task | Description |
+|------|-------------|
+| `Cppcheck: Practical (no MISRA addon)` | Fast day-to-day check: warning, style, performance, portability |
+| `MISRA: Build + Cppcheck` | Full pipeline: build → compile database → MISRA C 2012 addon |
+| `Build + Cppcheck practical` | Full pipeline without MISRA |
+
+#### clang-tidy (LLVM 22)
+
+| Task | Description |
+|------|-------------|
+| `clang-tidy: Analyze` | Runs checks on `src/` using `.clang-tidy` config (requires fresh `compile_commands.json`) |
+| `clang-tidy: Build + Analyze` | Full pipeline: build → compile database → clang-tidy |
+
+Active check groups: `bugprone-*`, `cppcoreguidelines-*` (subset), `misc-const-correctness`, `modernize-*` (idioms), `performance-*`, `readability-*`. Checks that generate noise from Arduino/ESP-IDF framework headers are suppressed. VS Code parses findings directly into the **Problems** panel.
 
 Latest analysis output is stored in `evidence/latest/`.
 
-Analysis references:
+Full usage, suppression syntax, and evidence management:
+- [Static analysis guide](docs/development/static_analysis.md)
 - [MISRA C++ review profile](docs/development/misra_cpp_review_profile.md)
 
 ---

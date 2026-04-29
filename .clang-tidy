@@ -1,0 +1,75 @@
+---
+# clang-tidy configuration for ARES (ESP32-S3, C++17, safety-critical embedded).
+#
+# Target: xtensa-esp32s3-elf cross-compilation with Arduino/ESP-IDF framework.
+# Only files under src/ are analysed (see HeaderFilterRegex + script filter).
+# Framework headers are excluded via HeaderFilterRegex.
+#
+# Run via: .vscode/scripts/run_clang_tidy.ps1
+# Prerequisite: compile_commands.json must exist (generate with
+#   "MISRA: Generate compile database" VS Code task).
+
+Checks: >
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-suspicious-include,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  misc-const-correctness,
+  misc-redundant-expression,
+  misc-unused-parameters,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-using,
+  modernize-avoid-bind,
+  performance-unnecessary-copy-initialization,
+  performance-unnecessary-value-param,
+  performance-for-range-copy,
+  readability-braces-around-statements,
+  readability-const-return-type,
+  readability-container-size-empty,
+  readability-delete-null-pointer,
+  readability-duplicate-include,
+  readability-else-after-return,
+  readability-function-size,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  readability-redundant-control-flow,
+  readability-redundant-preprocessor,
+  readability-simplify-boolean-expr,
+  readability-string-compare,
+  readability-use-anyofallof
+
+# Treat no check as a hard error — warnings are informational in this profile.
+# Set to a comma-separated list of check names to promote specific ones.
+WarningsAsErrors: ''
+
+# Only emit diagnostics for headers under src/ (not Arduino/ESP-IDF SDK headers).
+HeaderFilterRegex: 'src/.*'
+
+# Do not auto-apply fix-its; review output manually.
+FormatStyle: none
+
+CheckOptions:
+  # readability-function-size: keep functions reviewable (DO-178C guidance).
+  - key:   readability-function-size.LineThreshold
+    value: '80'
+  - key:   readability-function-size.StatementThreshold
+    value: '50'
+  - key:   readability-function-size.BranchThreshold
+    value: '15'
+  - key:   readability-function-size.NestingThreshold
+    value: '5'
+
+  # misc-const-correctness: analyse values but not pointer parameters
+  # (pointer-to-const in Arduino APIs is inconsistent across versions).
+  - key:   misc-const-correctness.AnalyzeValues
+    value: 'true'
+  - key:   misc-const-correctness.AnalyzeReferences
+    value: 'true'
+  - key:   misc-const-correctness.WarnPointersAsValues
+    value: 'false'
