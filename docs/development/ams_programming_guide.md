@@ -630,3 +630,385 @@ Check:
 - Prefer barometer for short-term phase transitions, GPS for geo context
 - Keep event priority highest in flight-critical phases
 - Keep local LOG below HK priority in nominal PUS-oriented operation
+
+---
+
+## 11. Fault Tolerance Features (AMS-4.9 / AMS-4.10)
+
+### 11.1 Sensor Retry (`retry=N`) — AMS-4.9.1
+
+Add `retry=N` to an `include` directive to enable automatic re-attempts when a
+sensor read fails.  The engine retries up to `N` extra times (1 ≤ N ≤ 5) before
+treating the read as definitively failed.
+
+Optional `timeout=Nms` documents the per-attempt deadline but is not enforced by
+the engine beyond the underlying I2C hardware timeout.
+
+```ams
+include BMP280 as BARO retry=3 timeout=500ms
+include BN220 as GPS  retry=2
+```
+
+When retries are exhausted the engine falls back to the normal failure path for
+that sensor reading (variable remains unchanged, EVENT.warn is emitted).
+
+### 11.2 Fallback Transition — AMS-4.9.2
+
+A *fallback transition* fires unconditionally if no regular transition condition
+has been satisfied within a configurable time after entering the state.  Use it
+to prevent permanent traps when a sensor stops responding.
+
+```ams
+state FLIGHT:
+  transition to APOGEE when BARO.alt > 500
+  fallback transition to SAFE after 300000ms
+```
+
+Only one fallback per state is allowed.  The `after Nms` clause is mandatory.
+The fallback fires *before* terminal-state detection, so a state with a fallback
+but no regular transition is kept alive until the timeout expires.
+
+### 11.3 Error Recovery Transition (`on_error: transition to`) — AMS-4.10.2
+
+By default a guard-condition violation halts the engine in the `ERROR` state.
+Add a `transition to STATE` directive inside an `on_error:` block to enter a
+recovery state instead:
+
+```ams
+state FLIGHT:
+  conditions:
+    BARO.alt > 0
+  on_error:
+    EVENT.error "BARO out of range"
+    transition to SAFE_RECOVERY
+```
+
+Both `EVENT.*` and `transition to` can coexist inside a single `on_error:` block.
+Only one recovery transition per state is allowed.
+
+---
+
+## 12. Derived Variables (AMS-4.8.3–4.8.5)
+
+Beyond the basic snapshot and `CALIBRATE` forms, `set` actions support three
+derived-value operators that update every time the state is *entered*:
+
+### 12.1 Delta (`ALIAS.field delta`) — AMS-4.8.3
+
+Stores the difference between the current and the previous sensor reading.
+On the first entry the delta is 0 and the baseline is primed with the current
+reading.
+
+```ams
+state DESCENT:
+  on_enter:
+    set descent_rate = BARO.alt delta
+```
+
+### 12.2 Running Maximum (`max`) — AMS-4.8.4
+
+Stores the greatest sensor value seen since first entry.  On first entry the
+variable is initialised with the current reading.
+
+```ams
+state FLIGHT:
+  on_enter:
+    set max_alt = max(max_alt, BARO.alt)
+```
+
+The first argument **must** match the target variable name (self-referential).
+
+### 12.3 Running Minimum (`min`) — AMS-4.8.5
+
+```ams
+state FLIGHT:
+  on_enter:
+    set min_speed = min(min_speed, GPS.speed)
+```
+
+All three operators require the target variable to be declared with a `var`
+directive before the first state block.
+
+### 12.4 Complete Fault-Tolerance Example
+
+```ams
+include BMP280 as BARO retry=3
+include BN220 as GPS  retry=2
+
+pus.apid = 1
+pus.service 5 as EVENT
+
+var max_alt
+var descent_rate
+
+state FLIGHT:
+  conditions:
+    BARO.alt > 0
+  on_enter:
+    EVENT.info "FLIGHT"
+    set max_alt = max(max_alt, BARO.alt)
+  on_error:
+    EVENT.error "Baro failed"
+    transition to RECOVERY
+  transition to APOGEE when BARO.alt > 500
+  fallback transition to RECOVERY after 120000ms
+
+state APOGEE:
+  on_enter:
+    EVENT.info "APOGEE"
+    set descent_rate = BARO.alt delta
+  transition to DESCENT when BARO.alt < 480
+
+state DESCENT:
+  on_enter:
+    EVENT.info "DESCENT"
+  transition to LANDED when GPS.speed < 1
+
+state RECOVERY:
+  on_enter:
+    EVENT.warn "RECOVERY"
+  transition to LANDED when GPS.speed < 1
+
+state LANDED:
+  on_enter:
+    EVENT.info "LANDED"
+```
+
+---
+
+## 13. TC Debounce (AMS-4.11)
+
+LoRa and other radio links can deliver duplicate telecommand packets.  Without
+debounce, a single retransmitted `LAUNCH` TC would fire a transition immediately
+on the second copy. AMS-4.11 provides two debounce modifiers for `TC.command`
+conditions.
+
+### 13.1 `once` � Explicit One-Shot (AMS-4.11.1)
+
+```ams
+transition to FLIGHT when TC.command == LAUNCH once
+```
+
+`once` is a self-documenting alias for the default behavior.  The transition
+fires on the **first** `LAUNCH` injection, then the TC token is consumed.
+Semantically identical to `transition to FLIGHT when TC.command == LAUNCH`.
+
+### 13.2 `confirm N` � Multi-Injection Gate (AMS-4.11.2)
+
+```ams
+transition to FLIGHT when TC.command == LAUNCH confirm 2
+transition to ABORT  when TC.command == ABORT  confirm 3
+```
+
+`confirm N` counts how many times the specified TC has been injected since the
+last state entry (or since the last transition fired).  The condition becomes
+true only once the count reaches N.  Valid range: **2�10**.
+
+Counter resets:
+- On every `enterStateLocked()` call (new state = clean slate).
+- When a `CONFIRM` transition fires.
+
+### 13.3 Combined with other conditions
+
+```ams
+transition to FLIGHT when TC.command == LAUNCH confirm 2 and BARO.alt > 100
+```
+
+`confirm` is parsed per-condition, independently of compound `and`/`or` logic.
+
+### 13.4 Constraints
+
+| Modifier  | Min N | Max N | Token consumed after fire? |
+|-----------|-------|-------|---------------------------|
+| (default) | �     | �     | Yes (first match)         |
+| `once`    | �     | �     | Yes (first match)         |
+| `confirm N` | 2   | 10    | Yes (counter reset)       |
+
+---
+
+## 14. Mission Constants (AMS-4.12)
+
+Named constants let you define mission-specific thresholds once at the top
+of a script and reference them by name in all transitions.
+
+### 14.1 Declaration syntax
+
+```ams
+const APOGEE_THRESHOLD = 3000
+const LANDING_SPEED    = 1
+const MAX_ACCEL_SAFE   = 50.0
+```
+
+- Must appear in the **metadata section** (before the first `state` block).
+- Name rules: letters, digits and `_`; no dots; not `TIME` or `TC`.
+- Value must be a numeric literal (integer or float).
+- At most `AMS_MAX_CONSTS` (8) constants per script.
+- Constants are **immutable** � there is no runtime mutation.
+
+### 14.2 Usage in transitions
+
+```ams
+state ASCENT:
+  transition to DESCENT when BARO.alt > APOGEE_THRESHOLD
+
+state DESCENT:
+  transition to LANDED  when GPS.speed < LANDING_SPEED
+```
+
+Constants are resolved and inlined into the condition threshold at parse time.
+The runtime has zero overhead compared to a literal float value.
+
+### 14.3 Offset forms
+
+Constants support the same variable-offset syntax as `var` references:
+
+```ams
+transition to WARN when BARO.alt > (APOGEE_THRESHOLD - 200)
+```
+
+### 14.4 Complete example
+
+```ams
+apid 0x01
+
+include BMP280 as BARO
+include BN220  as GPS
+
+const APOGEE_THRESHOLD = 3000
+const LANDING_SPEED    = 1.0
+const MIN_LAUNCH_ALT   = 100
+
+state PAD:
+  transition to FLIGHT when TC.command == LAUNCH confirm 2 and BARO.alt > MIN_LAUNCH_ALT
+
+state FLIGHT:
+  transition to DESCENT when BARO.alt > APOGEE_THRESHOLD
+
+state DESCENT:
+  transition to LANDED when GPS.speed < LANDING_SPEED
+
+state LANDED:
+  on_enter:
+    EVENT.info "Landed"
+```
+
+---
+
+## 15. Background Tasks (AMS-11)
+
+Background tasks run on a fixed timer **regardless of the active state**.
+They are ideal for cross-cutting concerns — thermal monitoring, battery watch,
+data archiving — that should not be modelled inside every individual state.
+
+### 15.1 Basic syntax
+
+```ams
+task thermal_monitor:
+  every 1000ms:
+    if BARO.temp > 80:
+      EVENT.warning "OVERHEAT"
+```
+
+A `task` block requires exactly one `every Nms:` line and one or more `if COND:` rules.
+Each `if` rule may contain an `EVENT.*` action, a `set` action, or both.
+
+### 15.2 State filter (`when in`)
+
+Use `when in STATE…` to restrict the task to specific states:
+
+```ams
+task battery_guard when in FLIGHT ASCENT DESCENT:
+  every 2000ms:
+    if BARO.pressure < 5000:
+      EVENT.error "LOW PRESSURE"
+```
+
+The timer resets whenever the current state is outside the filter, so the task
+fires promptly on the first tick after re-entering an active state.
+
+### 15.3 Combining EVENT and set in one rule
+
+```ams
+task peak_tracker:
+  every 500ms:
+    if BARO.alt > peak_alt:
+      set peak_alt = max(peak_alt, BARO.alt)
+      EVENT.info "New peak"
+```
+
+### 15.4 Constraints
+
+| Item | Limit |
+|------|-------|
+| Max tasks per script | `AMS_MAX_TASKS` (4) |
+| Max `if` rules per task | `AMS_MAX_TASK_RULES` (4) |
+| Max `when in` states | `AMS_MAX_TASK_ACTIVE_STATES` (6) |
+| Min period | `TELEMETRY_INTERVAL_MIN` (100 ms) |
+| TC conditions | **Not allowed** in task `if` |
+
+Tasks may not trigger state transitions — use `transition` inside state blocks for that.
+
+---
+
+## 16. Formal Validation (`assert:`) (AMS-15)
+
+The optional `assert:` block runs **at parse time** before the script activates.
+If any assertion fails, the script is rejected with a descriptive error — it will
+never enter the running state.
+
+### 16.1 Supported assertions
+
+```ams
+assert:
+  reachable LANDED
+  no_dead_states
+  max_transition_depth < 20
+```
+
+| Directive | Meaning |
+|-----------|---------|
+| `reachable STATE` | STATE must be reachable from the initial state via some transition path |
+| `no_dead_states` | Every declared state must be reachable from the initial state |
+| `max_transition_depth < N` | The longest acyclic path through the state graph must be < N hops |
+
+### 16.2 When to use
+
+Always include at least `no_dead_states` in production scripts.  
+Add `reachable LANDED` (or your terminal state) to guarantee the mission can complete.  
+Use `max_transition_depth` to cap graph complexity for review purposes.
+
+### 16.3 Full example with tasks and assertions
+
+```ams
+apid 0x01
+
+include BMP280 as BARO
+include BN220  as GPS
+
+var peak_temp = 0
+
+state PAD:
+  transition to FLIGHT when TC.command == LAUNCH
+
+state FLIGHT:
+  transition to DESCENT when BARO.alt > 3000
+
+state DESCENT:
+  transition to LANDED when GPS.speed < 1.5
+
+state LANDED:
+  on_enter:
+    EVENT.info "Landed safely"
+
+task thermal_monitor:
+  every 1000ms:
+    if BARO.temp > 75:
+      EVENT.warning "THERMAL"
+      set peak_temp = max(peak_temp, BARO.temp)
+
+assert:
+  reachable LANDED
+  no_dead_states
+  max_transition_depth < 10
+```
+

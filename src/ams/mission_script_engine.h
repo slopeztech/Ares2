@@ -195,6 +195,9 @@ private:
         CONDITIONS = 3,  ///< Inside a conditions: block.
         ON_ERROR   = 4,  ///< Inside an on_error: block.
         ON_ENTER   = 5,  ///< Inside an on_enter: block (EVENT.* and set actions).
+        TASK       = 6,  ///< Inside a task: block header (before first if-rule) (AMS-11).
+        TASK_IF    = 7,  ///< Inside an if COND: block within a task (AMS-11).
+        ASSERT     = 8,  ///< Inside an assert: block (AMS-15).
     };
 
     // ── Peripheral kind ──────────────────────────────────────────────────────
@@ -237,6 +240,14 @@ private:
         SENSOR_DELTA_GT = 6, ///< (alias.field[n] - alias.field[n-1]) > threshold (AMS-4.6.2)
     };
 
+    // ── TC debounce mode (AMS-4.11) ────────────────────────────────────────
+    enum class TcDebounceMode : uint8_t
+    {
+        ONESHOT  = 0U, ///< Fire on first TC match — one-shot, existing behavior (AMS-4.11.1).
+        ONCE     = 1U, ///< Explicit alias for ONESHOT — self-documenting keyword.
+        CONFIRM  = 2U, ///< Require N successive inject calls before firing (AMS-4.11.2).
+    };
+
     // ── Logical operator for compound transitions (AMS-4.6.2) ─────────────
     enum class TransitionLogic : uint8_t
     {
@@ -252,6 +263,8 @@ private:
         SensorField field     = SensorField::ALT;
         float       threshold = 0.0f;            ///< Literal RHS value (used when !useVar).
         TcCommand   tcValue   = TcCommand::NONE;
+        TcDebounceMode tcDebounce = TcDebounceMode::ONESHOT; ///< Debounce mode for TC_EQ (AMS-4.11).
+        uint8_t        tcConfirmN = 1U;                      ///< Injections required in CONFIRM mode.
 
         // AMS-4.8: variable reference in RHS.
         bool  useVar  = false;                   ///< true = compare against (varValue + varOffset).
@@ -271,16 +284,62 @@ private:
     };
 
     /**
+     * Named constant declared in the script metadata section (AMS-4.12).
+     * Value is resolved and inlined into CondExpr::threshold at parse time.
+     */
+    struct ConstEntry
+    {
+        char  name[ares::AMS_VAR_NAME_LEN] = {};  ///< Constant identifier (up to 15 chars).
+        float value = 0.0f;                        ///< Immutable float value set at parse time.
+    };
+
+    // ── AMS-15: Formal validation assertions ──────────────────────────────────
+
+    /**
+     * Kind of a formal assertion evaluated at load time (AMS-15).
+     */
+    enum class AssertKind : uint8_t
+    {
+        REACHABLE      = 0U, ///< assert reachable STATE — BFS reachability from initial state.
+        NO_DEAD_STATES = 1U, ///< assert no_dead_states — all states are reachable from initial.
+        MAX_DEPTH      = 2U, ///< assert max_transition_depth < N — longest simple path < N.
+    };
+
+    /**
+     * One formal assertion stored from an @c assert: block (AMS-15).
+     */
+    struct AssertDef
+    {
+        AssertKind kind       = AssertKind::REACHABLE;
+        char       targetName[ares::AMS_MAX_STATE_NAME] = {}; ///< REACHABLE: target state name.
+        uint8_t    numericArg = 0U;                            ///< MAX_DEPTH: depth limit.
+    };
+
+    /**
+     * Computation kind for a @c set action (AMS-4.8).
+     */
+    enum class SetActionKind : uint8_t
+    {
+        SIMPLE    = 0U, ///< var = ALIAS.field                       (AMS-4.8.1)
+        CALIBRATE = 1U, ///< var = CALIBRATE(ALIAS.field, N)         (AMS-4.8.2)
+        DELTA     = 2U, ///< var = ALIAS.field delta (curr - prev)   (AMS-4.8.3)
+        MAX_VAR   = 3U, ///< var = max(var, ALIAS.field)             (AMS-4.8.4)
+        MIN_VAR   = 4U, ///< var = min(var, ALIAS.field)             (AMS-4.8.5)
+    };
+
+    /**
      * A single @c set action inside an @c on_enter: block (AMS-4.8).
-     * Captures a sensor reading (or average) into a global variable.
+     * Captures a sensor reading (or derived value) into a global variable.
      */
     struct SetAction
     {
-        char        varName[ares::AMS_VAR_NAME_LEN] = {};  ///< Target variable name.
-        char        alias[16]     = {};                     ///< Sensor peripheral alias.
-        SensorField field         = SensorField::ALT;       ///< Sensor field to read.
-        bool        calibrate     = false;  ///< true = CALIBRATE(sensor, N) form.
-        uint8_t     calibSamples  = 1U;     ///< Number of samples to average (1-10).
+        char          varName[ares::AMS_VAR_NAME_LEN] = {};  ///< Target variable name.
+        char          alias[16]      = {};                    ///< Sensor peripheral alias.
+        SensorField   field          = SensorField::ALT;      ///< Sensor field to read.
+        SetActionKind kind           = SetActionKind::SIMPLE; ///< Computation kind.
+        uint8_t       calibSamples   = 1U;    ///< Samples to average (CALIBRATE form, 1-10).
+        float         deltaBaseline  = 0.0f;  ///< Previous sensor value (DELTA form).
+        bool          deltaValid     = false; ///< Whether deltaBaseline has been set.
     };
 
     enum class EventVerb : uint8_t
@@ -288,6 +347,45 @@ private:
         INFO  = 0,
         WARN  = 1,
         ERROR = 2,
+    };
+
+    // ── AMS-11: Parallel background tasks ────────────────────────────────────
+
+    /**
+     * One conditional rule inside a @c task: block (AMS-11).
+     *
+     * At runtime, when the task fires (every N ms), each rule's condition
+     * is evaluated; if true, the associated event and/or set action fires.
+     */
+    struct TaskRule
+    {
+        CondExpr   cond      = {};                             ///< Trigger condition (no TC allowed).
+        bool       hasEvent  = false;                          ///< true if this rule emits an EVENT.
+        EventVerb  eventVerb = EventVerb::INFO;                ///< Verb for the emitted event.
+        char       eventText[ares::AMS_MAX_EVENT_TEXT] = {};   ///< Event message text.
+        bool       hasSet    = false;                          ///< true if this rule executes a set action.
+        SetAction  setAction = {};                             ///< Variable update action.
+    };
+
+    /**
+     * A background task definition (AMS-11).
+     *
+     * Tasks run independently of the state machine on a fixed period.
+     * An optional state filter (@c when @c in) restricts execution to
+     * specific active states.  Each task holds up to @c AMS_MAX_TASK_RULES
+     * conditional rules.
+     */
+    struct TaskDef
+    {
+        char     name[ares::AMS_MAX_STATE_NAME] = {};          ///< Task identifier (debug).
+        uint32_t everyMs            = 0U;                      ///< Execution period (ms).
+        uint8_t  ruleCount          = 0U;                      ///< Number of populated rules.
+        TaskRule rules[ares::AMS_MAX_TASK_RULES] = {};         ///< Rule table.
+        bool     hasStateFilter     = false;                   ///< true = only run in listed states.
+        uint8_t  activeStateCount   = 0U;                      ///< Entries in activeStateNames[].
+        char     activeStateNames[ares::AMS_MAX_TASK_ACTIVE_STATES][ares::AMS_MAX_STATE_NAME] = {}; ///< Unresolved names.
+        uint8_t  activeStateIndices[ares::AMS_MAX_TASK_ACTIVE_STATES] = {}; ///< Resolved indices.
+        bool     stateIndicesResolved = false;                 ///< true after resolveTasksLocked().
     };
 
     /**
@@ -323,7 +421,7 @@ private:
 
     /**
      * One entry in the per-script alias table.
-     * Created by 'include <MODEL> as <ALIAS>'.
+     * Created by 'include <MODEL> as <ALIAS> [retry=N] [timeout=Nms]' (AMS-4.9.1).
      */
     struct AliasEntry
     {
@@ -331,6 +429,7 @@ private:
         char           model[16]   = {};    ///< e.g. "BN220", "BMP280"
         PeripheralKind kind        = PeripheralKind::GPS;
         uint8_t        driverIdx   = 0xFFU; ///< Index in registry; 0xFF = not resolved
+        uint8_t        retryCount  = 0U;    ///< Extra read attempts on failure (0 = no retry, max AMS_MAX_SENSOR_RETRY).
     };
 
     struct StateDef
@@ -368,6 +467,22 @@ private:
         EventVerb onErrorVerb     = EventVerb::ERROR;
         char      onErrorText[ares::AMS_MAX_EVENT_TEXT] = {};
 
+        /// If set, a guard violation or runtime error transitions to this
+        /// state instead of halting the engine (AMS-4.10.2).
+        bool    hasOnErrorTransition      = false;
+        char    onErrorTransitionTarget[ares::AMS_MAX_STATE_NAME] = {};
+        uint8_t onErrorTransitionIdx      = 0U;
+        bool    onErrorTransitionResolved = false;
+
+        // ── Fallback transition (AMS-4.9.2) ──────────────────
+        /// If no regular transition fires within fallbackAfterMs,
+        /// the fallback transition fires unconditionally.
+        bool     hasFallback              = false;
+        char     fallbackTargetName[ares::AMS_MAX_STATE_NAME] = {};
+        uint8_t  fallbackTargetIdx        = 0U;
+        bool     fallbackTargetResolved   = false;
+        uint32_t fallbackAfterMs          = 0U;
+
         // ── on_enter set actions (AMS-4.8) ──────────────────
         uint8_t   setActionCount = 0;
         SetAction setActions[ares::AMS_MAX_SET_ACTIONS] = {};
@@ -382,7 +497,13 @@ private:
         uint8_t    aliasCount = 0;
         AliasEntry aliases[ares::AMS_MAX_INCLUDES] = {};
         uint8_t    varCount   = 0;
-        VarEntry   vars[ares::AMS_MAX_VARS] = {};  ///< Global variables (AMS-4.8).
+        VarEntry   vars[ares::AMS_MAX_VARS] = {};   ///< Global variables (AMS-4.8).
+        uint8_t    constCount = 0;
+        ConstEntry consts[ares::AMS_MAX_CONSTS] = {}; ///< Named constants (AMS-4.12).
+        uint8_t    taskCount  = 0;
+        TaskDef    tasks[ares::AMS_MAX_TASKS] = {};   ///< Background tasks (AMS-11).
+        uint8_t    assertCount = 0;
+        AssertDef  asserts[ares::AMS_MAX_ASSERTS] = {}; ///< Formal assertions (AMS-15).
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -419,9 +540,18 @@ private:
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
     bool parseVarLineLocked(const char* line);
+    bool parseConstLineLocked(const char* line);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
+    bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
+    bool parseTaskLineLocked(const char* line);                        ///< AMS-11: parse task NAME[:when in…]: header.
+    bool parseTaskScopedLineLocked(const char* line, BlockType& blockType); ///< AMS-11: parse lines inside a task block.
+    bool parseAssertLineLocked(const char* line);                      ///< AMS-15: parse one directive inside assert:.
+    bool parseFallbackTransitionLineLocked(const char* line, StateDef& st);
+    bool parseOnErrorTransitionLineLocked(const char* line, StateDef& st);
     static bool mapApidToNode(uint16_t apid, uint8_t& nodeId);
     bool resolveTransitionsLocked();
+    bool resolveTasksLocked();        ///< AMS-11: resolve 'when in' state names to indices after parsing.
+    bool validateAssertionsLocked();  ///< AMS-15: run BFS/DFS graph checks; call from parseScriptLocked.
 
     static bool isSafeFileName(const char* fileName);
     static bool buildMissionPath(const char* fileName,
@@ -458,10 +588,13 @@ private:
     void executeDueActionsLocked(const StateDef& state, uint32_t nowMs);
 
     void sendOnEnterEventLocked(uint32_t nowMs);
-    void executeSetActionsLocked(const StateDef& st, uint32_t nowMs);
+    void executeSetActionsLocked(StateDef& st, uint32_t nowMs);
+    void executeOneSetActionLocked(SetAction& act, uint32_t nowMs); ///< Execute a single set action (shared by state + task paths).
+    void runTasksLocked(uint32_t nowMs);                            ///< AMS-11: evaluate all background tasks.
     bool resolveVarThresholdLocked(const CondExpr& cond, float& outThreshold) const;
     VarEntry*       findVarLocked(const char* name);
     const VarEntry* findVarLocked(const char* name) const;
+    const ConstEntry* findConstLocked(const char* name) const;
     bool evaluateConditionsLocked(const StateDef& state, uint32_t nowMs);
     void sendHkReportLocked(uint32_t nowMs);
     void appendLogReportLocked(uint32_t nowMs);
@@ -518,6 +651,7 @@ private:
     uint32_t pendingEventTsMs_ = 0;
 
     TcCommand pendingTc_ = TcCommand::NONE;
+    uint8_t   tcConfirmCount_[4] = {}; ///< Per-TC injection counter for CONFIRM mode (AMS-4.11.2).
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
 
@@ -553,6 +687,14 @@ private:
     // Zero when the engine is not actively parsing.
     // Used by setErrorLocked() to emit "Parse Error (line N): ..." messages.
     uint32_t parseLineNum_ = 0U;
+
+    // ── AMS-11: per-task last-fire timestamps ─────────────────────────────────
+    // Indexed by task slot in program_.tasks[].  Reset on deactivate().
+    uint32_t taskLastTickMs_[ares::AMS_MAX_TASKS] = {};
+
+    // ── Parser context for task blocks (valid only during parseScriptLocked) ──
+    uint8_t  parseCurrentTask_     = 0xFFU; ///< Index of task being parsed; 0xFF = none.
+    uint8_t  parseCurrentTaskRule_ = 0xFFU; ///< Index of current if-rule within task; 0xFF = none.
 };
 
 } // namespace ams

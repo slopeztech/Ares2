@@ -400,7 +400,129 @@ Rules:
 - If all reads fail (sensor error / NaN): the variable is left unchanged, an
   `EVENT.warning` is queued, and execution continues (NaN guard — AMS-5.7).
 
-### AMS-4.8.3 Variable RHS in Conditions
+### AMS-4.8.3 Variable NaN Guard
+
+If a `set`, `CALIBRATE`, `delta`, `max`, or `min` action fails to obtain a valid
+sensor reading, the variable is left unchanged and an `EVENT.warning` is queued.
+Full rules: see **AMS-5.7**.
+
+### AMS-4.8.4 Derived Variable — Delta
+
+The `delta` operator stores the difference between the current and the previous
+sensor reading at each state entry:
+
+```ams
+on_enter:
+  set descent_rate = BARO.alt delta
+```
+
+- On the **first** execution the delta is `0.0` and the baseline is primed with
+  the current reading.
+- On subsequent entries: `result = current - baseline; baseline = current`.
+- If the sensor read fails, the variable is left unchanged (NaN guard, AMS-4.8.3).
+
+### AMS-4.8.5 Derived Variable — Running Maximum
+
+```ams
+on_enter:
+  set max_alt = max(max_alt, BARO.alt)
+```
+
+- The first argument **must** match the target variable name (self-referential
+  running accumulator).
+- On the first valid execution: the variable is initialised with the current reading.
+- On subsequent executions: `result = max(current_variable, sensor_reading)`.
+
+### AMS-4.8.6 Derived Variable — Running Minimum
+
+```ams
+on_enter:
+  set min_speed = min(min_speed, GPS.speed)
+```
+
+Same rules as AMS-4.8.5 with `min` semantics.
+
+---
+
+## AMS-4.9 Sensor Fault Tolerance
+
+### AMS-4.9.1 Sensor Retry
+
+The `retry=N` suffix on an `include` directive instructs the engine to retry the
+HAL read up to N extra times (total attempts = N + 1) before treating a read as
+failed.
+
+```ams
+include BMP280 as BARO retry=3 timeout=500ms
+include BN220 as GPS  retry=2
+```
+
+- `N` must be in the range 1–`AMS_MAX_SENSOR_RETRY` (default 5).
+- `timeout=Nms` is validated syntactically; the effective per-attempt timeout is
+  governed by the hardware I2C configuration.
+- Retry is applied for every context where that alias is read: transitions,
+  conditions, `set` actions, `LOG/HK` fields.
+
+### AMS-4.9.2 Fallback Transition
+
+A *fallback transition* fires unconditionally if no regular transition has fired
+within a given number of milliseconds after entering the state.
+
+```ams
+state FLIGHT:
+  transition to APOGEE when BARO.alt > 500
+  fallback transition to SAFE after 300000ms
+```
+
+Rules:
+- Exactly one fallback transition per state (duplicate is a parse error).
+- The `after Nms` clause is mandatory; `N` must be a positive integer.
+- The fallback target must be a declared state in the same script.
+- The fallback fires **after** the regular transition check each tick.
+- A state with only a fallback (no regular `transition`) is not terminal — the
+  engine keeps ticking until the timeout fires.
+- The fallback does **not** consume a TC token even if one is pending.
+
+---
+
+## AMS-4.10 Error Recovery
+
+### AMS-4.10.1 On-Error Event
+
+`on_error:` blocks may contain an `EVENT.*` directive (existing):
+
+```ams
+on_error:
+  EVENT.error "guard violated"
+```
+
+### AMS-4.10.2 On-Error Transition
+
+`on_error:` blocks may additionally contain `transition to STATE` to enter a
+recovery state instead of halting the engine:
+
+```ams
+state FLIGHT:
+  conditions:
+    BARO.alt > 0
+  on_error:
+    EVENT.error "BARO failed"
+    transition to RECOVERY
+```
+
+Rules:
+- `EVENT.*` and `transition to` may coexist in the same `on_error:` block.
+- Exactly one `transition to` per `on_error:` block (duplicate is a parse error).
+- The target state must be declared in the same script.
+- When the recovery transition fires, the engine enters the target state and
+  **does not** enter `ERROR` status.  From the recovery state, normal tick
+  semantics apply.
+- If no `transition to` is present and a guard condition is violated, the engine
+  still halts in `ERROR` (existing behaviour, AMS-5.6).
+
+---
+
+## AMS-5 Runtime Semantics
 
 Transition conditions and guard conditions may use a declared variable as the
 right-hand side threshold:
@@ -417,7 +539,7 @@ transition to LANDED when BARO.alt < (ground_alt - 5)
   transitions before the calibration state has executed.
 - The offset form `(varname ± offset)` is evaluated as `var.value + offset`.
 
-### AMS-4.8.4 Checkpoint Persistence (v2)
+### AMS-4.8.7 Checkpoint Persistence (v2)
 
 Variables are persisted in the AMS checkpoint file (version 2):
 
@@ -679,4 +801,169 @@ The `Value` field shows the sensor reading or elapsed time (in ms for
 If a sensor is **unavailable** when a guard is evaluated, the condition is
 treated as "holds" — no log message is emitted and no error is raised
 (see AMS-5.6 sensor-unavailable behavior).
+
+
+---
+
+## AMS-4.11 TC Debounce
+
+### AMS-4.11.1 Default behavior
+
+A `TC.command == VALUE` condition fires on the first call to `injectTcCommand`
+that delivers the matching command.  The internal TC token is consumed immediately
+after the transition fires.
+
+### AMS-4.11.2 `once` modifier
+
+Syntax: `TC.command == VALUE once`
+
+Explicit one-shot; semantically identical to AMS-4.11.1.  Intended for scripts
+where the intent must be self-documenting.
+
+### AMS-4.11.3 `confirm N` modifier
+
+Syntax: `TC.command == VALUE confirm N`  (N = 2�10)
+
+The condition becomes true only after the TC has been injected at least N times.
+An internal per-TC counter is incremented on every `injectTcCommand` call for
+that command value.
+
+Counter reset policy:
+- Reset to 0 when a state transition fires the `CONFIRM` condition.
+- Reset to 0 on every `enterStateLocked` (state change).
+
+This behavior protects against spurious LoRa packet repetition while still
+allowing intentional multi-press confirmation.
+
+---
+
+## AMS-4.12 Mission Constants
+
+### AMS-4.12.1 Declaration
+
+Syntax: `const NAME = VALUE`
+
+- Must appear in the metadata section (before any `state` block).
+- NAME follows the same identifier rules as `var` names (AMS-4.8).
+- VALUE is a numeric literal (integer or float).
+- At most `AMS_MAX_CONSTS` (8) constants per script.
+- Constants are immutable: no `set` action or runtime mutation is allowed.
+
+### AMS-4.12.2 Usage in conditions
+
+A constant name may appear as the RHS of any transition or guard condition in
+place of a numeric literal:
+
+```
+ALIAS.field OP CONSTANT_NAME
+ALIAS.field OP (CONSTANT_NAME + offset)
+ALIAS.field OP (CONSTANT_NAME - offset)
+```
+
+Constants are resolved and inlined into `CondExpr::threshold` at parse time.
+There is no runtime overhead relative to a literal float value.
+
+### AMS-4.12.3 Error conditions
+
+| Condition | Error |
+|---|---|
+| Duplicate constant name | Parse error |
+| Name conflicts with an existing `var` | Parse error |
+| Name contains `.` | Parse error |
+| Name is `TIME` or `TC` | Parse error |
+| Value is not a numeric literal | Parse error |
+| More than `AMS_MAX_CONSTS` constants | Parse error |
+
+---
+
+## AMS-4.13 Background Tasks
+
+### AMS-4.13.1 Syntax
+
+```
+task <name> [when in <STATE> …]:
+  every <N>ms:
+    if <COND>:
+      [EVENT.<verb> "<text>"]
+      [set <var> = <expr>]
+```
+
+`<name>` is a human-readable identifier used in log messages.
+
+### AMS-4.13.2 Execution model
+
+A task fires when the elapsed time since its last execution equals or exceeds
+the configured period. Tasks are evaluated inside `tick()` after
+`executeDueActionsLocked()` and before `saveResumePointLocked()`.  The mutex
+is held for the full duration; each `if`-rule is evaluated in declaration order.
+
+### AMS-4.13.3 State filter
+
+If `when in STATE…` is specified, the task only fires when `currentState_`
+matches one of the listed states.  State names are resolved at parse time;
+an unknown name is a parse error.  When the current state is outside the
+filter, the per-task timer is reset so the task fires promptly on re-entry.
+
+### AMS-4.13.4 Allowed actions inside task if-rules
+
+| Action | Allowed |
+|--------|---------|
+| `EVENT.info/warning/error "text"` | Yes |
+| `set VAR = ALIAS.field` (and derived forms) | Yes |
+| State transitions | **No** |
+| `TC.command` in condition | **No** |
+| `CALIBRATE(…)` | Yes |
+| `max(…)` / `min(…)` / `delta(…)` | Yes |
+
+### AMS-4.13.5 Limits
+
+| Parameter | Constant | Default |
+|-----------|----------|---------|
+| Max tasks | `AMS_MAX_TASKS` | 4 |
+| Max rules per task | `AMS_MAX_TASK_RULES` | 4 |
+| Max `when in` states | `AMS_MAX_TASK_ACTIVE_STATES` | 6 |
+| Minimum period | `TELEMETRY_INTERVAL_MIN` | 100 ms |
+
+Exceeding any limit is a parse error.
+
+---
+
+## AMS-4.14 Formal Assertions
+
+### AMS-4.14.1 Purpose
+
+The `assert:` block performs static analysis of the state graph at parse time.
+If any assertion fails the script is rejected before activation.
+
+### AMS-4.14.2 Syntax
+
+```
+assert:
+  reachable <STATE>
+  no_dead_states
+  max_transition_depth < <N>
+```
+
+### AMS-4.14.3 Semantics
+
+| Directive | Analysis |
+|-----------|---------|
+| `reachable STATE` | BFS from `state[0]`; error if `STATE` not reached |
+| `no_dead_states` | BFS from `state[0]`; error if any declared state is unreachable |
+| `max_transition_depth < N` | Iterative DFS (cycle-safe via path bitmask); error if longest acyclic path ≥ N |
+
+### AMS-4.14.4 Algorithms
+
+BFS uses a `uint16_t` reachability bitmask (supports up to `AMS_MAX_STATES = 10` states).  
+DFS uses a bounded stack of `DfsFrame{state, depth, pathMask, child}` structs allocated
+on the C++ stack — no heap.
+
+### AMS-4.14.5 Limits
+
+| Parameter | Constant | Default |
+|-----------|----------|---------|
+| Max asserts | `AMS_MAX_ASSERTS` | 8 |
+
+More than `AMS_MAX_ASSERTS` directives in one `assert:` block is a parse error.  
+Only one `assert:` block per script is allowed.
 

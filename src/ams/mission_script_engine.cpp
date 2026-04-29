@@ -172,6 +172,9 @@ void MissionScriptEngine::deactivateLocked()
         transitionPrevVal_[i]   = 0.0f;
         transitionPrevValid_[i] = false;
     }
+    memset(taskLastTickMs_, 0U, sizeof(taskLastTickMs_));
+    parseCurrentTask_     = 0xFFU;
+    parseCurrentTaskRule_ = 0xFFU;
     clearResumePointLocked();
 }
 
@@ -206,6 +209,13 @@ bool MissionScriptEngine::injectTcCommand(const char* commandText)
     }
 
     pendingTc_ = cmd;
+    // AMS-4.11.2: increment per-TC injection counter (used by CONFIRM debounce mode).
+    const uint8_t tcIdx = static_cast<uint8_t>(cmd);
+    if (tcIdx < static_cast<uint8_t>(sizeof(tcConfirmCount_))
+        && tcConfirmCount_[tcIdx] < 255U)
+    {
+        tcConfirmCount_[tcIdx]++;
+    }
     LOG_I(TAG, "TC command queued: %s", commandText);
     return true;
 }
@@ -280,6 +290,23 @@ void MissionScriptEngine::tick(uint32_t nowMs)
         return;
     }
 
+    // AMS-4.9.2: Fallback transition — if no regular transition has fired
+    // within fallbackAfterMs, transition unconditionally to the fallback target.
+    // Evaluated BEFORE the ABORT intercept so missions can designate a safe-state.
+    if (state.hasFallback && state.fallbackTargetResolved)
+    {
+        const uint32_t elapsed = nowMs - stateEnterMs_;
+        if (elapsed >= state.fallbackAfterMs)
+        {
+            LOG_I(TAG, "Fallback: '%s' -> '%s' (timeout %" PRIu32 "ms)",
+                  state.name,
+                  program_.states[state.fallbackTargetIdx].name,
+                  elapsed);
+            enterStateLocked(state.fallbackTargetIdx, nowMs);
+            return;
+        }
+    }
+
     // AMS abort intercept: if ABORT TC is still pending after transition
     // evaluation (i.e. no transition in this state consumes it), the engine
     // must stop unconditionally.  Scripts that define an explicit ABORT
@@ -302,12 +329,19 @@ void MissionScriptEngine::tick(uint32_t nowMs)
 
     executeDueActionsLocked(state, nowMs);
 
+    // AMS-11: evaluate background tasks (run after main state actions).
+    if (program_.taskCount > 0U)
+    {
+        runTasksLocked(nowMs);
+    }
+
     (void)saveResumePointLocked(nowMs, false);
 
     // Terminal state detection: if the current state has no transition,
-    // no pending on-enter event, and no periodic HK or LOG actions,
-    // the mission is done. Mark COMPLETE so the log download unlocks.
+    // no fallback transition, no pending on-enter event, and no periodic
+    // HK or LOG actions, the mission is done.
     if (!state.hasTransition
+        && !state.hasFallback
         && !pendingOnEnterEvent_
         && !(state.hasHkEvery  && state.hkEveryMs  > 0U && state.hkFieldCount  > 0U)
         && !(state.hasLogEvery && state.logEveryMs > 0U && state.logFieldCount > 0U))
@@ -365,7 +399,18 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
         switch (cond.kind)
         {
         case CondKind::TC_EQ:
-            condResult = (pendingTc_ == cond.tcValue);
+            if (cond.tcDebounce == TcDebounceMode::CONFIRM)
+            {
+                // CONFIRM mode: need at least tcConfirmN successive injections.
+                const uint8_t idx = static_cast<uint8_t>(cond.tcValue);
+                condResult = (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
+                             && (tcConfirmCount_[idx] >= cond.tcConfirmN);
+            }
+            else
+            {
+                // DEFAULT / ONCE: fire on first TC match (existing behavior).
+                condResult = (pendingTc_ == cond.tcValue);
+            }
             if (condResult) { tcPendingMatch = true; }
             break;
 
@@ -458,6 +503,19 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
     if (tcPendingMatch)
     {
         pendingTc_ = TcCommand::NONE;
+        // AMS-4.11.2: reset CONFIRM counters for any matched TC condition.
+        for (uint8_t ci = 0; ci < tr.condCount; ci++)
+        {
+            if (tr.conds[ci].kind == CondKind::TC_EQ
+                && tr.conds[ci].tcDebounce == TcDebounceMode::CONFIRM)
+            {
+                const uint8_t idx = static_cast<uint8_t>(tr.conds[ci].tcValue);
+                if (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
+                {
+                    tcConfirmCount_[idx] = 0U;
+                }
+            }
+        }
         LOG_I(TAG, "TC condition matched in state=%s", state.name);
     }
 
@@ -741,6 +799,19 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
                 // Send immediately — setErrorLocked halts the engine next.
                 sendEventLocked(state.onErrorVerb, state.onErrorText, nowMs);
             }
+
+            // AMS-4.10.2: if an on_error recovery transition is defined,
+            // enter the target state instead of halting in ERROR.
+            if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
+            {
+                LOG_I(TAG,
+                      "Error recovery: '%s' -> '%s' (guard violated)",
+                      state.name,
+                      program_.states[state.onErrorTransitionIdx].name);
+                enterStateLocked(state.onErrorTransitionIdx, nowMs);
+                return true;
+            }
+
             setErrorLocked("guard condition violated");
             return true;
         }
@@ -827,6 +898,8 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     lastLogMs_ = nowMs;
     transitionCondHolding_ = false;  // reset hold window on every state entry (AMS-4.6.1)
     transitionCondMetMs_   = 0U;
+    // AMS-4.11.2: reset TC CONFIRM counters on state entry (clean slate per state).
+    memset(tcConfirmCount_, 0U, sizeof(tcConfirmCount_));
     // Reset delta prev-values so the first tick in the new state has no prior reading (AMS-4.6.2).
     for (uint8_t i = 0; i < ares::AMS_MAX_TRANSITION_CONDS; i++)
     {
@@ -1188,72 +1261,236 @@ bool MissionScriptEngine::resolveVarThresholdLocked(const CondExpr& cond,
  * @param[in] nowMs  Current timestamp in milliseconds.
  * @pre  mutex_ is held by the caller.
  */
-void MissionScriptEngine::executeSetActionsLocked(const StateDef& st,
+void MissionScriptEngine::executeSetActionsLocked(StateDef& st,
                                                   uint32_t nowMs)
 {
     for (uint8_t i = 0; i < st.setActionCount; i++)
     {
-        const SetAction& act = st.setActions[i];
-        VarEntry* v = findVarLocked(act.varName);
-        if (v == nullptr)
+        executeOneSetActionLocked(st.setActions[i], nowMs);
+    }
+}
+
+// ── executeOneSetActionLocked ─────────────────────────────────────────────────
+
+/**
+ * @brief Execute a single @c SetAction and update the target variable.
+ *
+ * Shared by the on_enter state path (via @c executeSetActionsLocked) and
+ * the background task path (via @c runTasksLocked).
+ *
+ * @param[in,out] act    Set-action descriptor (deltaBaseline may be mutated).
+ * @param[in]     nowMs  Current timestamp for event framing.
+ * @pre  mutex_ is held by the caller.
+ */
+void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t nowMs)
+{
+    VarEntry* v = findVarLocked(act.varName);
+    if (v == nullptr)
+    {
+        // Parser validates variable existence; this path is a safety guard only.
+        LOG_W(TAG, "set: variable '%s' not found at runtime", act.varName);
+        return;
+    }
+
+    float result     = 0.0f;
+    bool  gotReading = false;
+
+    switch (act.kind)
+    {
+    case SetActionKind::CALIBRATE:
+    {
+        float sum      = 0.0f;
+        uint8_t validN = 0;
+        for (uint8_t s = 0; s < act.calibSamples; s++)
         {
-            // Should not happen — parser validates; guard for safety.
-            LOG_W(TAG, "set action: variable '%s' not found at runtime", act.varName);
-            continue;
-        }
-
-        float result     = 0.0f;
-        bool  gotReading = false;
-
-        if (act.calibrate)
-        {
-            // CALIBRATE: read N times and average valid readings.
-            float sum       = 0.0f;
-            uint8_t validN  = 0;
-
-            for (uint8_t s = 0; s < act.calibSamples; s++)
+            float sample = 0.0f;
+            if (readSensorFloatLocked(act.alias, act.field, sample))
             {
-                float sample = 0.0f;
-                if (readSensorFloatLocked(act.alias, act.field, sample))
-                {
-                    sum += sample;
-                    validN++;
-                }
-            }
-
-            if (validN > 0U)
-            {
-                result     = sum / static_cast<float>(validN);
-                gotReading = true;
-                LOG_I(TAG, "CALIBRATE '%s': avg=%.3f (n=%u/%u)",
-                      act.varName, static_cast<double>(result),
-                      static_cast<unsigned>(validN),
-                      static_cast<unsigned>(act.calibSamples));
-            }
-        }
-        else
-        {
-            gotReading = readSensorFloatLocked(act.alias, act.field, result);
-            if (gotReading)
-            {
-                LOG_I(TAG, "set '%s' = %.3f (from %s)",
-                      act.varName, static_cast<double>(result), act.alias);
+                sum += sample;
+                validN++;
             }
         }
+        if (validN > 0U)
+        {
+            result     = sum / static_cast<float>(validN);
+            gotReading = true;
+            LOG_I(TAG, "CALIBRATE '%s': avg=%.3f (n=%u/%u)",
+                  act.varName, static_cast<double>(result),
+                  static_cast<unsigned>(validN),
+                  static_cast<unsigned>(act.calibSamples));
+        }
+        break;
+    }
 
+    case SetActionKind::DELTA:
+    {
+        float curVal = 0.0f;
+        if (readSensorFloatLocked(act.alias, act.field, curVal))
+        {
+            if (act.deltaValid)
+            {
+                result = curVal - act.deltaBaseline;
+            }
+            else
+            {
+                result = 0.0f;
+            }
+            act.deltaBaseline = curVal;
+            act.deltaValid    = true;
+            gotReading        = true;
+            LOG_I(TAG, "set delta '%s': delta=%.3f (cur=%.3f prev=%.3f)",
+                  act.varName,
+                  static_cast<double>(result),
+                  static_cast<double>(curVal),
+                  static_cast<double>(act.deltaBaseline - result));
+        }
+        break;
+    }
+
+    case SetActionKind::MAX_VAR:
+    {
+        float curVal = 0.0f;
+        if (readSensorFloatLocked(act.alias, act.field, curVal))
+        {
+            result = (v->valid && curVal < v->value) ? v->value : curVal;
+            gotReading = true;
+            LOG_I(TAG, "set max '%s': %.3f (sensor=%.3f)",
+                  act.varName,
+                  static_cast<double>(result),
+                  static_cast<double>(curVal));
+        }
+        break;
+    }
+
+    case SetActionKind::MIN_VAR:
+    {
+        float curVal = 0.0f;
+        if (readSensorFloatLocked(act.alias, act.field, curVal))
+        {
+            result = (v->valid && curVal > v->value) ? v->value : curVal;
+            gotReading = true;
+            LOG_I(TAG, "set min '%s': %.3f (sensor=%.3f)",
+                  act.varName,
+                  static_cast<double>(result),
+                  static_cast<double>(curVal));
+        }
+        break;
+    }
+
+    case SetActionKind::SIMPLE:
+    default:
+        gotReading = readSensorFloatLocked(act.alias, act.field, result);
         if (gotReading)
         {
-            v->value = result;
-            v->valid = true;
+            LOG_I(TAG, "set '%s' = %.3f (from %s)",
+                  act.varName, static_cast<double>(result), act.alias);
         }
-        else
+        break;
+    }
+
+    if (gotReading)
+    {
+        v->value = result;
+        v->valid = true;
+    }
+    else
+    {
+        char warnMsg[64] = {};
+        snprintf(warnMsg, sizeof(warnMsg),
+                 "set '%s': sensor read failed, value not updated", act.varName);
+        LOG_W(TAG, "%s", warnMsg);
+        sendEventLocked(EventVerb::WARN, warnMsg, nowMs);
+    }
+}
+
+// ── runTasksLocked ────────────────────────────────────────────────────────────
+
+/**
+ * @brief Evaluate all background task blocks for the current tick (AMS-11).
+ *
+ * For each task whose period has elapsed and whose state filter (if any)
+ * matches the current state, evaluates each @c if-rule in declaration order.
+ * When a rule's condition is true the associated EVENT and/or set action fires.
+ *
+ * Called at the end of @c tick() after @c executeDueActionsLocked() so state
+ * transitions are committed before tasks read variable values.
+ *
+ * @param[in] nowMs  Current system time in milliseconds.
+ * @pre  mutex_ is held.  running_ is true.  currentState_ is valid.
+ */
+void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
+{
+    for (uint8_t i = 0U; i < program_.taskCount; i++)
+    {
+        TaskDef& td = program_.tasks[i];
+
+        if (td.everyMs == 0U) { continue; }
+
+        // AMS-11: apply optional state filter.
+        if (td.hasStateFilter && td.stateIndicesResolved)
         {
-            // NaN guard: sensor failed — warn and leave variable unchanged.
-            char warnMsg[64] = {};
-            snprintf(warnMsg, sizeof(warnMsg),
-                     "set '%s': sensor read failed, value not updated", act.varName);
-            LOG_W(TAG, "%s", warnMsg);
-            sendEventLocked(EventVerb::WARN, warnMsg, nowMs);
+            bool inActiveState = false;
+            for (uint8_t j = 0U; j < td.activeStateCount; j++)
+            {
+                if (td.activeStateIndices[j] == currentState_)
+                {
+                    inActiveState = true;
+                    break;
+                }
+            }
+            if (!inActiveState)
+            {
+                // Reset the timer so the task fires promptly when we re-enter
+                // an active state, rather than firing stale accumulated time.
+                taskLastTickMs_[i] = nowMs;
+                continue;
+            }
+        }
+
+        if ((nowMs - taskLastTickMs_[i]) < td.everyMs) { continue; }
+        taskLastTickMs_[i] = nowMs;
+
+        // Evaluate each conditional rule in order.
+        for (uint8_t r = 0U; r < td.ruleCount; r++)
+        {
+            TaskRule& rule = td.rules[r];
+            bool condResult = false;
+
+            switch (rule.cond.kind)
+            {
+            case CondKind::SENSOR_LT:
+            case CondKind::SENSOR_GT:
+            {
+                float thr = 0.0f;
+                if (!resolveVarThresholdLocked(rule.cond, thr)) { break; }
+                float val = 0.0f;
+                if (readSensorFloatLocked(rule.cond.alias, rule.cond.field, val))
+                {
+                    condResult = (rule.cond.kind == CondKind::SENSOR_LT)
+                                 ? (val < thr)
+                                 : (val > thr);
+                }
+                break;
+            }
+            case CondKind::TIME_GT:
+                condResult = (nowMs - stateEnterMs_) >
+                             static_cast<uint32_t>(rule.cond.threshold);
+                break;
+            default:
+                // Delta and TC conditions are not supported in task if-rules.
+                break;
+            }
+
+            if (!condResult) { continue; }
+
+            if (rule.hasEvent)
+            {
+                sendEventLocked(rule.eventVerb, rule.eventText, nowMs);
+            }
+            if (rule.hasSet)
+            {
+                executeOneSetActionLocked(rule.setAction, nowMs);
+            }
         }
     }
 }
@@ -1277,7 +1514,8 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint32_t nowMs)
         return;
     }
 
-    const StateDef& st = program_.states[currentState_];
+    // AMS-4.8: execute set actions (non-const: DELTA/MAX/MIN update state per call).
+    StateDef& st = program_.states[currentState_];
 
     // AMS-4.8: execute set actions synchronously on state entry.
     if (st.setActionCount > 0U)

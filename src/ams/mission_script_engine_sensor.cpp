@@ -175,6 +175,11 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
     const AliasEntry* ae = findAliasLocked(alias);
     if (ae == nullptr || ae->driverIdx == 0xFFU) { return false; }
 
+    // AMS-4.9.1: each alias may declare 0..AMS_MAX_SENSOR_RETRY extra read
+    // attempts.  On the first success the result is returned immediately.
+    // The loop runs at most (retryCount + 1) times (bounded per PO10-2).
+    const uint8_t maxAttempts = static_cast<uint8_t>(ae->retryCount + 1U);
+
     switch (ae->kind)
     {
     case PeripheralKind::GPS:
@@ -182,16 +187,23 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
         if (ae->driverIdx >= gpsCount_)    { return false; }
         GpsInterface* gps = gpsDrivers_[ae->driverIdx].iface;
         if (gps == nullptr)                { return false; }
-        GpsReading r = {};
-        if (gps->read(r) != GpsStatus::OK) { return false; }
-        switch (field)
+
+        for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
         {
-        case SensorField::LAT:   outVal = r.latitude;  return true;
-        case SensorField::LON:   outVal = r.longitude; return true;
-        case SensorField::ALT:   outVal = r.altitudeM; return true;
-        case SensorField::SPEED: outVal = r.speedKmh;  return true;
-        default:                                        return false;
+            GpsReading r = {};
+            if (gps->read(r) == GpsStatus::OK)
+            {
+                switch (field)
+                {
+                case SensorField::LAT:   outVal = r.latitude;  return true;
+                case SensorField::LON:   outVal = r.longitude; return true;
+                case SensorField::ALT:   outVal = r.altitudeM; return true;
+                case SensorField::SPEED: outVal = r.speedKmh;  return true;
+                default:                                        return false;
+                }
+            }
         }
+        return false;
     }
 
     case PeripheralKind::BARO:
@@ -199,15 +211,22 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
         if (ae->driverIdx >= baroCount_)          { return false; }
         BarometerInterface* baro = baroDrivers_[ae->driverIdx].iface;
         if (baro == nullptr)                      { return false; }
-        BaroReading r = {};
-        if (baro->read(r) != BaroStatus::OK)      { return false; }
-        switch (field)
+
+        for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
         {
-        case SensorField::ALT:      outVal = r.altitudeM;    return true;
-        case SensorField::TEMP:     outVal = r.temperatureC; return true;
-        case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
-        default:                                              return false;
+            BaroReading r = {};
+            if (baro->read(r) == BaroStatus::OK)
+            {
+                switch (field)
+                {
+                case SensorField::ALT:      outVal = r.altitudeM;    return true;
+                case SensorField::TEMP:     outVal = r.temperatureC; return true;
+                case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
+                default:                                              return false;
+                }
+            }
         }
+        return false;
     }
 
     case PeripheralKind::IMU:
@@ -223,12 +242,19 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
         const uint32_t nowMs = static_cast<uint32_t>(millis());
         if ((nowMs - imuCacheTsMs_) >= IMU_CACHE_MAX_AGE_MS)
         {
-            ImuReading r  = {};
-            const bool readOk = (imu->read(r) == ImuStatus::OK);
+            // Retry the IMU read on failure (AMS-4.9.1).
+            bool readOk = false;
+            ImuReading r = {};
+            for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+            {
+                if (imu->read(r) == ImuStatus::OK)
+                {
+                    readOk = true;
+                    break;
+                }
+            }
             // Timestamp set AFTER the read so the 5 ms window starts from
             // completion, not before a potentially-long I2C timeout.
-            // All subsequent fields in the same LOG row then see a fresh
-            // cache and skip the re-read entirely.
             imuCacheTsMs_ = static_cast<uint32_t>(millis());
             if (!readOk)
             {
@@ -479,8 +505,19 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
     }
     if (!found)
     {
+        // AMS-4.12: try named constant — value inlined into threshold at parse time.
+        // Also supports offset forms: (CONST_NAME + offset) / (CONST_NAME - offset).
+        for (uint8_t ci = 0; ci < program_.constCount; ci++)
+        {
+            if (strcmp(program_.consts[ci].name, varName) == 0)
+            {
+                out.threshold = program_.consts[ci].value + (hasOffset ? offset : 0.0f);
+                return true;
+            }
+        }
         char msg[64] = {};
-        snprintf(msg, sizeof(msg), "condition RHS: undefined variable '%s'", varName);
+        snprintf(msg, sizeof(msg),
+                 "condition RHS: undefined variable or constant '%s'", varName);
         setErrorLocked(msg);
         return false;
     }
