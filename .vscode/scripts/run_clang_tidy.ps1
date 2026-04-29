@@ -74,13 +74,41 @@ if ($files.Count -eq 0) {
     exit 1
 }
 
+# ── Patch compile_commands.json (strip xtensa-only flags clang does not support) ──
+# clang-tidy feeds the raw compile command to its own clang frontend. Flags like
+# -mlongcalls are GCC/xtensa-specific and cause hard errors in clang, aborting
+# analysis entirely. We write a patched copy to a temp dir and point clang-tidy
+# there instead of at the original compile_commands.json.
+$xtensaFlags = @(
+    '-mlongcalls',
+    '-fno-tree-switch-conversion',
+    '-fstrict-volatile-bitfields',
+    '-freorder-blocks',
+    '-mtext-section-literals'
+)
+
+$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ares_ct_" + [System.IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+
+$patchedDb = $db | ForEach-Object {
+    $cmd = $_.command
+    foreach ($flag in $xtensaFlags) {
+        $cmd = $cmd -replace (' ' + [regex]::Escape($flag) + '(?=\s|$)'), ''
+    }
+    # Resolve relative file path to absolute so clang-tidy can locate it.
+    $absFile = $_.file
+    if (-not [System.IO.Path]::IsPathRooted($absFile)) {
+        $absFile = Join-Path $projectRoot $absFile
+    }
+    [PSCustomObject]@{ directory = $_.directory; command = $cmd; file = $absFile }
+}
+$patchedDb | ConvertTo-Json -Depth 3 | Out-File -Encoding utf8 (Join-Path $tmpDir 'compile_commands.json')
+
 Write-Host ("clang-tidy {0} - analysing {1} file(s) in src/" -f (& $clangTidy --version | Select-Object -First 1), $files.Count)
 Write-Host ("Output: {0}" -f $runFile)
 Write-Host ''
 
 # ── Run clang-tidy on each file ───────────────────────────────────────────────
-# --extra-arg flags suppress xtensa-specific compiler options that clang does
-# not recognise (-mlongcalls etc.) without preventing analysis.
 
 $allOutput   = [System.Collections.Generic.List[string]]::new()
 $errorCount  = 0
@@ -102,17 +130,18 @@ foreach ($file in $files) {
     Write-Host ("  Analysing {0}" -f $relPath)
 
     $fileOutput = & $clangTidy `
-        -p $projectRoot `
+        -p $tmpDir `
         --extra-arg='-Wno-unknown-warning-option' `
-        --extra-arg='-Wno-unused-command-line-argument' `
         $file 2>&1
 
     $lines = $fileOutput | ForEach-Object { $_.ToString() }
 
     # Count diagnostics for the summary line.
+    # Exclude clang-diagnostic-error lines that come from compiler-flag noise
+    # (e.g. leftover xtensa/GCC flags that clang still reports as warnings).
     foreach ($line in $lines) {
-        if ($line -match ': error:')   { $errorCount++ }
-        if ($line -match ': warning:') { $warningCount++ }
+        if ($line -match ': error:'   -and $line -notmatch '\[clang-diagnostic-') { $errorCount++ }
+        if ($line -match ': warning:' -and $line -notmatch '\[clang-diagnostic-') { $warningCount++ }
     }
 
     if ($lines.Count -gt 0) {
@@ -151,6 +180,9 @@ try { Copy-Item -Force $runFile $latestFile } catch {
 }
 
 Write-Host ("Results saved to: {0}" -f $runFile)
+
+# ── Cleanup temp dir ─────────────────────────────────────────────────────────
+Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 
 # Exit 1 if any errors were found so VS Code marks the task as failed.
 if ($errorCount -gt 0) { exit 1 }
