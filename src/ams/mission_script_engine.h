@@ -516,10 +516,31 @@ private:
     bool parseLineLocked(const char* line,
                          uint8_t& currentState,
                          BlockType& blockType);
+    bool parseTopLevelDirectiveLocked(const char* line,
+                                      uint8_t& currentState,
+                                      BlockType& blockType,
+                                      bool& handled);
+    bool parsePusApidDirectiveLocked(const char* line);
+    bool parseNonStateBlockLineLocked(const char* line,
+                                      BlockType& blockType,
+                                      bool& handled);
     bool parseIncludeLineLocked(const char* line);
+    bool lookupModelInDriversLocked(const char* model, PeripheralKind& kind,
+                                     uint8_t& driverIdx) const;
+    bool parseIncludeOptionalsLocked(const char* line, AliasEntry& ae);
     bool parseStateScopedLineLocked(const char* line,
                                     StateDef& st,
                                     BlockType& blockType);
+    bool parseStateBlockHeaderLocked(const char* line,
+                                     StateDef& st,
+                                     BlockType& blockType,
+                                     bool& handled);
+    bool parseStateReportDirectivesLocked(const char* line, StateDef& st,
+                                          BlockType& blockType, bool& matched);
+    bool parseStateBlockContentLocked(const char* line,
+                                      StateDef& st,
+                                      BlockType blockType,
+                                      bool& handled);
     bool parseStateLineLocked(const char* line, uint8_t& currentState);
     bool parseEventLineLocked(const char* line, StateDef& st);
     bool parseEveryLineLocked(const char* line, StateDef& st);
@@ -536,22 +557,56 @@ private:
                               uint8_t& count,
                               const char* ctxName);
     bool parseTransitionLineLocked(const char* line, StateDef& st);
+    bool buildAndStoreTransitionLocked(const char* target, uint32_t holdMs,
+                                        TransitionLogic logic,
+                                        const char* const condParts[],
+                                        uint8_t condCount, StateDef& st);
+    bool parseTransitionHoldClauseLocked(char* bodyBuf, uint32_t& holdMs);
+    bool splitTransitionConditionsLocked(char*           bodyBuf,
+                                         const char*    condParts[],
+                                         char           condBufs[][ares::AMS_MAX_LINE_LEN],
+                                         uint8_t&       condCount,
+                                         TransitionLogic& logic);
     bool parseOneConditionLocked(const char* condStr, bool allowTc, CondExpr& out);
+    bool parseDeltaCondLocked(const char* tok1, const char* tok3, const char* tok4,
+                               CondExpr& out);
+    bool parseFallingRisingCondLocked(const char* tok1, const char* tok2, CondExpr& out);
+    bool parseTcDebounceCondLocked(bool allowTc, const char* d3, const char* d4,
+                                    const char* d5, int nd, CondExpr& out);
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
     bool parseVarLineLocked(const char* line);
     bool parseConstLineLocked(const char* line);
+    bool validateConstIdentifierLocked(const char* name);
+    bool ensureConstDoesNotConflictLocked(const char* name);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
     bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
+    bool ensureSetVariableExistsLocked(const char* varName) const;
+    bool parseCalibrateSetActionLocked(const char* rhsBuf, SetAction& out);
+    bool parseMinMaxSetActionLocked(const char* rhsBuf,
+                                    const char* varName,
+                                    SetAction&  out);
+    bool parseDeltaSetActionLocked(const char* rhsBuf, SetAction& out);
+    bool parseSimpleSensorSetActionLocked(const char* rhsBuf, SetAction& out);
     bool parseTaskLineLocked(const char* line);                        ///< AMS-11: parse task NAME[:when in…]: header.
+    bool parseTaskWhenInClauseLocked(const char* line, const char* whenIn, TaskDef& td);
     bool parseTaskScopedLineLocked(const char* line, BlockType& blockType); ///< AMS-11: parse lines inside a task block.
+    bool parseTaskEveryPeriodLocked(const char* line, TaskDef& td);
+    bool parseTaskIfOpenLocked(const char* line, TaskDef& td, BlockType& blockType);
+    bool parseTaskIfBodyLocked(const char* line, TaskDef& td);
     bool parseAssertLineLocked(const char* line);                      ///< AMS-15: parse one directive inside assert:.
     bool parseFallbackTransitionLineLocked(const char* line, StateDef& st);
+    bool parseFallbackTimeoutMsLocked(const char* line, uint32_t& afterMs);
     bool parseOnErrorTransitionLineLocked(const char* line, StateDef& st);
     static bool mapApidToNode(uint16_t apid, uint8_t& nodeId);
     bool resolveTransitionsLocked();
     bool resolveTasksLocked();        ///< AMS-11: resolve 'when in' state names to indices after parsing.
     bool validateAssertionsLocked();  ///< AMS-15: run BFS/DFS graph checks; call from parseScriptLocked.
+    void computeBfsReachabilityLocked(uint16_t& reachable) const;
+    void computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasCycle) const;
+    bool evaluateOneAssertionLocked(const AssertDef& ad, uint16_t reachable,
+                                     uint8_t maxDepth, bool hasCycle);
+    void resolvePrimaryComLocked();
 
     static bool isSafeFileName(const char* fileName);
     static bool buildMissionPath(const char* fileName,
@@ -566,6 +621,9 @@ private:
     static bool parseSensorField(PeripheralKind kind,
                                  const char*    fieldStr,
                                  SensorField&   out);
+    static bool parseGpsSensorField(const char* fieldStr, SensorField& out);
+    static bool parseBaroSensorField(const char* fieldStr, SensorField& out);
+    static bool parseImuSensorField(const char* fieldStr, SensorField& out);
     static bool splitAliasDotField(const char* expr,
                                    char*       aliasOut, uint8_t aliasSize,
                                    char*       fieldOut,  uint8_t fieldSize);
@@ -574,30 +632,84 @@ private:
     bool readSensorFloatLocked(const char*  alias,
                                SensorField  field,
                                float&       outVal) const;
+    bool readGpsFieldLocked(const AliasEntry& ae,
+                            SensorField       field,
+                            float&            outVal) const;
+    bool readBaroFieldLocked(const AliasEntry& ae,
+                             SensorField       field,
+                             float&            outVal) const;
+    bool readImuFieldLocked(const AliasEntry& ae,
+                            SensorField       field,
+                            float&            outVal) const;
+    bool refreshImuCacheLocked(ImuInterface* imu, uint8_t maxAttempts) const;
     bool parseCondExprLocked(const char* lhs,
                              const char* op,
                              const char* rhs,
                              bool        allowTc,
                              CondExpr&   out);
+    bool parseTcCondExprLocked(const char* op,
+                               const char* rhs,
+                               bool        allowTc,
+                               CondExpr&   out);
+    bool parseTimeCondExprLocked(const char* op,
+                                 const char* rhs,
+                                 CondExpr&   out);
+    bool parseSensorCondExprLocked(const char* lhs,
+                                   const char* op,
+                                   const char* rhs,
+                                   CondExpr&   out);
+    bool parseConditionRhsThresholdLocked(const char* rhs,
+                                          CondExpr&   out);
 
+    bool parseRhsVarNameOffsetLocked(const char* varExpr, char* varName, uint8_t varNameSz,
+                                      float& offset, bool& hasOffset);
     uint8_t findStateByNameLocked(const char* name) const;
 
     void setErrorLocked(const char* reason);
     void enterStateLocked(uint8_t stateIndex, uint32_t nowMs);
     bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint32_t nowMs);
+    bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
+                                              StateDef&,
+                                              uint8_t         condIdx,
+                                              uint32_t        nowMs,
+                                              bool&           tcPendingMatch);
+    bool applyTransitionHoldLocked(const Transition& tr, uint32_t nowMs);
+    void consumeMatchedTransitionTcLocked(const Transition& tr);
+    bool fireResolvedTransitionLocked(const StateDef&   state,
+                                      const Transition& tr,
+                                      uint32_t          nowMs);
     void executeDueActionsLocked(const StateDef& state, uint32_t nowMs);
 
     void sendOnEnterEventLocked(uint32_t nowMs);
     void executeSetActionsLocked(StateDef& st, uint32_t nowMs);
     void executeOneSetActionLocked(SetAction& act, uint32_t nowMs); ///< Execute a single set action (shared by state + task paths).
+    void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint32_t nowMs);
+    void executeDeltaSetActionLocked(SetAction& act, float& result, bool& gotReading);
+    void executeMinMaxSetActionLocked(SetAction& act, const VarEntry* v, float& result, bool& gotReading);
     void runTasksLocked(uint32_t nowMs);                            ///< AMS-11: evaluate all background tasks.
+    bool evaluateTaskRuleCondLocked(const TaskRule& rule, uint32_t nowMs, bool& condResult) const;
     bool resolveVarThresholdLocked(const CondExpr& cond, float& outThreshold) const;
     VarEntry*       findVarLocked(const char* name);
     const VarEntry* findVarLocked(const char* name) const;
     const ConstEntry* findConstLocked(const char* name) const;
     bool evaluateConditionsLocked(const StateDef& state, uint32_t nowMs);
+    static const char* sensorFieldNameForLog(SensorField f);
+    bool evaluateGuardExprHoldsLocked(const CondExpr& expr,
+                                      const StateDef& state,
+                                      uint32_t        nowMs,
+                                      float&          actualVal) const;
+    bool handleGuardViolationLocked(const StateDef& state,
+                                    const CondExpr& expr,
+                                    float           actualVal,
+                                    uint32_t        nowMs);
     void sendHkReportLocked(uint32_t nowMs);
     void appendLogReportLocked(uint32_t nowMs);
+    bool writeLogHeaderIfNeededLocked(const StateDef& st);
+    bool buildLogDataRowLocked(const StateDef& st,
+                               uint32_t        nowMs,
+                               char*           outLine,
+                               uint32_t        outSize,
+                               uint32_t&       outLen) const;
     void sendEventLocked(EventVerb verb, const char* text, uint32_t nowMs);
     bool ensureLogFileLocked(const char* fileName);
     void applyHkFieldToPayloadLocked(const HkField&               f,
@@ -609,7 +721,14 @@ private:
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
     bool saveResumePointLocked(uint32_t nowMs, bool force);
+    bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int& outWritten) const;
     bool tryRestoreResumePointLocked(uint32_t nowMs);
+    bool applyCheckpointStateLocked(uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
+                                     uint32_t running, uint32_t status, uint32_t seq,
+                                     uint32_t stateElapsed, uint32_t hkElapsed,
+                                     uint32_t logElapsed);
+    bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed) const;
+    void restoreCheckpointVarsLocked(const char* cursor);
     void clearResumePointLocked();
 
     /**

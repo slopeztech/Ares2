@@ -23,20 +23,19 @@ namespace ares
 {
 namespace ams
 {
+using detail::isOnlyTrailingWhitespace;
 
 using ares::proto::NODE_BROADCAST;
+using ares::proto::NODE_ROCKET;
 using ares::proto::NODE_GROUND;
 using ares::proto::NODE_PAYLOAD;
-using ares::proto::NODE_ROCKET;
-
-using detail::isOnlyTrailingWhitespace;
 
 static constexpr const char* TAG = "AMS";
 
-// ── loadFromStorageLocked ─────────────────────────────────────────────────────
+// ── loadFromStorageLocked ───────────────────────────────────────────────────
 
 /**
- * @brief Load, read, and parse a .ams script file from LittleFS.
+ * @brief Load, parse, and activate an AMS script from storage.
  *
  * Validates the filename, reads the file into the static script buffer,
  * invokes parseScriptLocked(), and creates the mission log file.
@@ -181,6 +180,13 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
         return false;
     }
 
+    resolvePrimaryComLocked();
+
+    return true;
+}
+
+void MissionScriptEngine::resolvePrimaryComLocked()
+{
     // Resolve primary COM interface: use the first COM alias in the script,
     // or fall back to comDrivers_[0] if no COM include was specified.
     primaryCom_ = nullptr;
@@ -200,8 +206,6 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
     {
         primaryCom_ = comDrivers_[0].iface;  // fallback: first compiled-in COM
     }
-
-    return true;
 }
 
 // ── readNextScriptLineLocked ─────────────────────────────────────────────────
@@ -288,96 +292,18 @@ bool MissionScriptEngine::parseLineLocked(const char* line,
         return true;
     }
 
-    if (strcmp(line, "}") == 0)
+    bool handled = false;
+    if (!parseTopLevelDirectiveLocked(line, currentState, blockType, handled))
     {
-        blockType = BlockType::NONE;
-        return true;
+        return false;
     }
+    if (handled) { return true; }
 
-    if (startsWith(line, "include "))
+    if (!parseNonStateBlockLineLocked(line, blockType, handled))
     {
-        return parseIncludeLineLocked(line);
+        return false;
     }
-
-    if (startsWith(line, "pus.service "))
-    {
-        return true;  // informational; no runtime effect
-    }
-
-    if (startsWith(line, "pus.apid"))
-    {
-        const char* eq = strchr(line, '=');
-        if (eq == nullptr)
-        {
-            setErrorLocked("invalid pus.apid syntax");
-            return false;
-        }
-
-        uint32_t apid = 0;
-        if (!parseUint(eq + 1, apid) || apid > 2047U)
-        {
-            setErrorLocked("invalid pus.apid value");
-            return false;
-        }
-
-        uint8_t nodeId = 0;
-        if (!mapApidToNode(static_cast<uint16_t>(apid), nodeId))
-        {
-            setErrorLocked("unsupported APID for ARES node mapping");
-            return false;
-        }
-
-        program_.apid   = static_cast<uint16_t>(apid);
-        program_.nodeId = nodeId;
-        return true;
-    }
-
-    if (startsWith(line, "state "))
-    {
-        blockType             = BlockType::NONE;
-        parseCurrentTask_     = 0xFFU;
-        parseCurrentTaskRule_ = 0xFFU;
-        return parseStateLineLocked(line, currentState);
-    }
-
-    // AMS-4.8: global variable declaration (valid before first state).
-    if (startsWith(line, "var "))
-    {
-        return parseVarLineLocked(line);
-    }
-
-    // AMS-4.12: named constant declaration (valid before first state).
-    if (startsWith(line, "const "))
-    {
-        return parseConstLineLocked(line);
-    }
-
-    // AMS-11: background task block declaration.
-    if (startsWith(line, "task "))
-    {
-        blockType             = BlockType::TASK;
-        parseCurrentTaskRule_ = 0xFFU;
-        return parseTaskLineLocked(line);
-    }
-
-    // AMS-15: formal validation assert block header.
-    if (strcmp(line, "assert:") == 0)
-    {
-        blockType             = BlockType::ASSERT;
-        parseCurrentTask_     = 0xFFU;
-        parseCurrentTaskRule_ = 0xFFU;
-        return true;
-    }
-
-    // AMS-11/15: dispatch task or assert block content before the state check.
-    if (blockType == BlockType::TASK || blockType == BlockType::TASK_IF)
-    {
-        return parseTaskScopedLineLocked(line, blockType);
-    }
-    if (blockType == BlockType::ASSERT)
-    {
-        return parseAssertLineLocked(line);
-    }
+    if (handled) { return true; }
 
     if (currentState >= program_.stateCount)
     {
@@ -387,6 +313,91 @@ bool MissionScriptEngine::parseLineLocked(const char* line,
 
     StateDef& st = program_.states[currentState];
     return parseStateScopedLineLocked(line, st, blockType);
+}
+
+bool MissionScriptEngine::parsePusApidDirectiveLocked(const char* line)
+{
+    const char* eq = strchr(line, '=');
+    if (eq == nullptr)
+    {
+        setErrorLocked("invalid pus.apid syntax");
+        return false;
+    }
+
+    uint32_t apid = 0;
+    if (!parseUint(eq + 1, apid) || apid > 2047U)
+    {
+        setErrorLocked("invalid pus.apid value");
+        return false;
+    }
+
+    uint8_t nodeId = 0;
+    if (!mapApidToNode(static_cast<uint16_t>(apid), nodeId))
+    {
+        setErrorLocked("unsupported APID for ARES node mapping");
+        return false;
+    }
+
+    program_.apid   = static_cast<uint16_t>(apid);
+    program_.nodeId = nodeId;
+    return true;
+}
+
+bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
+                                                       uint8_t&    currentState,
+                                                       BlockType&  blockType,
+                                                       bool&       handled)
+{
+    handled = true;
+    if (strcmp(line, "}") == 0)
+    {
+        blockType = BlockType::NONE;
+        return true;
+    }
+    if (startsWith(line, "include ")) { return parseIncludeLineLocked(line); }
+    if (startsWith(line, "pus.service ")) { return true; }
+    if (startsWith(line, "pus.apid")) { return parsePusApidDirectiveLocked(line); }
+    if (startsWith(line, "state "))
+    {
+        blockType             = BlockType::NONE;
+        parseCurrentTask_     = 0xFFU;
+        parseCurrentTaskRule_ = 0xFFU;
+        return parseStateLineLocked(line, currentState);
+    }
+    if (startsWith(line, "var "))   { return parseVarLineLocked(line); }
+    if (startsWith(line, "const ")) { return parseConstLineLocked(line); }
+    if (startsWith(line, "task "))
+    {
+        blockType             = BlockType::TASK;
+        parseCurrentTaskRule_ = 0xFFU;
+        return parseTaskLineLocked(line);
+    }
+    if (strcmp(line, "assert:") == 0)
+    {
+        blockType             = BlockType::ASSERT;
+        parseCurrentTask_     = 0xFFU;
+        parseCurrentTaskRule_ = 0xFFU;
+        return true;
+    }
+    handled = false;
+    return true;
+}
+
+bool MissionScriptEngine::parseNonStateBlockLineLocked(const char* line,
+                                                       BlockType&  blockType,
+                                                       bool&       handled)
+{
+    handled = true;
+    if (blockType == BlockType::TASK || blockType == BlockType::TASK_IF)
+    {
+        return parseTaskScopedLineLocked(line, blockType);
+    }
+    if (blockType == BlockType::ASSERT)
+    {
+        return parseAssertLineLocked(line);
+    }
+    handled = false;
+    return true;
 }
 
 // ── parseStateScopedLineLocked ────────────────────────────────────────────────
@@ -413,15 +424,31 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
     ARES_ASSERT(st.hkFieldCount  <= ares::AMS_MAX_HK_FIELDS);
     ARES_ASSERT(st.logFieldCount <= ares::AMS_MAX_HK_FIELDS);
 
-    // ── Block headers always take priority — they reset context ────────
-    if (startsWith(line, "on_enter:"))   { blockType = BlockType::ON_ENTER;   return true; }
-    if (startsWith(line, "on_error:"))   { blockType = BlockType::ON_ERROR;   return true; }
-    if (startsWith(line, "conditions:")) { blockType = BlockType::CONDITIONS; return true; }
+    bool handled = false;
+    if (!parseStateBlockHeaderLocked(line, st, blockType, handled))
+    {
+        return false;
+    }
+    if (handled) { return true; }
 
-    if (startsWith(line, "every "))      { blockType = BlockType::NONE; return parseEveryLineLocked(line, st); }
-    if (startsWith(line, "log_every "))  { blockType = BlockType::NONE; return parseLogEveryLineLocked(line, st); }
-    if (startsWith(line, "priorities ")) { blockType = BlockType::NONE; return parsePrioritiesLineLocked(line, st); }
+    if (!parseStateBlockContentLocked(line, st, blockType, handled))
+    {
+        return false;
+    }
+    if (handled) { return true; }
 
+    if (startsWith(line, "EVENT.")) { return parseEventLineLocked(line, st); }
+
+    setErrorLocked("unsupported statement");
+    return false;
+}
+
+bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
+                                                            StateDef&   st,
+                                                            BlockType&  blockType,
+                                                            bool&       matched)
+{
+    matched = false;
     if (startsWith(line, "HK.report"))
     {
         if (!st.hasHkEvery)
@@ -430,6 +457,7 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
             return false;
         }
         blockType = BlockType::HK;
+        matched   = true;
         return true;
     }
     if (startsWith(line, "LOG.report"))
@@ -440,50 +468,87 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
             return false;
         }
         blockType = BlockType::LOG;
+        matched   = true;
         return true;
     }
+    return true;
+}
+
+bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
+                                                      StateDef&   st,
+                                                      BlockType&  blockType,
+                                                      bool&       handled)
+{
+    handled = true;
+    if (startsWith(line, "on_enter:"))   { blockType = BlockType::ON_ENTER;   return true; }
+    if (startsWith(line, "on_error:"))   { blockType = BlockType::ON_ERROR;   return true; }
+    if (startsWith(line, "conditions:")) { blockType = BlockType::CONDITIONS; return true; }
+
+    if (startsWith(line, "every "))
+    {
+        blockType = BlockType::NONE;
+        return parseEveryLineLocked(line, st);
+    }
+    if (startsWith(line, "log_every "))
+    {
+        blockType = BlockType::NONE;
+        return parseLogEveryLineLocked(line, st);
+    }
+    if (startsWith(line, "priorities "))
+    {
+        blockType = BlockType::NONE;
+        return parsePrioritiesLineLocked(line, st);
+    }
+
+    bool reportMatched = false;
+    if (!parseStateReportDirectivesLocked(line, st, blockType, reportMatched)) { return false; }
+    if (reportMatched) { return true; }
     if (startsWith(line, "transition to "))
     {
         blockType = BlockType::NONE;
         return parseTransitionLineLocked(line, st);
     }
-
-    // AMS-4.9.2: fallback transition fires when no regular transition has fired
-    // within a timeout, preventing permanent trap in a state on sensor loss.
     if (startsWith(line, "fallback transition to "))
     {
         blockType = BlockType::NONE;
         return parseFallbackTransitionLineLocked(line, st);
     }
 
-    // ── Block content — dispatched by current blockType ─────────────────
-    if (blockType == BlockType::CONDITIONS) { return parseConditionScopedLineLocked(line, st); }
+    handled = false;
+    return true;
+}
 
+bool MissionScriptEngine::parseStateBlockContentLocked(const char* line,
+                                                       StateDef&   st,
+                                                       BlockType   blockType,
+                                                       bool&       handled)
+{
+    handled = true;
+    if (blockType == BlockType::CONDITIONS) { return parseConditionScopedLineLocked(line, st); }
     if (blockType == BlockType::ON_ERROR)
     {
-        if (startsWith(line, "EVENT."))        { return parseOnErrorEventLineLocked(line, st); }
-        // AMS-4.10.2: transition to a recovery state instead of halting.
+        if (startsWith(line, "EVENT.")) { return parseOnErrorEventLineLocked(line, st); }
         if (startsWith(line, "transition to ")) { return parseOnErrorTransitionLineLocked(line, st); }
         setErrorLocked("only EVENT.* or 'transition to' allowed inside on_error");
         return false;
     }
-
     if (blockType == BlockType::ON_ENTER)
     {
         if (startsWith(line, "EVENT.")) { return parseEventLineLocked(line, st); }
-        if (startsWith(line, "set "))   { return parseSetActionLineLocked(line, st); }
+        if (startsWith(line, "set ")) { return parseSetActionLineLocked(line, st); }
         setErrorLocked("only EVENT.* and set are allowed inside on_enter");
         return false;
     }
-
-    if (blockType == BlockType::HK)  { return parseFieldLineLocked(line, st.hkFields,  st.hkFieldCount,  "HK");  }
-    if (blockType == BlockType::LOG) { return parseFieldLineLocked(line, st.logFields, st.logFieldCount, "LOG"); }
-
-    // ── NONE context: EVENT.* belongs to on_enter (legacy flat form) ────
-    if (startsWith(line, "EVENT.")) { return parseEventLineLocked(line, st); }
-
-    setErrorLocked("unsupported statement");
-    return false;
+    if (blockType == BlockType::HK)
+    {
+        return parseFieldLineLocked(line, st.hkFields, st.hkFieldCount, "HK");
+    }
+    if (blockType == BlockType::LOG)
+    {
+        return parseFieldLineLocked(line, st.logFields, st.logFieldCount, "LOG");
+    }
+    handled = false;
+    return true;
 }
 
 // ── parseIncludeLineLocked ────────────────────────────────────────────────────
@@ -502,6 +567,73 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
  * @pre  Caller holds the engine mutex.
  * @post @c program_.aliasCount is incremented on success.
  */
+bool MissionScriptEngine::lookupModelInDriversLocked(
+    const char* model, PeripheralKind& kind, uint8_t& driverIdx) const
+{
+    driverIdx = 0xFFU;
+    for (uint8_t i = 0; i < gpsCount_ && driverIdx == 0xFFU; i++)
+    {
+        if (gpsDrivers_[i].model != nullptr
+            && strcmp(gpsDrivers_[i].model, model) == 0)
+        { kind = PeripheralKind::GPS; driverIdx = i; }
+    }
+    for (uint8_t i = 0; i < baroCount_ && driverIdx == 0xFFU; i++)
+    {
+        if (baroDrivers_[i].model != nullptr
+            && strcmp(baroDrivers_[i].model, model) == 0)
+        { kind = PeripheralKind::BARO; driverIdx = i; }
+    }
+    for (uint8_t i = 0; i < comCount_ && driverIdx == 0xFFU; i++)
+    {
+        if (comDrivers_[i].model != nullptr
+            && strcmp(comDrivers_[i].model, model) == 0)
+        { kind = PeripheralKind::COM; driverIdx = i; }
+    }
+    for (uint8_t i = 0; i < imuCount_ && driverIdx == 0xFFU; i++)
+    {
+        if (imuDrivers_[i].model != nullptr
+            && strcmp(imuDrivers_[i].model, model) == 0)
+        { kind = PeripheralKind::IMU; driverIdx = i; }
+    }
+    return (driverIdx != 0xFFU);
+}
+
+bool MissionScriptEngine::parseIncludeOptionalsLocked(const char* line, AliasEntry& ae)
+{
+    const char* retryP = strstr(line, " retry=");
+    if (retryP != nullptr)
+    {
+        uint32_t retries = 0U;
+        if (sscanf(retryP + 7, "%" SCNu32, &retries) != 1  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+            || retries == 0U
+            || retries > static_cast<uint32_t>(ares::AMS_MAX_SENSOR_RETRY))
+        {
+            setErrorLocked("include retry= value must be 1-AMS_MAX_SENSOR_RETRY");
+            return false;
+        }
+        ae.retryCount = static_cast<uint8_t>(retries);
+    }
+
+    const char* toP = strstr(line, " timeout=");
+    if (toP != nullptr)
+    {
+        const char* numStart = toP + 9;
+        const char* msPtr    = strstr(numStart, "ms");
+        if (msPtr == nullptr || msPtr == numStart)
+        {
+            setErrorLocked("include timeout= must be of the form Nms");
+            return false;
+        }
+        const ptrdiff_t numLen = msPtr - numStart;
+        if (numLen <= 0 || numLen >= 16)
+        {
+            setErrorLocked("include timeout= numeric value out of range");
+            return false;
+        }
+    }
+    return true;
+}
+
 bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
 {
     char model[16] = {};
@@ -542,45 +674,10 @@ bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
     // Look up MODEL in each driver kind registry.
     PeripheralKind kind      = PeripheralKind::GPS;
     uint8_t        driverIdx = 0xFFU;
-
-    for (uint8_t i = 0; i < gpsCount_ && driverIdx == 0xFFU; i++)
-    {
-        if (gpsDrivers_[i].model != nullptr
-            && strcmp(gpsDrivers_[i].model, model) == 0)
-        {
-            kind = PeripheralKind::GPS; driverIdx = i;
-        }
-    }
-    for (uint8_t i = 0; i < baroCount_ && driverIdx == 0xFFU; i++)
-    {
-        if (baroDrivers_[i].model != nullptr
-            && strcmp(baroDrivers_[i].model, model) == 0)
-        {
-            kind = PeripheralKind::BARO; driverIdx = i;
-        }
-    }
-    for (uint8_t i = 0; i < comCount_ && driverIdx == 0xFFU; i++)
-    {
-        if (comDrivers_[i].model != nullptr
-            && strcmp(comDrivers_[i].model, model) == 0)
-        {
-            kind = PeripheralKind::COM; driverIdx = i;
-        }
-    }
-    for (uint8_t i = 0; i < imuCount_ && driverIdx == 0xFFU; i++)
-    {
-        if (imuDrivers_[i].model != nullptr
-            && strcmp(imuDrivers_[i].model, model) == 0)
-        {
-            kind = PeripheralKind::IMU; driverIdx = i;
-        }
-    }
-
-    if (driverIdx == 0xFFU)
+    if (!lookupModelInDriversLocked(model, kind, driverIdx))
     {
         char msg[64] = {};
-        snprintf(msg, sizeof(msg),
-                 "model '%s' not found in compiled-in drivers", model);
+        snprintf(msg, sizeof(msg), "model '%s' not found in compiled-in drivers", model);
         setErrorLocked(msg);
         return false;
     }
@@ -594,42 +691,7 @@ bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
     ae.driverIdx = driverIdx;
     ae.retryCount = 0U;
 
-    // ── AMS-4.9.1: optional retry=N suffix ───────────────────────────────
-    const char* retryP = strstr(line, " retry=");
-    if (retryP != nullptr)
-    {
-        // " retry=" is 7 chars; the digit(s) follow immediately.
-        uint32_t retries = 0U;
-        if (sscanf(retryP + 7, "%" SCNu32, &retries) != 1  // NOLINT(bugprone-unchecked-string-to-number-conversion)
-            || retries == 0U
-            || retries > static_cast<uint32_t>(ares::AMS_MAX_SENSOR_RETRY))
-        {
-            setErrorLocked("include retry= value must be 1-AMS_MAX_SENSOR_RETRY");
-            return false;
-        }
-        ae.retryCount = static_cast<uint8_t>(retries);
-    }
-
-    // ── AMS-4.9.1: optional timeout=Nms suffix (stored; I2C HW enforces per-attempt) ─
-    // Parsed and validated for syntax correctness; value is informational.
-    const char* toP = strstr(line, " timeout=");
-    if (toP != nullptr)
-    {
-        const char* numStart = toP + 9;  // skip " timeout="
-        const char* msPtr    = strstr(numStart, "ms");
-        if (msPtr == nullptr || msPtr == numStart)
-        {
-            setErrorLocked("include timeout= must be of the form Nms");
-            return false;
-        }
-        // Validate the numeric portion exists; value not stored for this version.
-        const ptrdiff_t numLen = msPtr - numStart;
-        if (numLen <= 0 || numLen >= 16)
-        {
-            setErrorLocked("include timeout= numeric value out of range");
-            return false;
-        }
-    }
+    if (!parseIncludeOptionalsLocked(line, ae)) { return false; }
 
     LOG_I(TAG, "include: alias=%s model=%s kind=%u idx=%u retry=%u",
           ae.alias, ae.model,
@@ -1032,6 +1094,140 @@ bool MissionScriptEngine::parseFieldLineLocked(const char* line,
  * @return @c true if the expression was parsed without error.
  * @pre  Caller holds the engine mutex.
  */
+bool MissionScriptEngine::parseDeltaCondLocked(
+    const char* tok1, const char* tok3, const char* tok4, CondExpr& out)
+{
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(tok1, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("invalid delta LHS (expected ALIAS.field)");
+        return false;
+    }
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[56] = {};
+        snprintf(msg, sizeof(msg), "unknown alias '%s' in delta condition", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    float thr = 0.0f;
+    if (!parseFloatValue(tok4, thr))
+    {
+        setErrorLocked("invalid delta threshold value");
+        return false;
+    }
+    if (strcmp(tok3, "<") == 0)      { out.kind = CondKind::SENSOR_DELTA_LT; }
+    else if (strcmp(tok3, ">") == 0) { out.kind = CondKind::SENSOR_DELTA_GT; }
+    else
+    {
+        setErrorLocked("delta condition only supports '<' or '>' operators");
+        return false;
+    }
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field     = sf;
+    out.threshold = thr;
+    return true;
+}
+
+bool MissionScriptEngine::parseFallingRisingCondLocked(
+    const char* tok1, const char* tok2, CondExpr& out)
+{
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(tok1, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("invalid falling/rising LHS (expected ALIAS.field)");
+        return false;
+    }
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[72] = {};
+        snprintf(msg, sizeof(msg), "unknown alias '%s' in falling/rising condition", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    out.kind = (strcmp(tok2, "falling") == 0) ? CondKind::SENSOR_DELTA_LT
+                                               : CondKind::SENSOR_DELTA_GT;
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field     = sf;
+    out.threshold = 0.0f;
+    return true;
+}
+
+bool MissionScriptEngine::parseTcDebounceCondLocked(
+    bool allowTc, const char* d3, const char* d4, const char* d5, int nd, CondExpr& out)
+{
+    if (!allowTc)
+    {
+        setErrorLocked("TC.command not valid in conditions block");
+        return false;
+    }
+    TcCommand cmd = TcCommand::NONE;
+    if (!parseTcCommand(d3, cmd) || cmd == TcCommand::NONE)
+    {
+        setErrorLocked("invalid TC.command value");
+        return false;
+    }
+    out.kind    = CondKind::TC_EQ;
+    out.tcValue = cmd;
+
+    if (nd <= 3 || d4[0] == '\0')
+    {
+        out.tcDebounce = TcDebounceMode::ONESHOT;
+        out.tcConfirmN = 1U;
+    }
+    else if (strcmp(d4, "once") == 0)
+    {
+        out.tcDebounce = TcDebounceMode::ONCE;
+        out.tcConfirmN = 1U;
+    }
+    else if (strcmp(d4, "confirm") == 0)
+    {
+        if (nd < 5 || d5[0] == '\0')
+        {
+            setErrorLocked("TC confirm: missing count (expected: confirm N)");
+            return false;
+        }
+        uint32_t n = 0U;
+        if (!parseUint(d5, n) || n < 2U || n > 10U)
+        {
+            setErrorLocked("TC confirm N must be 2-10");
+            return false;
+        }
+        out.tcDebounce = TcDebounceMode::CONFIRM;
+        out.tcConfirmN = static_cast<uint8_t>(n);
+    }
+    else
+    {
+        char msg[64] = {};
+        snprintf(msg, sizeof(msg), "unknown TC modifier '%s'", d4);
+        setErrorLocked(msg);
+        return false;
+    }
+    return true;
+}
+
 bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
                                                   bool        allowTc,
                                                   CondExpr&   out)
@@ -1047,104 +1243,17 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
     const int n4 = sscanf(condStr, "%19s %19s %3s %19s", tok1, tok2, tok3, tok4);
     if (n4 == 4 && strcmp(tok2, "delta") == 0)
     {
-        // tok1 = ALIAS.field, tok3 = op (</>), tok4 = threshold
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (!splitAliasDotField(tok1, aliasStr, sizeof(aliasStr),
-                                        fieldStr, sizeof(fieldStr)))
-        {
-            setErrorLocked("invalid delta LHS (expected ALIAS.field)");
-            return false;
-        }
-
-        const AliasEntry* ae = findAliasLocked(aliasStr);
-        if (ae == nullptr)
-        {
-            char msg[56] = {};
-            snprintf(msg, sizeof(msg), "unknown alias '%s' in delta condition", aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        SensorField sf = SensorField::ALT;
-        if (!parseSensorField(ae->kind, fieldStr, sf))
-        {
-            char msg[80] = {};
-            snprintf(msg, sizeof(msg),
-                     "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        float thr = 0.0f;
-        if (!parseFloatValue(tok4, thr))
-        {
-            setErrorLocked("invalid delta threshold value");
-            return false;
-        }
-
-        if (strcmp(tok3, "<") == 0)      { out.kind = CondKind::SENSOR_DELTA_LT; }
-        else if (strcmp(tok3, ">") == 0) { out.kind = CondKind::SENSOR_DELTA_GT; }
-        else
-        {
-            setErrorLocked("delta condition only supports '<' or '>' operators");
-            return false;
-        }
-
-        strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-        out.alias[sizeof(out.alias) - 1U] = '\0';
-        out.field     = sf;
-        out.threshold = thr;
-        return true;
+        return parseDeltaCondLocked(tok1, tok3, tok4, out);
     }
 
     // 2-token form: ALIAS.field falling | rising
     const int n2 = sscanf(condStr, "%19s %19s", tok1, tok2);
     if (n2 == 2 && (strcmp(tok2, "falling") == 0 || strcmp(tok2, "rising") == 0))
     {
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (!splitAliasDotField(tok1, aliasStr, sizeof(aliasStr),
-                                        fieldStr, sizeof(fieldStr)))
-        {
-            setErrorLocked("invalid falling/rising LHS (expected ALIAS.field)");
-            return false;
-        }
-
-        const AliasEntry* ae = findAliasLocked(aliasStr);
-        if (ae == nullptr)
-        {
-            char msg[72] = {};
-            snprintf(msg, sizeof(msg), "unknown alias '%s' in falling/rising condition",
-                     aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        SensorField sf = SensorField::ALT;
-        if (!parseSensorField(ae->kind, fieldStr, sf))
-        {
-            char msg[80] = {};
-            snprintf(msg, sizeof(msg),
-                     "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        out.kind = (strcmp(tok2, "falling") == 0)
-                   ? CondKind::SENSOR_DELTA_LT
-                   : CondKind::SENSOR_DELTA_GT;
-        strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-        out.alias[sizeof(out.alias) - 1U] = '\0';
-        out.field     = sf;
-        out.threshold = 0.0f;  // falling = delta < 0; rising = delta > 0
-        return true;
+        return parseFallingRisingCondLocked(tok1, tok2, out);
     }
 
-    // AMS-4.11: TC debounce forms (3-5 tokens):
-    //   "TC.command == VALUE"          → DEFAULT (fire on first inject)
-    //   "TC.command == VALUE once"     → ONCE (explicit one-shot alias)
-    //   "TC.command == VALUE confirm N"→ CONFIRM(N) (need N injections)
+    // AMS-4.11: TC debounce forms (3-5 tokens)
     {
         char d1[20] = {};
         char d2[3]  = {};
@@ -1155,55 +1264,7 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
         const int nd = sscanf(condStr, "%19s %2s %19s %7s %7s", d1, d2, d3, d4, d5);
         if (nd >= 3 && strcmp(d1, "TC.command") == 0 && strcmp(d2, "==") == 0)
         {
-            if (!allowTc)
-            {
-                setErrorLocked("TC.command not valid in conditions block");
-                return false;
-            }
-            TcCommand cmd = TcCommand::NONE;
-            if (!parseTcCommand(d3, cmd) || cmd == TcCommand::NONE)
-            {
-                setErrorLocked("invalid TC.command value");
-                return false;
-            }
-            out.kind    = CondKind::TC_EQ;
-            out.tcValue = cmd;
-
-            if (nd <= 3 || d4[0] == '\0')
-            {
-                // bare "TC.command == VALUE" — default one-shot
-                out.tcDebounce = TcDebounceMode::ONESHOT;
-                out.tcConfirmN = 1U;
-            }
-            else if (strcmp(d4, "once") == 0)
-            {
-                out.tcDebounce = TcDebounceMode::ONCE;
-                out.tcConfirmN = 1U;
-            }
-            else if (strcmp(d4, "confirm") == 0)
-            {
-                if (nd < 5 || d5[0] == '\0')
-                {
-                    setErrorLocked("TC confirm: missing count (expected: confirm N)");
-                    return false;
-                }
-                uint32_t n = 0U;
-                if (!parseUint(d5, n) || n < 2U || n > 10U)
-                {
-                    setErrorLocked("TC confirm N must be 2-10");
-                    return false;
-                }
-                out.tcDebounce = TcDebounceMode::CONFIRM;
-                out.tcConfirmN = static_cast<uint8_t>(n);
-            }
-            else
-            {
-                char msg[64] = {};
-                snprintf(msg, sizeof(msg), "unknown TC modifier '%s'", d4);
-                setErrorLocked(msg);
-                return false;
-            }
-            return true;
+            return parseTcDebounceCondLocked(allowTc, d3, d4, d5, nd, out);
         }
     }
 
@@ -1249,12 +1310,42 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
  * @return @c true if the transition was parsed and stored.
  * @pre  Caller holds the engine mutex.
  */
+bool MissionScriptEngine::buildAndStoreTransitionLocked(
+    const char* target, uint32_t holdMs, TransitionLogic logic,
+    const char* const condParts[], uint8_t condCount, StateDef& st)
+{
+    if (condCount == 0U)
+    {
+        setErrorLocked("transition has no condition");
+        return false;
+    }
+
+    Transition tr = {};
+    tr.holdMs = holdMs;
+    tr.logic  = logic;
+    strncpy(tr.targetName, target, sizeof(tr.targetName) - 1U);
+    tr.targetName[sizeof(tr.targetName) - 1U] = '\0';
+    tr.targetResolved = false;
+
+    for (uint8_t i = 0; i < condCount; i++)
+    {
+        if (!parseOneConditionLocked(condParts[i], /*allowTc=*/true, tr.conds[i]))
+        {
+            return false;
+        }
+    }
+    tr.condCount = condCount;
+
+    st.hasTransition = true;
+    st.transition    = tr;
+    return true;
+}
+
 bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
                                                     StateDef&   st)
 {
     ARES_ASSERT(line != nullptr);
 
-    // ── 1. Extract target name ────────────────────────────────────────────
     const char* const whenKw = strstr(line, " when ");
     if (whenKw == nullptr)
     {
@@ -1262,7 +1353,6 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
         return false;
     }
 
-    // "transition to TARGET when ..."
     char target[ares::AMS_MAX_STATE_NAME] = {};
     const int nTarget = sscanf(line, "transition to %15s", target);
     if (nTarget != 1 || target[0] == '\0')
@@ -1271,101 +1361,116 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
         return false;
     }
 
-    // ── 2. Extract conditions body (after "when") ─────────────────────────
-    const char* body = whenKw + 6;  // skip " when "
+    const char* body = whenKw + 6;
     while (*body == ' ') { body++; }
 
-    // Copy body into a mutable buffer so we can NUL-terminate segments.
     char bodyBuf[ares::AMS_MAX_LINE_LEN] = {};
     strncpy(bodyBuf, body, sizeof(bodyBuf) - 1U);
     bodyBuf[sizeof(bodyBuf) - 1U] = '\0';
 
-    // ── 3. Extract optional "for <N>ms" suffix ────────────────────────────
     uint32_t holdMs = 0U;
-    // Search for " for " near the end of body.
-    char* forPtr = nullptr;
-    {
-        char* search = bodyBuf;
-        while ((search = strstr(search, " for ")) != nullptr)
-        {
-            forPtr  = search;  // keep last occurrence
-            search += 5;
-        }
-    }
-    if (forPtr != nullptr)
-    {
-        const char* forVal = forPtr + 5;  // skip " for "
-        const char* msSuffix = strstr(forVal, "ms");
-        if (msSuffix == nullptr || msSuffix == forVal)
-        {
-            setErrorLocked("invalid 'for' clause: expected <N>ms");
-            return false;
-        }
-        const ptrdiff_t numLen = msSuffix - forVal;
-        if (numLen <= 0 || numLen >= 16)
-        {
-            setErrorLocked("invalid 'for' clause: numeric value too long");
-            return false;
-        }
-        char numBuf[16] = {};
-        memcpy(numBuf, forVal, static_cast<size_t>(numLen));
-        numBuf[static_cast<size_t>(numLen)] = '\0';
-        if (!parseUint(numBuf, holdMs) || holdMs == 0U)
-        {
-            setErrorLocked("invalid 'for' clause: holdMs must be > 0");
-            return false;
-        }
-        *forPtr = '\0';  // trim "for Nms" from body
-        // Trim trailing space left by the removal.
-        uint32_t bLen = static_cast<uint32_t>(strnlen(bodyBuf, sizeof(bodyBuf)));
-        while (bLen > 0U && (bodyBuf[bLen - 1U] == ' ' || bodyBuf[bLen - 1U] == '\t'))
-        {
-            bodyBuf[--bLen] = '\0';
-        }
-    }
+    if (!parseTransitionHoldClauseLocked(bodyBuf, holdMs)) { return false; }
 
-    // ── 4. Split by " or " / " and " — detect logic ───────────────────────
-    // Scan for the first logic keyword and verify all separators are identical.
     TransitionLogic logic = TransitionLogic::AND;
-    bool logicDetected = false;
-
-    // Collect condition sub-strings into condParts[].
     const char* condParts[ares::AMS_MAX_TRANSITION_CONDS] = {};
-    char        condBufs[ares::AMS_MAX_TRANSITION_CONDS][ares::AMS_MAX_LINE_LEN] = {};
-    uint8_t     condCount = 0;
+    char condBufs[ares::AMS_MAX_TRANSITION_CONDS][ares::AMS_MAX_LINE_LEN] = {};
+    uint8_t condCount = 0;
+    if (!splitTransitionConditionsLocked(bodyBuf, condParts, condBufs, condCount, logic))
+    {
+        return false;
+    }
 
-    // Work through bodyBuf, splitting on " or " / " and ".
+    return buildAndStoreTransitionLocked(target, holdMs, logic, condParts, condCount, st);
+}
+
+bool MissionScriptEngine::parseTransitionHoldClauseLocked(char* bodyBuf,
+                                                          uint32_t& holdMs)
+{
+    holdMs = 0U;
+    char* forPtr = nullptr;
+    char* search = bodyBuf;
+    while ((search = strstr(search, " for ")) != nullptr)
+    {
+        forPtr = search;
+        search += 5;
+    }
+    if (forPtr == nullptr)
+    {
+        return true;
+    }
+
+    const char* forVal = forPtr + 5;
+    const char* msSuffix = strstr(forVal, "ms");
+    if (msSuffix == nullptr || msSuffix == forVal)
+    {
+        setErrorLocked("invalid 'for' clause: expected <N>ms");
+        return false;
+    }
+
+    const ptrdiff_t numLen = msSuffix - forVal;
+    if (numLen <= 0 || numLen >= 16)
+    {
+        setErrorLocked("invalid 'for' clause: numeric value too long");
+        return false;
+    }
+
+    char numBuf[16] = {};
+    memcpy(numBuf, forVal, static_cast<size_t>(numLen));
+    numBuf[static_cast<size_t>(numLen)] = '\0';
+    if (!parseUint(numBuf, holdMs) || holdMs == 0U)
+    {
+        setErrorLocked("invalid 'for' clause: holdMs must be > 0");
+        return false;
+    }
+
+    *forPtr = '\0';
+    uint32_t bLen = static_cast<uint32_t>(strnlen(bodyBuf, ares::AMS_MAX_LINE_LEN));
+    while (bLen > 0U && (bodyBuf[bLen - 1U] == ' ' || bodyBuf[bLen - 1U] == '\t'))
+    {
+        bodyBuf[--bLen] = '\0';
+    }
+    return true;
+}
+
+bool MissionScriptEngine::splitTransitionConditionsLocked(
+    char*            bodyBuf,
+    const char*      condParts[],
+    char             condBufs[][ares::AMS_MAX_LINE_LEN],
+    uint8_t&         condCount,
+    TransitionLogic& logic)
+{
+    condCount = 0U;
+    bool logicDetected = false;
+    logic = TransitionLogic::AND;
+
     char* remaining = bodyBuf;
     while (remaining != nullptr && remaining[0] != '\0')
     {
-        // Search for both keywords.
         char* orPtr  = strstr(remaining, " or ");
         char* andPtr = strstr(remaining, " and ");
 
-        // Pick whichever appears first.
-        char*           splitAt    = nullptr;
+        char* splitAt = nullptr;
         TransitionLogic splitLogic = TransitionLogic::AND;
-        uint8_t         skipLen    = 0;
+        uint8_t skipLen = 0U;
 
         if (orPtr != nullptr && (andPtr == nullptr || orPtr < andPtr))
         {
-            splitAt    = orPtr;
+            splitAt = orPtr;
             splitLogic = TransitionLogic::OR;
-            skipLen    = 4U;  // " or "
+            skipLen = 4U;
         }
         else if (andPtr != nullptr)
         {
-            splitAt    = andPtr;
+            splitAt = andPtr;
             splitLogic = TransitionLogic::AND;
-            skipLen    = 5U;  // " and "
+            skipLen = 5U;
         }
 
         if (splitAt != nullptr)
         {
-            // Validate homogeneous logic.
             if (!logicDetected)
             {
-                logic         = splitLogic;
+                logic = splitLogic;
                 logicDetected = true;
             }
             else if (splitLogic != logic)
@@ -1375,11 +1480,9 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
             }
         }
 
-        // Extract the condition part before the split point (or whole string).
         const size_t partLen = (splitAt != nullptr)
-                               ? static_cast<size_t>(splitAt - remaining)
-                               : strnlen(remaining, sizeof(bodyBuf));
-
+                             ? static_cast<size_t>(splitAt - remaining)
+                             : strnlen(remaining, ares::AMS_MAX_LINE_LEN);
         if (condCount >= ares::AMS_MAX_TRANSITION_CONDS)
         {
             setErrorLocked("too many sub-conditions in transition");
@@ -1401,25 +1504,6 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
         return false;
     }
 
-    // ── 5. Parse each sub-condition ───────────────────────────────────────
-    Transition tr = {};
-    tr.holdMs = holdMs;
-    tr.logic  = logic;
-    strncpy(tr.targetName, target, sizeof(tr.targetName) - 1U);
-    tr.targetName[sizeof(tr.targetName) - 1U] = '\0';
-    tr.targetResolved = false;
-
-    for (uint8_t i = 0; i < condCount; i++)
-    {
-        if (!parseOneConditionLocked(condParts[i], /*allowTc=*/true, tr.conds[i]))
-        {
-            return false;  // error already set
-        }
-    }
-    tr.condCount = condCount;
-
-    st.hasTransition = true;
-    st.transition    = tr;
     return true;
 }
 
@@ -1702,6 +1786,41 @@ bool MissionScriptEngine::parseConstLineLocked(const char* line)
         return false;
     }
 
+    if (!validateConstIdentifierLocked(name))
+    {
+        return false;
+    }
+    if (!ensureConstDoesNotConflictLocked(name))
+    {
+        return false;
+    }
+
+    if (program_.constCount >= ares::AMS_MAX_CONSTS)
+    {
+        setErrorLocked("too many const declarations (AMS_MAX_CONSTS exceeded)");
+        return false;
+    }
+
+    float val = 0.0f;
+    if (!parseFloatValue(valBuf, val))
+    {
+        setErrorLocked("const value must be a numeric literal");
+        return false;
+    }
+
+    ConstEntry& ce = program_.consts[program_.constCount++];
+    strncpy(ce.name, name, sizeof(ce.name) - 1U);
+    ce.name[sizeof(ce.name) - 1U] = '\0';
+    ce.value = val;
+
+    LOG_I(TAG, "const '%s' = %.3f", name, static_cast<double>(val));
+    return true;
+}
+
+bool MissionScriptEngine::validateConstIdentifierLocked(const char* name)
+{
+    ARES_ASSERT(name != nullptr);
+
     // Reject names with dots (reserved for ALIAS.field forms).
     if (strchr(name, '.') != nullptr)
     {
@@ -1715,6 +1834,13 @@ bool MissionScriptEngine::parseConstLineLocked(const char* line)
         setErrorLocked("const name shadows reserved alias");
         return false;
     }
+
+    return true;
+}
+
+bool MissionScriptEngine::ensureConstDoesNotConflictLocked(const char* name)
+{
+    ARES_ASSERT(name != nullptr);
 
     // Duplicate constant check.
     for (uint8_t i = 0; i < program_.constCount; i++)
@@ -1738,25 +1864,6 @@ bool MissionScriptEngine::parseConstLineLocked(const char* line)
         }
     }
 
-    if (program_.constCount >= ares::AMS_MAX_CONSTS)
-    {
-        setErrorLocked("too many const declarations (AMS_MAX_CONSTS exceeded)");
-        return false;
-    }
-
-    float val = 0.0f;
-    if (!parseFloatValue(valBuf, val))
-    {
-        setErrorLocked("const value must be a numeric literal");
-        return false;
-    }
-
-    ConstEntry& ce = program_.consts[program_.constCount++];
-    strncpy(ce.name, name, sizeof(ce.name) - 1U);
-    ce.name[sizeof(ce.name) - 1U] = '\0';
-    ce.value = val;
-
-    LOG_I(TAG, "const '%s' = %.3f", name, static_cast<double>(val));
     return true;
 }
 
@@ -1814,17 +1921,8 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
         return false;
     }
 
-    // Validate that the variable was declared.
-    bool varFound = false;
-    for (uint8_t i = 0; i < program_.varCount; i++)
+    if (!ensureSetVariableExistsLocked(varName))
     {
-        if (strcmp(program_.vars[i].name, varName) == 0) { varFound = true; break; }
-    }
-    if (!varFound)
-    {
-        char msg[64] = {};
-        snprintf(msg, sizeof(msg), "set action: undefined variable '%s'", varName);
-        setErrorLocked(msg);
         return false;
     }
 
@@ -1833,211 +1931,228 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
 
     trimInPlace(rhsBuf);
 
-    // ── CALIBRATE(ALIAS.field, N) form ────────────────────────────────
     if (startsWith(rhsBuf, "CALIBRATE("))
     {
-        char sensorExpr[32] = {};
-        char nBuf[8]        = {};
-        // cppcheck-suppress [cert-err34-c]
-        const int nc = sscanf(rhsBuf, "CALIBRATE(%31[^,], %7[^)])", sensorExpr, nBuf);
-        if (nc != 2)
-        {
-            setErrorLocked("invalid CALIBRATE syntax: expected CALIBRATE(ALIAS.field, N)");
-            return false;
-        }
-        trimInPlace(sensorExpr);
-        trimInPlace(nBuf);
-
-        uint32_t samples = 0;
-        if (!parseUint(nBuf, samples) || samples == 0U || samples > 10U)
-        {
-            setErrorLocked("CALIBRATE sample count must be 1-10");
-            return false;
-        }
-
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (!splitAliasDotField(sensorExpr,
-                                aliasStr, sizeof(aliasStr),
-                                fieldStr, sizeof(fieldStr)))
-        {
-            setErrorLocked("CALIBRATE: invalid ALIAS.field expression");
-            return false;
-        }
-
-        const AliasEntry* ae = findAliasLocked(aliasStr);
-        if (ae == nullptr)
-        {
-            char msg[56] = {};
-            snprintf(msg, sizeof(msg), "CALIBRATE: unknown alias '%s'", aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        SensorField sf = SensorField::ALT;
-        if (!parseSensorField(ae->kind, fieldStr, sf))
-        {
-            char msg[80] = {};
-            snprintf(msg, sizeof(msg),
-                     "CALIBRATE: field '%s' not valid for alias '%s'",
-                     fieldStr, aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-        out.alias[sizeof(out.alias) - 1U] = '\0';
-        out.field        = sf;
-        out.kind         = SetActionKind::CALIBRATE;
-        out.calibSamples = static_cast<uint8_t>(samples);
-        return true;
+        return parseCalibrateSetActionLocked(rhsBuf, out);
     }
-
-    // ── max(VARNAME, ALIAS.field) / min(…) form (AMS-4.8.4/4.8.5) ──────
     if (startsWith(rhsBuf, "max(") || startsWith(rhsBuf, "min("))
     {
-        const bool isMax = (rhsBuf[0] == 'm' && rhsBuf[1] == 'a');
-        char arg1[ares::AMS_VAR_NAME_LEN] = {};
-        char arg2[32] = {};
-        // cppcheck-suppress [cert-err34-c]
-        const int nm = sscanf(rhsBuf,
-                              isMax ? "max(%15[^,], %31[^)])" : "min(%15[^,], %31[^)])",
-                              arg1, arg2);
-        if (nm != 2 || arg1[0] == '\0' || arg2[0] == '\0')
-        {
-            setErrorLocked("invalid max/min syntax: expected max(VARNAME, ALIAS.field)");
-            return false;
-        }
-        trimInPlace(arg1);
-        trimInPlace(arg2);
-
-        if (strcmp(arg1, varName) != 0)
-        {
-            setErrorLocked("max/min first argument must match target variable name");
-            return false;
-        }
-
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (!splitAliasDotField(arg2,
-                                aliasStr, sizeof(aliasStr),
-                                fieldStr, sizeof(fieldStr)))
-        {
-            setErrorLocked("max/min: invalid ALIAS.field expression");
-            return false;
-        }
-
-        const AliasEntry* ae = findAliasLocked(aliasStr);
-        if (ae == nullptr)
-        {
-            char msg[56] = {};
-            snprintf(msg, sizeof(msg), "max/min: unknown alias '%s'", aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        SensorField sf = SensorField::ALT;
-        if (!parseSensorField(ae->kind, fieldStr, sf))
-        {
-            char msg[80] = {};
-            snprintf(msg, sizeof(msg),
-                     "max/min: field '%s' not valid for alias '%s'",
-                     fieldStr, aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-        out.alias[sizeof(out.alias) - 1U] = '\0';
-        out.field = sf;
-        out.kind  = isMax ? SetActionKind::MAX_VAR : SetActionKind::MIN_VAR;
+        return parseMinMaxSetActionLocked(rhsBuf, varName, out);
+    }
+    if (parseDeltaSetActionLocked(rhsBuf, out))
+    {
         return true;
     }
+    return parseSimpleSensorSetActionLocked(rhsBuf, out);
+}
 
-    // ── ALIAS.field delta form (AMS-4.8.3) ──────────────────────────────
+bool MissionScriptEngine::ensureSetVariableExistsLocked(const char* varName) const
+{
+    for (uint8_t i = 0; i < program_.varCount; i++)
     {
-        char exprBuf[32] = {};
-        char kwBuf[8]    = {};
-        const int nd = sscanf(rhsBuf, "%31s %7s", exprBuf, kwBuf);
-        if (nd == 2 && strcmp(kwBuf, "delta") == 0)
+        if (strcmp(program_.vars[i].name, varName) == 0)
         {
-            char aliasStr[16] = {};
-            char fieldStr[20] = {};
-            if (!splitAliasDotField(exprBuf,
-                                    aliasStr, sizeof(aliasStr),
-                                    fieldStr, sizeof(fieldStr)))
-            {
-                setErrorLocked("set delta: invalid ALIAS.field expression");
-                return false;
-            }
-
-            const AliasEntry* ae = findAliasLocked(aliasStr);
-            if (ae == nullptr)
-            {
-                char msg[56] = {};
-                snprintf(msg, sizeof(msg), "set delta: unknown alias '%s'", aliasStr);
-                setErrorLocked(msg);
-                return false;
-            }
-
-            SensorField sf = SensorField::ALT;
-            if (!parseSensorField(ae->kind, fieldStr, sf))
-            {
-                char msg[80] = {};
-                snprintf(msg, sizeof(msg),
-                         "set delta: field '%s' not valid for alias '%s'",
-                         fieldStr, aliasStr);
-                setErrorLocked(msg);
-                return false;
-            }
-
-            strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-            out.alias[sizeof(out.alias) - 1U] = '\0';
-            out.field       = sf;
-            out.kind        = SetActionKind::DELTA;
-            out.deltaValid  = false;
             return true;
         }
     }
 
-    // ── Simple form: ALIAS.field ─────────────────────────────────────────
+    char msg[64] = {};
+    snprintf(msg, sizeof(msg), "set action: undefined variable '%s'", varName);
+    const_cast<MissionScriptEngine*>(this)->setErrorLocked(msg);
+    return false;
+}
+
+bool MissionScriptEngine::parseCalibrateSetActionLocked(const char* rhsBuf,
+                                                        SetAction&  out)
+{
+    char sensorExpr[32] = {};
+    char nBuf[8] = {};
+    const int nc = sscanf(rhsBuf, "CALIBRATE(%31[^,], %7[^)])", sensorExpr, nBuf);
+    if (nc != 2)
     {
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (!splitAliasDotField(rhsBuf,
-                                aliasStr, sizeof(aliasStr),
-                                fieldStr, sizeof(fieldStr)))
-        {
-            setErrorLocked("set action: invalid ALIAS.field expression");
-            return false;
-        }
-
-        const AliasEntry* ae = findAliasLocked(aliasStr);
-        if (ae == nullptr)
-        {
-            char msg[56] = {};
-            snprintf(msg, sizeof(msg), "set action: unknown alias '%s'", aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        SensorField sf = SensorField::ALT;
-        if (!parseSensorField(ae->kind, fieldStr, sf))
-        {
-            char msg[80] = {};
-            snprintf(msg, sizeof(msg),
-                     "set action: field '%s' not valid for alias '%s'",
-                     fieldStr, aliasStr);
-            setErrorLocked(msg);
-            return false;
-        }
-
-        strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
-        out.alias[sizeof(out.alias) - 1U] = '\0';
-        out.field = sf;
-        out.kind  = SetActionKind::SIMPLE;
-        return true;
+        setErrorLocked("invalid CALIBRATE syntax: expected CALIBRATE(ALIAS.field, N)");
+        return false;
     }
+    trimInPlace(sensorExpr);
+    trimInPlace(nBuf);
+
+    uint32_t samples = 0;
+    if (!parseUint(nBuf, samples) || samples == 0U || samples > 10U)
+    {
+        setErrorLocked("CALIBRATE sample count must be 1-10");
+        return false;
+    }
+
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(sensorExpr, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("CALIBRATE: invalid ALIAS.field expression");
+        return false;
+    }
+
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[56] = {};
+        snprintf(msg, sizeof(msg), "CALIBRATE: unknown alias '%s'", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "CALIBRATE: field '%s' not valid for alias '%s'",
+                 fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field = sf;
+    out.kind = SetActionKind::CALIBRATE;
+    out.calibSamples = static_cast<uint8_t>(samples);
+    return true;
+}
+
+bool MissionScriptEngine::parseMinMaxSetActionLocked(const char* rhsBuf,
+                                                     const char* varName,
+                                                     SetAction&  out)
+{
+    const bool isMax = (rhsBuf[0] == 'm' && rhsBuf[1] == 'a');
+    char arg1[ares::AMS_VAR_NAME_LEN] = {};
+    char arg2[32] = {};
+    const int nm = sscanf(rhsBuf,
+                          isMax ? "max(%15[^,], %31[^)])" : "min(%15[^,], %31[^)])",
+                          arg1, arg2);
+    if (nm != 2 || arg1[0] == '\0' || arg2[0] == '\0')
+    {
+        setErrorLocked("invalid max/min syntax: expected max(VARNAME, ALIAS.field)");
+        return false;
+    }
+    trimInPlace(arg1);
+    trimInPlace(arg2);
+    if (strcmp(arg1, varName) != 0)
+    {
+        setErrorLocked("max/min first argument must match target variable name");
+        return false;
+    }
+
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(arg2, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("max/min: invalid ALIAS.field expression");
+        return false;
+    }
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[56] = {};
+        snprintf(msg, sizeof(msg), "max/min: unknown alias '%s'", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg), "max/min: field '%s' not valid for alias '%s'",
+                 fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field = sf;
+    out.kind = isMax ? SetActionKind::MAX_VAR : SetActionKind::MIN_VAR;
+    return true;
+}
+
+bool MissionScriptEngine::parseDeltaSetActionLocked(const char* rhsBuf,
+                                                    SetAction&  out)
+{
+    char exprBuf[32] = {};
+    char kwBuf[8] = {};
+    const int nd = sscanf(rhsBuf, "%31s %7s", exprBuf, kwBuf);
+    if (nd != 2 || strcmp(kwBuf, "delta") != 0)
+    {
+        return false;
+    }
+
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(exprBuf, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("set delta: invalid ALIAS.field expression");
+        return false;
+    }
+
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[56] = {};
+        snprintf(msg, sizeof(msg), "set delta: unknown alias '%s'", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg), "set delta: field '%s' not valid for alias '%s'",
+                 fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field = sf;
+    out.kind = SetActionKind::DELTA;
+    out.deltaValid = false;
+    return true;
+}
+
+bool MissionScriptEngine::parseSimpleSensorSetActionLocked(const char* rhsBuf,
+                                                           SetAction&  out)
+{
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(rhsBuf, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        setErrorLocked("set action: invalid ALIAS.field expression");
+        return false;
+    }
+
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        char msg[56] = {};
+        snprintf(msg, sizeof(msg), "set action: unknown alias '%s'", aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        char msg[80] = {};
+        snprintf(msg, sizeof(msg), "set action: field '%s' not valid for alias '%s'",
+                 fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    strncpy(out.alias, aliasStr, sizeof(out.alias) - 1U);
+    out.alias[sizeof(out.alias) - 1U] = '\0';
+    out.field = sf;
+    out.kind = SetActionKind::SIMPLE;
+    return true;
 }
 
 // ── parseSetActionLineLocked ─────────────────────────────────────────────────
@@ -2118,6 +2233,27 @@ bool MissionScriptEngine::parseFallbackTransitionLineLocked(const char* line,
     }
 
     // Extract the "after Nms" clause.
+    if (!parseFallbackTimeoutMsLocked(line, afterMs))
+    {
+        return false;
+    }
+
+    st.hasFallback     = true;
+    st.fallbackAfterMs = afterMs;
+    strncpy(st.fallbackTargetName, target, sizeof(st.fallbackTargetName) - 1U);
+    st.fallbackTargetName[sizeof(st.fallbackTargetName) - 1U] = '\0';
+    st.fallbackTargetResolved = false;
+
+    LOG_I(TAG, "fallback: state will fall to '%s' after %" PRIu32 "ms",
+          target, afterMs);
+    return true;
+}
+
+bool MissionScriptEngine::parseFallbackTimeoutMsLocked(const char* line,
+                                                       uint32_t&   afterMs)
+{
+    ARES_ASSERT(line != nullptr);
+
     const char* afterPtr = strstr(line, " after ");
     if (afterPtr == nullptr)
     {
@@ -2156,14 +2292,6 @@ bool MissionScriptEngine::parseFallbackTransitionLineLocked(const char* line,
         return false;
     }
 
-    st.hasFallback     = true;
-    st.fallbackAfterMs = afterMs;
-    strncpy(st.fallbackTargetName, target, sizeof(st.fallbackTargetName) - 1U);
-    st.fallbackTargetName[sizeof(st.fallbackTargetName) - 1U] = '\0';
-    st.fallbackTargetResolved = false;
-
-    LOG_I(TAG, "fallback: state will fall to '%s' after %" PRIu32 "ms",
-          target, afterMs);
     return true;
 }
 
@@ -2231,6 +2359,67 @@ bool MissionScriptEngine::parseOnErrorTransitionLineLocked(const char* line,
  * @return @c true if the task was registered.
  * @pre  Caller holds the engine mutex.
  */
+bool MissionScriptEngine::parseTaskWhenInClauseLocked(
+    const char* line, const char* whenIn, TaskDef& td)
+{
+    const ptrdiff_t nameLen = whenIn - (line + 5);
+    if (nameLen <= 0 || nameLen >= static_cast<ptrdiff_t>(ares::AMS_MAX_STATE_NAME))
+    {
+        setErrorLocked("task: name too long or empty");
+        return false;
+    }
+    memcpy(td.name, line + 5, static_cast<size_t>(nameLen));
+    td.name[static_cast<size_t>(nameLen)] = '\0';
+    trimInPlace(td.name);
+
+    const char* stateList = whenIn + 9;
+    char listBuf[ares::AMS_MAX_LINE_LEN] = {};
+    strncpy(listBuf, stateList, sizeof(listBuf) - 1U);
+
+    char* colon = strchr(listBuf, ':');
+    if (colon == nullptr)
+    {
+        setErrorLocked("task 'when in' clause missing ':'");
+        return false;
+    }
+    *colon = '\0';
+    trimInPlace(listBuf);
+
+    const char* p = listBuf;
+    while (*p != '\0')
+    {
+        while (*p == ' ') { p++; }
+        if (*p == '\0') { break; }
+
+        const char* end = p;
+        while (*end != ' ' && *end != '\0') { end++; }
+
+        const ptrdiff_t tlen = end - p;
+        if (tlen <= 0 || tlen >= static_cast<ptrdiff_t>(ares::AMS_MAX_STATE_NAME))
+        {
+            setErrorLocked("task 'when in': state name too long");
+            return false;
+        }
+        if (td.activeStateCount >= ares::AMS_MAX_TASK_ACTIVE_STATES)
+        {
+            setErrorLocked("task 'when in': too many state names (AMS_MAX_TASK_ACTIVE_STATES exceeded)");
+            return false;
+        }
+        memcpy(td.activeStateNames[td.activeStateCount], p, static_cast<size_t>(tlen));
+        td.activeStateNames[td.activeStateCount][static_cast<size_t>(tlen)] = '\0';
+        td.activeStateCount++;
+        p = end;
+    }
+
+    if (td.activeStateCount == 0U)
+    {
+        setErrorLocked("task 'when in': no state names found");
+        return false;
+    }
+    td.hasStateFilter = true;
+    return true;
+}
+
 bool MissionScriptEngine::parseTaskLineLocked(const char* line)
 {
     ARES_ASSERT(line != nullptr);
@@ -2244,73 +2433,13 @@ bool MissionScriptEngine::parseTaskLineLocked(const char* line)
     const uint8_t taskIdx = program_.taskCount;
     TaskDef& td = program_.tasks[taskIdx];
 
-    // Detect optional "when in" state filter.
     const char* whenIn = strstr(line, " when in ");
     if (whenIn != nullptr)
     {
-        // Name is between "task " (5 chars) and " when in ".
-        const ptrdiff_t nameLen = whenIn - (line + 5);
-        if (nameLen <= 0 || nameLen >= static_cast<ptrdiff_t>(ares::AMS_MAX_STATE_NAME))
-        {
-            setErrorLocked("task: name too long or empty");
-            return false;
-        }
-        memcpy(td.name, line + 5, static_cast<size_t>(nameLen));
-        td.name[static_cast<size_t>(nameLen)] = '\0';
-        trimInPlace(td.name);
-
-        // Parse the space-separated state list after "when in ".  The colon
-        // terminates the list: "when in S1 S2 ...:"
-        const char* stateList = whenIn + 9;  // skip " when in "
-        char listBuf[ares::AMS_MAX_LINE_LEN] = {};
-        strncpy(listBuf, stateList, sizeof(listBuf) - 1U);
-
-        char* colon = strchr(listBuf, ':');
-        if (colon == nullptr)
-        {
-            setErrorLocked("task 'when in' clause missing ':'");
-            return false;
-        }
-        *colon = '\0';
-        trimInPlace(listBuf);
-
-        // Tokenise state names manually (avoid strtok re-entrancy).
-        const char* p = listBuf;
-        while (*p != '\0')
-        {
-            while (*p == ' ') { p++; }
-            if (*p == '\0') { break; }
-
-            const char* end = p;
-            while (*end != ' ' && *end != '\0') { end++; }
-
-            const ptrdiff_t tlen = end - p;
-            if (tlen <= 0 || tlen >= static_cast<ptrdiff_t>(ares::AMS_MAX_STATE_NAME))
-            {
-                setErrorLocked("task 'when in': state name too long");
-                return false;
-            }
-            if (td.activeStateCount >= ares::AMS_MAX_TASK_ACTIVE_STATES)
-            {
-                setErrorLocked("task 'when in': too many state names (AMS_MAX_TASK_ACTIVE_STATES exceeded)");
-                return false;
-            }
-            memcpy(td.activeStateNames[td.activeStateCount], p, static_cast<size_t>(tlen));
-            td.activeStateNames[td.activeStateCount][static_cast<size_t>(tlen)] = '\0';
-            td.activeStateCount++;
-            p = end;
-        }
-
-        if (td.activeStateCount == 0U)
-        {
-            setErrorLocked("task 'when in': no state names found");
-            return false;
-        }
-        td.hasStateFilter = true;
+        if (!parseTaskWhenInClauseLocked(line, whenIn, td)) { return false; }
     }
     else
     {
-        // Simple form: "task NAME:"
         char name[ares::AMS_MAX_STATE_NAME] = {};
         // cppcheck-suppress [cert-err34-c]
         const int n = sscanf(line, "task %15[^:]:", name);
@@ -2354,12 +2483,121 @@ bool MissionScriptEngine::parseTaskLineLocked(const char* line)
  * @return @c true on success.
  * @pre  Caller holds the engine mutex.  parseCurrentTask_ is valid.
  */
+bool MissionScriptEngine::parseTaskEveryPeriodLocked(const char* line, TaskDef& td)
+{
+    const char* msPtr = strstr(line, "ms:");
+    if (msPtr == nullptr)
+    {
+        setErrorLocked("task: invalid 'every' period (expected: every Nms:)");
+        return false;
+    }
+    const char* valueStart = line + 6;
+    while (*valueStart == ' ') { valueStart++; }
+    const ptrdiff_t rawLen = msPtr - valueStart;
+    if (rawLen <= 0 || rawLen >= 16)
+    {
+        setErrorLocked("task: 'every' period value too long");
+        return false;
+    }
+    char valueBuf[16] = {};
+    memcpy(valueBuf, valueStart, static_cast<size_t>(rawLen));
+    valueBuf[static_cast<size_t>(rawLen)] = '\0';
+    trimInPlace(valueBuf);
+
+    uint32_t evMs = 0;
+    if (!parseUint(valueBuf, evMs) || evMs < ares::TELEMETRY_INTERVAL_MIN)
+    {
+        setErrorLocked("task: 'every' period must be >= 100ms");
+        return false;
+    }
+    td.everyMs = evMs;
+    return true;
+}
+
+bool MissionScriptEngine::parseTaskIfOpenLocked(const char* line, TaskDef& td,
+                                                BlockType& blockType)
+{
+    if (td.ruleCount >= ares::AMS_MAX_TASK_RULES)
+    {
+        setErrorLocked("task: too many if-rules (AMS_MAX_TASK_RULES exceeded)");
+        return false;
+    }
+
+    const char* condStart = line + 3;
+    char condBuf[ares::AMS_MAX_LINE_LEN] = {};
+    strncpy(condBuf, condStart, sizeof(condBuf) - 1U);
+
+    char* colon = strrchr(condBuf, ':');
+    if (colon == nullptr)
+    {
+        setErrorLocked("task: if-condition missing ':'");
+        return false;
+    }
+    *colon = '\0';
+    trimInPlace(condBuf);
+
+    const uint8_t ruleIdx = td.ruleCount;
+    TaskRule& rule = td.rules[ruleIdx];
+
+    if (!parseOneConditionLocked(condBuf, /*allowTc=*/false, rule.cond)) { return false; }
+    td.ruleCount++;
+    parseCurrentTaskRule_ = ruleIdx;
+    blockType = BlockType::TASK_IF;
+    return true;
+}
+
+bool MissionScriptEngine::parseTaskIfBodyLocked(const char* line, TaskDef& td)
+{
+    if (parseCurrentTaskRule_ >= td.ruleCount) { return false; }
+    TaskRule& rule = td.rules[parseCurrentTaskRule_];
+
+    if (startsWith(line, "EVENT."))
+    {
+        char verb[8] = {};
+        char text[ares::AMS_MAX_EVENT_TEXT] = {};
+        // cppcheck-suppress [cert-err34-c]
+        const int n = sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text);
+        if (n != 2)
+        {
+            setErrorLocked("task: invalid EVENT syntax (expected: EVENT.verb \"text\")");
+            return false;
+        }
+        if      (strcmp(verb, "info")    == 0) { rule.eventVerb = EventVerb::INFO;  }
+        else if (strcmp(verb, "warning") == 0) { rule.eventVerb = EventVerb::WARN;  }
+        else if (strcmp(verb, "error")   == 0) { rule.eventVerb = EventVerb::ERROR; }
+        else
+        {
+            setErrorLocked("task: unknown EVENT verb (expected: info, warning, error)");
+            return false;
+        }
+        strncpy(rule.eventText, text, sizeof(rule.eventText) - 1U);
+        rule.eventText[sizeof(rule.eventText) - 1U] = '\0';
+        rule.hasEvent = true;
+        return true;
+    }
+
+    if (startsWith(line, "set "))
+    {
+        if (rule.hasSet)
+        {
+            setErrorLocked("task: only one set action per if-rule is allowed");
+            return false;
+        }
+        if (!parseSetActionCoreLocked(line, rule.setAction)) { return false; }
+        rule.hasSet = true;
+        return true;
+    }
+
+    setErrorLocked("unexpected line in task if-block");
+    return false;
+}
+
 bool MissionScriptEngine::parseTaskScopedLineLocked(const char* line,
                                                     BlockType&  blockType)
 {
     ARES_ASSERT(line != nullptr);
 
-    if (line[0] == '\0') { return true; }  // empty lines are harmless inside a task
+    if (line[0] == '\0') { return true; }
 
     if (parseCurrentTask_ >= program_.taskCount)
     {
@@ -2368,119 +2606,12 @@ bool MissionScriptEngine::parseTaskScopedLineLocked(const char* line,
     }
     TaskDef& td = program_.tasks[parseCurrentTask_];
 
-    // ── "every Nms:" ──────────────────────────────────────────────────────
-    if (startsWith(line, "every "))
-    {
-        const char* msPtr = strstr(line, "ms:");
-        if (msPtr == nullptr)
-        {
-            setErrorLocked("task: invalid 'every' period (expected: every Nms:)");
-            return false;
-        }
-        const char* valueStart = line + 6;  // skip "every "
-        while (*valueStart == ' ') { valueStart++; }
-        const ptrdiff_t rawLen = msPtr - valueStart;
-        if (rawLen <= 0 || rawLen >= 16)
-        {
-            setErrorLocked("task: 'every' period value too long");
-            return false;
-        }
-        char valueBuf[16] = {};
-        memcpy(valueBuf, valueStart, static_cast<size_t>(rawLen));
-        valueBuf[static_cast<size_t>(rawLen)] = '\0';
-        trimInPlace(valueBuf);
+    if (startsWith(line, "every ")) { return parseTaskEveryPeriodLocked(line, td); }
+    if (startsWith(line, "if "))    { return parseTaskIfOpenLocked(line, td, blockType); }
 
-        uint32_t evMs = 0;
-        if (!parseUint(valueBuf, evMs) || evMs < ares::TELEMETRY_INTERVAL_MIN)
-        {
-            setErrorLocked("task: 'every' period must be >= 100ms");
-            return false;
-        }
-        td.everyMs = evMs;
-        return true;
-    }
-
-    // ── "if COND:" — open a new condition rule ────────────────────────────
-    if (startsWith(line, "if "))
-    {
-        if (td.ruleCount >= ares::AMS_MAX_TASK_RULES)
-        {
-            setErrorLocked("task: too many if-rules (AMS_MAX_TASK_RULES exceeded)");
-            return false;
-        }
-
-        // Strip "if " prefix and trailing ":"
-        const char* condStart = line + 3;
-        char condBuf[ares::AMS_MAX_LINE_LEN] = {};
-        strncpy(condBuf, condStart, sizeof(condBuf) - 1U);
-
-        char* colon = strrchr(condBuf, ':');
-        if (colon == nullptr)
-        {
-            setErrorLocked("task: if-condition missing ':'");
-            return false;
-        }
-        *colon = '\0';
-        trimInPlace(condBuf);
-
-        const uint8_t ruleIdx = td.ruleCount;
-        TaskRule& rule = td.rules[ruleIdx];
-
-        // TC conditions are not allowed inside task if-rules (design decision).
-        if (!parseOneConditionLocked(condBuf, /*allowTc=*/false, rule.cond))
-        {
-            return false;
-        }
-        td.ruleCount++;
-        parseCurrentTaskRule_ = ruleIdx;
-        blockType = BlockType::TASK_IF;
-        return true;
-    }
-
-    // ── Inside TASK_IF: EVENT.* or set ────────────────────────────────────
     if (blockType == BlockType::TASK_IF && parseCurrentTaskRule_ < td.ruleCount)
     {
-        TaskRule& rule = td.rules[parseCurrentTaskRule_];
-
-        if (startsWith(line, "EVENT."))
-        {
-            char verb[8] = {};
-            char text[ares::AMS_MAX_EVENT_TEXT] = {};
-            // cppcheck-suppress [cert-err34-c]
-            const int n = sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text);
-            if (n != 2)
-            {
-                setErrorLocked("task: invalid EVENT syntax (expected: EVENT.verb \"text\")");
-                return false;
-            }
-            if      (strcmp(verb, "info")    == 0) { rule.eventVerb = EventVerb::INFO;  }
-            else if (strcmp(verb, "warning") == 0) { rule.eventVerb = EventVerb::WARN;  }
-            else if (strcmp(verb, "error")   == 0) { rule.eventVerb = EventVerb::ERROR; }
-            else
-            {
-                setErrorLocked("task: unknown EVENT verb (expected: info, warning, error)");
-                return false;
-            }
-            strncpy(rule.eventText, text, sizeof(rule.eventText) - 1U);
-            rule.eventText[sizeof(rule.eventText) - 1U] = '\0';
-            rule.hasEvent = true;
-            return true;
-        }
-
-        if (startsWith(line, "set "))
-        {
-            if (rule.hasSet)
-            {
-                setErrorLocked("task: only one set action per if-rule is allowed");
-                return false;
-            }
-            if (!parseSetActionCoreLocked(line, rule.setAction))
-            {
-                return false;
-            }
-            rule.hasSet = true;
-            return true;
-        }
+        return parseTaskIfBodyLocked(line, td);
     }
 
     setErrorLocked("unexpected line in task block");
@@ -2624,67 +2755,58 @@ bool MissionScriptEngine::resolveTasksLocked()
  * @return @c true if all assertions hold.
  * @pre  Caller holds the engine mutex.  resolveTransitionsLocked() has run.
  */
-bool MissionScriptEngine::validateAssertionsLocked()
+void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) const
 {
-    if (program_.assertCount == 0U) { return true; }
-    if (program_.stateCount  == 0U) { return true; }
+    reachable = 0U;
+    uint8_t queue[ares::AMS_MAX_STATES] = {};
+    uint8_t head = 0U;
+    uint8_t tail = 0U;
 
-    // ── BFS: compute full reachability from initial state (index 0) ──────────
-    static_assert(ares::AMS_MAX_STATES <= 16U,
-                  "validateAssertionsLocked: BFS bitmask requires AMS_MAX_STATES <= 16");
+    queue[tail++] = 0U;
+    reachable |= static_cast<uint16_t>(1U << 0U);
 
-    uint16_t reachable = 0U;
+    while (head < tail)
     {
-        uint8_t queue[ares::AMS_MAX_STATES] = {};
-        uint8_t head = 0U;
-        uint8_t tail = 0U;
+        const uint8_t s = queue[head++];
+        const StateDef& sd = program_.states[s];
 
-        queue[tail++] = 0U;  // initial state
-        reachable |= static_cast<uint16_t>(1U << 0U);
-
-        while (head < tail)
+        auto visit = [&](uint8_t t)
         {
-            const uint8_t s = queue[head++];
-            const StateDef& sd = program_.states[s];
+            if (t < program_.stateCount &&
+                !(reachable & static_cast<uint16_t>(1U << t)))
+            {
+                reachable |= static_cast<uint16_t>(1U << t);
+                queue[tail++] = t;
+            }
+        };
 
-            auto visit = [&](uint8_t t)
-            {
-                if (t < program_.stateCount &&
-                    !(reachable & static_cast<uint16_t>(1U << t)))
-                {
-                    reachable |= static_cast<uint16_t>(1U << t);
-                    // Bounds guaranteed: tail <= AMS_MAX_STATES (one visit per state).
-                    queue[tail++] = t;
-                }
-            };
-
-            if (sd.hasTransition && sd.transition.targetResolved)
-            {
-                visit(sd.transition.targetIndex);
-            }
-            if (sd.hasFallback && sd.fallbackTargetResolved)
-            {
-                visit(sd.fallbackTargetIdx);
-            }
-            if (sd.hasOnErrorTransition && sd.onErrorTransitionResolved)
-            {
-                visit(sd.onErrorTransitionIdx);
-            }
+        if (sd.hasTransition && sd.transition.targetResolved)
+        {
+            visit(sd.transition.targetIndex);
+        }
+        if (sd.hasFallback && sd.fallbackTargetResolved)
+        {
+            visit(sd.fallbackTargetIdx);
+        }
+        if (sd.hasOnErrorTransition && sd.onErrorTransitionResolved)
+        {
+            visit(sd.onErrorTransitionIdx);
         }
     }
+}
 
-    // ── Iterative DFS: longest simple path + cycle detection ─────────────────
-    // Each frame tracks the path bitmask so we can detect back-edges accurately.
+void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasCycle) const
+{
     struct DfsFrame
     {
         uint8_t  state;
         uint8_t  depth;
-        uint16_t pathMask;  ///< Bitmask of states on the current path (back-edge detection).
-        uint8_t  child;     ///< Next successor slot to try (0=transition,1=fallback,2=on_error).
+        uint16_t pathMask;
+        uint8_t  child;
     };
 
-    uint8_t  maxDepth = 0U;
-    bool     hasCycle = false;
+    maxDepth = 0U;
+    hasCycle = false;
 
     DfsFrame dfsStack[ares::AMS_MAX_STATES + 1U] = {};
     uint8_t  dfsTop = 0U;
@@ -2702,7 +2824,7 @@ bool MissionScriptEngine::validateAssertionsLocked()
 
         while (f.child < 3U && !pushed && !hasCycle)
         {
-            uint8_t suc = ares::AMS_MAX_STATES;  // sentinel = no successor
+            uint8_t suc = ares::AMS_MAX_STATES;
             if (f.child == 0U && sd.hasTransition && sd.transition.targetResolved)
             {
                 suc = sd.transition.targetIndex;
@@ -2722,11 +2844,9 @@ bool MissionScriptEngine::validateAssertionsLocked()
             {
                 if (f.pathMask & static_cast<uint16_t>(1U << suc))
                 {
-                    // Back-edge: cycle detected.
                     hasCycle = true;
                     break;
                 }
-                // Stack guard: AMS_MAX_STATES = 10 → at most 10 frames deep.
                 if (dfsTop < static_cast<uint8_t>(ares::AMS_MAX_STATES + 1U))
                 {
                     dfsStack[dfsTop++] = {
@@ -2740,97 +2860,114 @@ bool MissionScriptEngine::validateAssertionsLocked()
             }
         }
 
-        if (!pushed && !hasCycle)
+        if (!pushed && !hasCycle) { dfsTop--; }
+    }
+}
+
+bool MissionScriptEngine::evaluateOneAssertionLocked(
+    const AssertDef& ad, uint16_t reachable, uint8_t maxDepth, bool hasCycle)
+{
+    switch (ad.kind)
+    {
+    case AssertKind::REACHABLE:
+    {
+        const uint8_t idx = findStateByNameLocked(ad.targetName);
+        if (idx >= program_.stateCount)
         {
-            dfsTop--;  // backtrack
+            char msg[80] = {};
+            snprintf(msg, sizeof(msg), "assert reachable: unknown state '%s'", ad.targetName);
+            setErrorLocked(msg);
+            return false;
         }
+        if (!(reachable & static_cast<uint16_t>(1U << idx)))
+        {
+            char msg[80] = {};
+            snprintf(msg, sizeof(msg),
+                     "assert reachable: '%s' is not reachable from initial state",
+                     ad.targetName);
+            setErrorLocked(msg);
+            return false;
+        }
+        LOG_I(TAG, "assert reachable '%s': PASS", ad.targetName);
+        return true;
     }
 
-    // ── Evaluate each assertion ───────────────────────────────────────────────
-    for (uint8_t i = 0U; i < program_.assertCount; i++)
+    case AssertKind::NO_DEAD_STATES:
     {
-        const AssertDef& ad = program_.asserts[i];
-
-        switch (ad.kind)
+        const uint16_t allMask = static_cast<uint16_t>(
+            (static_cast<uint32_t>(1U) << program_.stateCount) - 1U);
+        if ((reachable & allMask) != allMask)
         {
-        case AssertKind::REACHABLE:
-        {
-            const uint8_t idx = findStateByNameLocked(ad.targetName);
-            if (idx >= program_.stateCount)
+            for (uint8_t s = 0U; s < program_.stateCount; s++)
             {
-                char msg[80] = {};
-                snprintf(msg, sizeof(msg),
-                         "assert reachable: unknown state '%s'", ad.targetName);
-                setErrorLocked(msg);
-                return false;
-            }
-            if (!(reachable & static_cast<uint16_t>(1U << idx)))
-            {
-                char msg[80] = {};
-                snprintf(msg, sizeof(msg),
-                         "assert reachable: '%s' is not reachable from initial state",
-                         ad.targetName);
-                setErrorLocked(msg);
-                return false;
-            }
-            LOG_I(TAG, "assert reachable '%s': PASS", ad.targetName);
-            break;
-        }
-
-        case AssertKind::NO_DEAD_STATES:
-        {
-            const uint16_t allMask = static_cast<uint16_t>(
-                (static_cast<uint32_t>(1U) << program_.stateCount) - 1U);
-            if ((reachable & allMask) != allMask)
-            {
-                // Find the first unreachable state for a helpful error message.
-                for (uint8_t s = 0U; s < program_.stateCount; s++)
+                if (!(reachable & static_cast<uint16_t>(1U << s)))
                 {
-                    if (!(reachable & static_cast<uint16_t>(1U << s)))
-                    {
-                        char msg[80] = {};
-                        snprintf(msg, sizeof(msg),
-                                 "assert no_dead_states: '%s' is unreachable",
-                                 program_.states[s].name);
-                        setErrorLocked(msg);
-                        return false;
-                    }
+                    char msg[80] = {};
+                    snprintf(msg, sizeof(msg),
+                             "assert no_dead_states: '%s' is unreachable",
+                             program_.states[s].name);
+                    setErrorLocked(msg);
+                    return false;
                 }
             }
-            LOG_I(TAG, "assert no_dead_states: PASS (all %u states reachable)",
-                  static_cast<unsigned>(program_.stateCount));
-            break;
         }
+        LOG_I(TAG, "assert no_dead_states: PASS (all %u states reachable)",
+              static_cast<unsigned>(program_.stateCount));
+        return true;
+    }
 
-        case AssertKind::MAX_DEPTH:
+    case AssertKind::MAX_DEPTH:
+    {
+        if (hasCycle)
         {
-            if (hasCycle)
-            {
-                char msg[96] = {};
-                snprintf(msg, sizeof(msg),
-                         "assert max_transition_depth < %u: cycle detected (unbounded depth)",
-                         static_cast<unsigned>(ad.numericArg));
-                setErrorLocked(msg);
-                return false;
-            }
-            if (maxDepth >= static_cast<uint8_t>(ad.numericArg))
-            {
-                char msg[96] = {};
-                snprintf(msg, sizeof(msg),
-                         "assert max_transition_depth < %u: actual depth is %u",
-                         static_cast<unsigned>(ad.numericArg),
-                         static_cast<unsigned>(maxDepth));
-                setErrorLocked(msg);
-                return false;
-            }
-            LOG_I(TAG, "assert max_transition_depth < %u: PASS (depth=%u)",
-                  static_cast<unsigned>(ad.numericArg),
-                  static_cast<unsigned>(maxDepth));
-            break;
+            char msg[96] = {};
+            snprintf(msg, sizeof(msg),
+                     "assert max_transition_depth < %u: cycle detected (unbounded depth)",
+                     static_cast<unsigned>(ad.numericArg));
+            setErrorLocked(msg);
+            return false;
         }
+        if (maxDepth >= static_cast<uint8_t>(ad.numericArg))
+        {
+            char msg[96] = {};
+            snprintf(msg, sizeof(msg),
+                     "assert max_transition_depth < %u: actual depth is %u",
+                     static_cast<unsigned>(ad.numericArg),
+                     static_cast<unsigned>(maxDepth));
+            setErrorLocked(msg);
+            return false;
+        }
+        LOG_I(TAG, "assert max_transition_depth < %u: PASS (depth=%u)",
+              static_cast<unsigned>(ad.numericArg),
+              static_cast<unsigned>(maxDepth));
+        return true;
+    }
 
-        default:
-            break;
+    default:
+        return true;
+    }
+}
+
+bool MissionScriptEngine::validateAssertionsLocked()
+{
+    if (program_.assertCount == 0U) { return true; }
+    if (program_.stateCount  == 0U) { return true; }
+
+    static_assert(ares::AMS_MAX_STATES <= 16U,
+                  "validateAssertionsLocked: BFS bitmask requires AMS_MAX_STATES <= 16");
+
+    uint16_t reachable = 0U;
+    computeBfsReachabilityLocked(reachable);
+
+    uint8_t maxDepth = 0U;
+    bool    hasCycle = false;
+    computeDfsMaxDepthLocked(maxDepth, hasCycle);
+
+    for (uint8_t i = 0U; i < program_.assertCount; i++)
+    {
+        if (!evaluateOneAssertionLocked(program_.asserts[i], reachable, maxDepth, hasCycle))
+        {
+            return false;
         }
     }
 

@@ -88,58 +88,41 @@ uint16_t encode(const Frame& frame, uint8_t* buf, uint16_t bufLen)
     return totalLen;
 }
 
-// ── Decode ────────────────────────────────────────────────
-bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
+static bool hasValidSync(const uint8_t* buf)
 {
-    if (buf == nullptr)           { return false; }
-    if (bufLen < MIN_FRAME_LEN)   { return false; }
+    return buf[0] == SYNC_0 && buf[1] == SYNC_1
+        && buf[2] == SYNC_2 && buf[3] == SYNC_3;
+}
 
-    // Verify sync marker (APUS-4.3)
-    if (buf[0] != SYNC_0 || buf[1] != SYNC_1 ||
-        buf[2] != SYNC_2 || buf[3] != SYNC_3)
-    {
-        return false;
-    }
+static bool isKnownNode(uint8_t node)
+{
+    return node == NODE_BROADCAST || node == NODE_ROCKET
+        || node == NODE_GROUND || node == NODE_PAYLOAD;
+}
 
-    // Check protocol version
-    if (buf[4] != PROTOCOL_VERSION) { return false; }
+static bool isKnownMsgType(uint8_t rawType)
+{
+    return rawType >= static_cast<uint8_t>(MsgType::FIRST)
+        && rawType <= static_cast<uint8_t>(MsgType::LAST);
+}
 
-    // Reject reserved flag bits (APUS-4.2)
-    if ((buf[5] & FLAGS_RESERVED) != 0U) { return false; }
-
-    // Validate NODE against the APID table (APUS-10.1, APUS-10.2)
-    const uint8_t inNode = buf[6];
-    if (inNode != NODE_BROADCAST && inNode != NODE_ROCKET &&
-        inNode != NODE_GROUND    && inNode != NODE_PAYLOAD)
-    {
-        return false;
-    }
-
-    const uint8_t payloadLen = buf[9];
-    if (payloadLen > MAX_PAYLOAD_LEN) { return false; }
-
-    const uint8_t rawType = buf[7];
-    if (rawType < static_cast<uint8_t>(MsgType::FIRST)
-        || rawType > static_cast<uint8_t>(MsgType::LAST))
-    {
-        return false;
-    }
-
+static bool meetsMinPayloadLen(uint8_t rawType, uint8_t payloadLen)
+{
     // Minimum payload size per TYPE (APUS-5.3) — index = rawType − FIRST
     static const uint8_t kMinPayload[] = {
         static_cast<uint8_t>(sizeof(TelemetryPayload)),  // 0x01 TELEMETRY
-        static_cast<uint8_t>(sizeof(EventHeader)),         // 0x02 EVENT
-        static_cast<uint8_t>(sizeof(CommandHeader)),       // 0x03 COMMAND
-        static_cast<uint8_t>(sizeof(AckPayload)),          // 0x04 ACK
-        0U,                                                 // 0x05 HEARTBEAT
+        static_cast<uint8_t>(sizeof(EventHeader)),       // 0x02 EVENT
+        static_cast<uint8_t>(sizeof(CommandHeader)),     // 0x03 COMMAND
+        static_cast<uint8_t>(sizeof(AckPayload)),        // 0x04 ACK
+        0U,                                               // 0x05 HEARTBEAT
     };
+
     const uint8_t typeIdx = rawType - static_cast<uint8_t>(MsgType::FIRST);
-    if (payloadLen < kMinPayload[typeIdx]) { return false; }
+    return payloadLen >= kMinPayload[typeIdx];
+}
 
-    const uint16_t totalLen =
-        static_cast<uint16_t>(HEADER_LEN) + payloadLen + CRC_LEN;
-    if (bufLen < totalLen) { return false; }
-
+static bool crcMatches(const uint8_t* buf, uint8_t payloadLen)
+{
     // Verify CRC-32 (APUS-1.2: scope = VER..PAYLOAD, excludes SYNC)
     const uint16_t crcDataLen =
         static_cast<uint16_t>(HEADER_LEN - SYNC_LEN) + payloadLen;
@@ -152,9 +135,14 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
         (static_cast<uint32_t>(buf[crcOffset + 2]) << 16U) |
         (static_cast<uint32_t>(buf[crcOffset + 3]) << 24U);
 
-    if (computed != received) { return false; }
+    return computed == received;
+}
 
-    // Populate frame (APUS-3.5: static struct, no heap)
+static void populateFrameFromBuffer(const uint8_t* buf,
+                                    uint8_t        rawType,
+                                    uint8_t        payloadLen,
+                                    Frame&         frame)
+{
     frame.ver   = buf[4];
     frame.flags = buf[5];
     frame.node  = buf[6];
@@ -166,6 +154,52 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
     {
         memcpy(frame.payload, &buf[HEADER_LEN], payloadLen);
     }
+}
+
+// ── Decode ────────────────────────────────────────────────
+bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
+{
+    if (buf == nullptr)           { return false; }
+    if (bufLen < MIN_FRAME_LEN)   { return false; }
+
+    // Verify sync marker (APUS-4.3)
+    if (!hasValidSync(buf))
+    {
+        return false;
+    }
+
+    // Check protocol version
+    if (buf[4] != PROTOCOL_VERSION) { return false; }
+
+    // Reject reserved flag bits (APUS-4.2)
+    if ((buf[5] & FLAGS_RESERVED) != 0U) { return false; }
+
+    // Validate NODE against the APID table (APUS-10.1, APUS-10.2)
+    const uint8_t inNode = buf[6];
+    if (!isKnownNode(inNode))
+    {
+        return false;
+    }
+
+    const uint8_t payloadLen = buf[9];
+    if (payloadLen > MAX_PAYLOAD_LEN) { return false; }
+
+    const uint8_t rawType = buf[7];
+    if (!isKnownMsgType(rawType))
+    {
+        return false;
+    }
+
+    if (!meetsMinPayloadLen(rawType, payloadLen)) { return false; }
+
+    const uint16_t totalLen =
+        static_cast<uint16_t>(HEADER_LEN) + payloadLen + CRC_LEN;
+    if (bufLen < totalLen) { return false; }
+
+    if (!crcMatches(buf, payloadLen)) { return false; }
+
+    // Populate frame (APUS-3.5: static struct, no heap)
+    populateFrameFromBuffer(buf, rawType, payloadLen, frame);
 
     return true;
 }

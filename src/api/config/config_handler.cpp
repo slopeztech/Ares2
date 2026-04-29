@@ -42,6 +42,73 @@ void ApiServer::handleConfigGet(WiFiClient& client)
     sendJson(client, 200U, buf, static_cast<uint32_t>(len));
 }
 
+/**
+ * @brief Parse and validate all configurable fields from a JSON document.
+ *
+ * Implements REST-5.3 Phase 1: validates every present field before any
+ * mutation.  Sends the appropriate error response and returns false on
+ * validation failure.
+ *
+ * @param errFn  Callable with signature (WiFiClient&, uint16_t, const char*).
+ */
+template<typename ErrFn>
+static bool parseConfigFields(const JsonDocument& doc,
+                               WiFiClient&          client,
+                               uint32_t&            newInterval,
+                               uint8_t&             newNodeId,
+                               uint8_t&             newBright,
+                               ErrFn                errFn)
+{
+    if (doc["telemetryIntervalMs"].is<uint32_t>())
+    {
+        const uint32_t val = doc["telemetryIntervalMs"].as<uint32_t>();
+        if (val < ares::TELEMETRY_INTERVAL_MIN || val > ares::TELEMETRY_INTERVAL_MAX)
+        {
+            errFn(client, 400, "telemetryIntervalMs out of range (100-60000)");
+            LOG_W(TAG, "PUT /api/config 400: interval out of range");
+            return false;
+        }
+        newInterval = val;
+    }
+    else if (!doc["telemetryIntervalMs"].isNull())
+    {
+        errFn(client, 400, "telemetryIntervalMs must be uint32");
+        LOG_W(TAG, "PUT /api/config 400: bad type");
+        return false;
+    }
+
+    if (doc["nodeId"].is<uint8_t>())
+    {
+        const uint8_t val = doc["nodeId"].as<uint8_t>();
+        if (val < ares::NODE_ID_MIN || val > ares::NODE_ID_MAX)
+        {
+            errFn(client, 400, "nodeId out of range (1-253)");
+            LOG_W(TAG, "PUT /api/config 400: nodeId out of range");
+            return false;
+        }
+        newNodeId = val;
+    }
+    else if (!doc["nodeId"].isNull())
+    {
+        errFn(client, 400, "nodeId must be uint8");
+        LOG_W(TAG, "PUT /api/config 400: bad type");
+        return false;
+    }
+
+    if (doc["ledBrightness"].is<uint8_t>())
+    {
+        newBright = doc["ledBrightness"].as<uint8_t>();
+    }
+    else if (!doc["ledBrightness"].isNull())
+    {
+        errFn(client, 400, "ledBrightness must be uint8");
+        LOG_W(TAG, "PUT /api/config 400: bad type");
+        return false;
+    }
+
+    return true;
+}
+
 void ApiServer::handleConfigPut(WiFiClient& client,
                                  const char* body, uint32_t bodyLen)
 {
@@ -68,55 +135,12 @@ void ApiServer::handleConfigPut(WiFiClient& client,
     uint8_t  newNodeId   = config_.nodeId;
     uint8_t  newBright   = config_.ledBrightness;
 
-    if (doc["telemetryIntervalMs"].is<uint32_t>())
+    if (!parseConfigFields(doc, client, newInterval, newNodeId, newBright,
+                           [this](WiFiClient& c, uint16_t code, const char* msg)
+                           {
+                               sendError(c, code, msg);
+                           }))
     {
-        uint32_t val = 0U;
-        val = doc["telemetryIntervalMs"].as<uint32_t>();
-        if (val < ares::TELEMETRY_INTERVAL_MIN
-            || val > ares::TELEMETRY_INTERVAL_MAX)
-        {
-            sendError(client, 400,
-                      "telemetryIntervalMs out of range (100-60000)");
-            LOG_W(TAG, "PUT /api/config 400: interval out of range");
-            return;
-        }
-        newInterval = val;
-    }
-    else if (!doc["telemetryIntervalMs"].isNull())
-    {
-        sendError(client, 400, "telemetryIntervalMs must be uint32");
-        LOG_W(TAG, "PUT /api/config 400: bad type");
-        return;
-    }
-
-    if (doc["nodeId"].is<uint8_t>())
-    {
-        uint8_t val = 0U;
-        val = doc["nodeId"].as<uint8_t>();
-        if (val < ares::NODE_ID_MIN || val > ares::NODE_ID_MAX)
-        {
-            sendError(client, 400,
-                      "nodeId out of range (1-253)");
-            LOG_W(TAG, "PUT /api/config 400: nodeId out of range");
-            return;
-        }
-        newNodeId = val;
-    }
-    else if (!doc["nodeId"].isNull())
-    {
-        sendError(client, 400, "nodeId must be uint8");
-        LOG_W(TAG, "PUT /api/config 400: bad type");
-        return;
-    }
-
-    if (doc["ledBrightness"].is<uint8_t>())
-    {
-        newBright = doc["ledBrightness"].as<uint8_t>();
-    }
-    else if (!doc["ledBrightness"].isNull())
-    {
-        sendError(client, 400, "ledBrightness must be uint8");
-        LOG_W(TAG, "PUT /api/config 400: bad type");
         return;
     }
 
@@ -137,8 +161,8 @@ void ApiServer::handleConfigPut(WiFiClient& client,
 
     // Echo new config (REST-6.3 step 4)
     handleConfigGet(client);
-        LOG_I(TAG, "PUT /api/config 200: interval=%" PRIu32 " node=%u bright=%u",
-            newInterval,
+    LOG_I(TAG, "PUT /api/config 200: interval=%" PRIu32 " node=%u bright=%u",
+          newInterval,
           static_cast<uint32_t>(newNodeId),
           static_cast<uint32_t>(newBright));
 }

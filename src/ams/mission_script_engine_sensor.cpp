@@ -93,38 +93,45 @@ bool MissionScriptEngine::parseSensorField(PeripheralKind kind,
                                            SensorField&   out)
 {
     if (fieldStr == nullptr) { return false; }
-
-    if (kind == PeripheralKind::GPS)
+    switch (kind)
     {
-        if (strcmp(fieldStr, "lat")   == 0) { out = SensorField::LAT;   return true; }
-        if (strcmp(fieldStr, "lon")   == 0) { out = SensorField::LON;   return true; }
-        if (strcmp(fieldStr, "alt")   == 0) { out = SensorField::ALT;   return true; }
-        if (strcmp(fieldStr, "speed") == 0) { out = SensorField::SPEED; return true; }
+    case PeripheralKind::GPS:  return parseGpsSensorField(fieldStr, out);
+    case PeripheralKind::BARO: return parseBaroSensorField(fieldStr, out);
+    case PeripheralKind::IMU:  return parseImuSensorField(fieldStr, out);
+    case PeripheralKind::COM:
+    default:
         return false;
     }
+}
 
-    if (kind == PeripheralKind::BARO)
-    {
-        if (strcmp(fieldStr, "alt")      == 0) { out = SensorField::ALT;      return true; }
-        if (strcmp(fieldStr, "temp")     == 0) { out = SensorField::TEMP;     return true; }
-        if (strcmp(fieldStr, "pressure") == 0) { out = SensorField::PRESSURE; return true; }
-        return false;
-    }
+bool MissionScriptEngine::parseGpsSensorField(const char* fieldStr, SensorField& out)
+{
+    if (strcmp(fieldStr, "lat") == 0)   { out = SensorField::LAT;   return true; }
+    if (strcmp(fieldStr, "lon") == 0)   { out = SensorField::LON;   return true; }
+    if (strcmp(fieldStr, "alt") == 0)   { out = SensorField::ALT;   return true; }
+    if (strcmp(fieldStr, "speed") == 0) { out = SensorField::SPEED; return true; }
+    return false;
+}
 
-    if (kind == PeripheralKind::IMU)
-    {
-        if (strcmp(fieldStr, "accel_x")   == 0) { out = SensorField::ACCEL_X;   return true; }
-        if (strcmp(fieldStr, "accel_y")   == 0) { out = SensorField::ACCEL_Y;   return true; }
-        if (strcmp(fieldStr, "accel_z")   == 0) { out = SensorField::ACCEL_Z;   return true; }
-        if (strcmp(fieldStr, "accel_mag") == 0) { out = SensorField::ACCEL_MAG; return true; }
-        if (strcmp(fieldStr, "gyro_x")    == 0) { out = SensorField::GYRO_X;    return true; }
-        if (strcmp(fieldStr, "gyro_y")    == 0) { out = SensorField::GYRO_Y;    return true; }
-        if (strcmp(fieldStr, "gyro_z")    == 0) { out = SensorField::GYRO_Z;    return true; }
-        if (strcmp(fieldStr, "temp")      == 0) { out = SensorField::IMU_TEMP;  return true; }
-        return false;
-    }
+bool MissionScriptEngine::parseBaroSensorField(const char* fieldStr, SensorField& out)
+{
+    if (strcmp(fieldStr, "alt") == 0)      { out = SensorField::ALT;      return true; }
+    if (strcmp(fieldStr, "temp") == 0)     { out = SensorField::TEMP;     return true; }
+    if (strcmp(fieldStr, "pressure") == 0) { out = SensorField::PRESSURE; return true; }
+    return false;
+}
 
-    return false;  // COM has no readable float fields
+bool MissionScriptEngine::parseImuSensorField(const char* fieldStr, SensorField& out)
+{
+    if (strcmp(fieldStr, "accel_x") == 0)   { out = SensorField::ACCEL_X;   return true; }
+    if (strcmp(fieldStr, "accel_y") == 0)   { out = SensorField::ACCEL_Y;   return true; }
+    if (strcmp(fieldStr, "accel_z") == 0)   { out = SensorField::ACCEL_Z;   return true; }
+    if (strcmp(fieldStr, "accel_mag") == 0) { out = SensorField::ACCEL_MAG; return true; }
+    if (strcmp(fieldStr, "gyro_x") == 0)    { out = SensorField::GYRO_X;    return true; }
+    if (strcmp(fieldStr, "gyro_y") == 0)    { out = SensorField::GYRO_Y;    return true; }
+    if (strcmp(fieldStr, "gyro_z") == 0)    { out = SensorField::GYRO_Z;    return true; }
+    if (strcmp(fieldStr, "temp") == 0)      { out = SensorField::IMU_TEMP;  return true; }
+    return false;
 }
 
 // ── findAliasLocked ──────────────────────────────────────────────────────────
@@ -175,119 +182,126 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
     const AliasEntry* ae = findAliasLocked(alias);
     if (ae == nullptr || ae->driverIdx == 0xFFU) { return false; }
 
-    // AMS-4.9.1: each alias may declare 0..AMS_MAX_SENSOR_RETRY extra read
-    // attempts.  On the first success the result is returned immediately.
-    // The loop runs at most (retryCount + 1) times (bounded per PO10-2).
-    const uint8_t maxAttempts = static_cast<uint8_t>(ae->retryCount + 1U);
-
     switch (ae->kind)
     {
-    case PeripheralKind::GPS:
-    {
-        if (ae->driverIdx >= gpsCount_)    { return false; }
-        GpsInterface* gps = gpsDrivers_[ae->driverIdx].iface;
-        if (gps == nullptr)                { return false; }
-
-        for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
-        {
-            GpsReading r = {};
-            if (gps->read(r) == GpsStatus::OK)
-            {
-                switch (field)
-                {
-                case SensorField::LAT:   outVal = r.latitude;  return true;
-                case SensorField::LON:   outVal = r.longitude; return true;
-                case SensorField::ALT:   outVal = r.altitudeM; return true;
-                case SensorField::SPEED: outVal = r.speedKmh;  return true;
-                default:                                        return false;
-                }
-            }
-        }
-        return false;
-    }
-
-    case PeripheralKind::BARO:
-    {
-        if (ae->driverIdx >= baroCount_)          { return false; }
-        BarometerInterface* baro = baroDrivers_[ae->driverIdx].iface;
-        if (baro == nullptr)                      { return false; }
-
-        for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
-        {
-            BaroReading r = {};
-            if (baro->read(r) == BaroStatus::OK)
-            {
-                switch (field)
-                {
-                case SensorField::ALT:      outVal = r.altitudeM;    return true;
-                case SensorField::TEMP:     outVal = r.temperatureC; return true;
-                case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
-                default:                                              return false;
-                }
-            }
-        }
-        return false;
-    }
-
-    case PeripheralKind::IMU:
-    {
-        if (ae->driverIdx >= imuCount_)      { return false; }
-        ImuInterface* imu = imuDrivers_[ae->driverIdx].iface;
-        if (imu == nullptr)                  { return false; }
-
-        // Re-use the cached burst if it was filled within IMU_CACHE_MAX_AGE_MS.
-        // This ensures all fields in a single LOG/HK report row share one I2C
-        // read, eliminating the partial-nan scatter caused by each field failing
-        // independently on a flaky connection.
-        const uint32_t nowMs = static_cast<uint32_t>(millis());
-        if ((nowMs - imuCacheTsMs_) >= IMU_CACHE_MAX_AGE_MS)
-        {
-            // Retry the IMU read on failure (AMS-4.9.1).
-            bool readOk = false;
-            ImuReading r = {};
-            for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
-            {
-                if (imu->read(r) == ImuStatus::OK)
-                {
-                    readOk = true;
-                    break;
-                }
-            }
-            // Timestamp set AFTER the read so the 5 ms window starts from
-            // completion, not before a potentially-long I2C timeout.
-            imuCacheTsMs_ = static_cast<uint32_t>(millis());
-            if (!readOk)
-            {
-                imuCacheValid_ = false;
-                return false;
-            }
-            imuCachedReading_ = r;
-            imuCacheValid_    = true;
-        }
-
-        if (!imuCacheValid_) { return false; }
-        const ImuReading& r = imuCachedReading_;
-        switch (field)
-        {
-        case SensorField::ACCEL_X:   outVal = r.accelX; return true;
-        case SensorField::ACCEL_Y:   outVal = r.accelY; return true;
-        case SensorField::ACCEL_Z:   outVal = r.accelZ; return true;
-        case SensorField::ACCEL_MAG:
-            outVal = sqrtf(r.accelX * r.accelX
-                         + r.accelY * r.accelY
-                         + r.accelZ * r.accelZ);
-            return true;
-        case SensorField::GYRO_X:    outVal = r.gyroX;  return true;
-        case SensorField::GYRO_Y:    outVal = r.gyroY;  return true;
-        case SensorField::GYRO_Z:    outVal = r.gyroZ;  return true;
-        case SensorField::IMU_TEMP:  outVal = r.tempC;  return true;
-        default:                                         return false;
-        }
-    }
-
+    case PeripheralKind::GPS:  return readGpsFieldLocked(*ae, field, outVal);
+    case PeripheralKind::BARO: return readBaroFieldLocked(*ae, field, outVal);
+    case PeripheralKind::IMU:  return readImuFieldLocked(*ae, field, outVal);
     case PeripheralKind::COM:
     default:
-        return false;  // COM has no readable float fields
+        return false;
+    }
+}
+
+bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
+                                             SensorField       field,
+                                             float&            outVal) const
+{
+    if (ae.driverIdx >= gpsCount_) { return false; }
+    GpsInterface* gps = gpsDrivers_[ae.driverIdx].iface;
+    if (gps == nullptr) { return false; }
+
+    const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
+    for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+    {
+        GpsReading r = {};
+        if (gps->read(r) == GpsStatus::OK)
+        {
+            switch (field)
+            {
+            case SensorField::LAT:   outVal = r.latitude;  return true;
+            case SensorField::LON:   outVal = r.longitude; return true;
+            case SensorField::ALT:   outVal = r.altitudeM; return true;
+            case SensorField::SPEED: outVal = r.speedKmh;  return true;
+            default:                                        return false;
+            }
+        }
+    }
+    return false;
+}
+
+bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
+                                              SensorField       field,
+                                              float&            outVal) const
+{
+    if (ae.driverIdx >= baroCount_) { return false; }
+    BarometerInterface* baro = baroDrivers_[ae.driverIdx].iface;
+    if (baro == nullptr) { return false; }
+
+    const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
+    for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+    {
+        BaroReading r = {};
+        if (baro->read(r) == BaroStatus::OK)
+        {
+            switch (field)
+            {
+            case SensorField::ALT:      outVal = r.altitudeM;    return true;
+            case SensorField::TEMP:     outVal = r.temperatureC; return true;
+            case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
+            default:                                              return false;
+            }
+        }
+    }
+    return false;
+}
+
+bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
+                                                uint8_t       maxAttempts) const
+{
+    const uint32_t nowMs = static_cast<uint32_t>(millis());
+    if ((nowMs - imuCacheTsMs_) < IMU_CACHE_MAX_AGE_MS) { return true; }
+
+    bool readOk = false;
+    ImuReading r = {};
+    for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+    {
+        if (imu->read(r) == ImuStatus::OK)
+        {
+            readOk = true;
+            break;
+        }
+    }
+    imuCacheTsMs_ = static_cast<uint32_t>(millis());
+    if (!readOk)
+    {
+        imuCacheValid_ = false;
+        return false;
+    }
+    imuCachedReading_ = r;
+    imuCacheValid_    = true;
+    return true;
+}
+
+bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
+                                             SensorField       field,
+                                             float&            outVal) const
+{
+    if (ae.driverIdx >= imuCount_) { return false; }
+    ImuInterface* imu = imuDrivers_[ae.driverIdx].iface;
+    if (imu == nullptr) { return false; }
+
+    const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
+    if (!refreshImuCacheLocked(imu, maxAttempts)) { return false; }
+
+    if (!imuCacheValid_) { return false; }
+    const ImuReading& r = imuCachedReading_;
+    switch (field)
+    {
+    case SensorField::ACCEL_X:   outVal = r.accelX; return true;
+    case SensorField::ACCEL_Y:   outVal = r.accelY; return true;
+    case SensorField::ACCEL_Z:   outVal = r.accelZ; return true;
+    case SensorField::ACCEL_MAG:
+        outVal = sqrtf(r.accelX * r.accelX
+                     + r.accelY * r.accelY
+                     + r.accelZ * r.accelZ);
+        return true;
+    case SensorField::GYRO_X:    outVal = r.gyroX;  return true;
+    case SensorField::GYRO_Y:    outVal = r.gyroY;  return true;
+    case SensorField::GYRO_Z:    outVal = r.gyroZ;  return true;
+    case SensorField::IMU_TEMP:  outVal = r.tempC;  return true;
+    default:
+        return false;
     }
 }
 
@@ -324,50 +338,68 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
         return false;
     }
 
-    // TC.command == LAUNCH | ABORT | RESET
     if (strcmp(lhs, "TC.command") == 0)
     {
-        if (!allowTc)
-        {
-            setErrorLocked("TC.command not valid in conditions block");
-            return false;
-        }
-        if (strcmp(op, "==") != 0)
-        {
-            setErrorLocked("TC.command only supports '==' operator");
-            return false;
-        }
-        TcCommand cmd = TcCommand::NONE;
-        if (!parseTcCommand(rhs, cmd) || cmd == TcCommand::NONE)
-        {
-            setErrorLocked("invalid TC.command value");
-            return false;
-        }
-        out.kind    = CondKind::TC_EQ;
-        out.tcValue = cmd;
-        return true;
+        return parseTcCondExprLocked(op, rhs, allowTc, out);
     }
-
-    // TIME.elapsed > VALUE  (built-in pseudo-alias; no include needed)
     if (strcmp(lhs, "TIME.elapsed") == 0)
     {
-        if (strcmp(op, ">") != 0)
-        {
-            setErrorLocked("TIME.elapsed only supports '>' operator");
-            return false;
-        }
-        float thr = 0.0f;
-        if (!parseFloatValue(rhs, thr))
-        {
-            setErrorLocked("invalid TIME.elapsed threshold");
-            return false;
-        }
-        out.kind      = CondKind::TIME_GT;
-        out.threshold = thr;
-        return true;
+        return parseTimeCondExprLocked(op, rhs, out);
     }
+    return parseSensorCondExprLocked(lhs, op, rhs, out);
+}
 
-    // ALIAS.field < VALUE  or  ALIAS.field > VALUE
+bool MissionScriptEngine::parseTcCondExprLocked(const char* op,
+                                                const char* rhs,
+                                                bool        allowTc,
+                                                CondExpr&   out)
+{
+    if (!allowTc)
+    {
+        setErrorLocked("TC.command not valid in conditions block");
+        return false;
+    }
+    if (strcmp(op, "==") != 0)
+    {
+        setErrorLocked("TC.command only supports '==' operator");
+        return false;
+    }
+    TcCommand cmd = TcCommand::NONE;
+    if (!parseTcCommand(rhs, cmd) || cmd == TcCommand::NONE)
+    {
+        setErrorLocked("invalid TC.command value");
+        return false;
+    }
+    out.kind = CondKind::TC_EQ;
+    out.tcValue = cmd;
+    return true;
+}
+
+bool MissionScriptEngine::parseTimeCondExprLocked(const char* op,
+                                                  const char* rhs,
+                                                  CondExpr&   out)
+{
+    if (strcmp(op, ">") != 0)
+    {
+        setErrorLocked("TIME.elapsed only supports '>' operator");
+        return false;
+    }
+    float thr = 0.0f;
+    if (!parseFloatValue(rhs, thr))
+    {
+        setErrorLocked("invalid TIME.elapsed threshold");
+        return false;
+    }
+    out.kind = CondKind::TIME_GT;
+    out.threshold = thr;
+    return true;
+}
+
+bool MissionScriptEngine::parseSensorCondExprLocked(const char* lhs,
+                                                    const char* op,
+                                                    const char* rhs,
+                                                    CondExpr&   out)
+{
     char aliasStr[16] = {};
     char fieldStr[20] = {};
     if (!splitAliasDotField(lhs,
@@ -415,20 +447,64 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
     out.alias[sizeof(out.alias) - 1U] = '\0';
     out.field = sf;
 
-    // AMS-4.8: RHS can be a literal float OR a variable reference:
-    //   ALIAS.field OP varname
-    //   ALIAS.field OP (varname + offset)
-    //   ALIAS.field OP (varname - offset)
+    return parseConditionRhsThresholdLocked(rhs, out);
+}
+
+bool MissionScriptEngine::parseRhsVarNameOffsetLocked(
+    const char* varExpr, char* varName, uint8_t varNameSz,
+    float& offset, bool& hasOffset)
+{
+    const char* plus  = strstr(varExpr, " + ");
+    const char* minus = strstr(varExpr, " - ");
+
+    if (plus != nullptr || minus != nullptr)
+    {
+        const char* sep   = (minus != nullptr && (plus == nullptr || minus < plus)) ? minus : plus;
+        const bool  isNeg = (sep == minus);
+        const ptrdiff_t nameLen = sep - varExpr;
+        if (nameLen <= 0 || nameLen >= static_cast<ptrdiff_t>(varNameSz))
+        {
+            setErrorLocked("condition RHS: variable name too long");
+            return false;
+        }
+        memcpy(varName, varExpr, static_cast<size_t>(nameLen));
+        varName[static_cast<size_t>(nameLen)] = '\0';
+        trimInPlace(varName);
+
+        const char* offStr = sep + 3;  // skip " + " or " - "
+        if (!parseFloatValue(offStr, offset))
+        {
+            setErrorLocked("condition RHS: invalid offset value");
+            return false;
+        }
+        if (isNeg) { offset = -offset; }
+        hasOffset = true;
+    }
+    else
+    {
+        strncpy(varName, varExpr, static_cast<size_t>(varNameSz) - 1U);
+        varName[static_cast<size_t>(varNameSz) - 1U] = '\0';
+        trimInPlace(varName);
+    }
+
+    if (varName[0] == '\0')
+    {
+        setErrorLocked("condition RHS: empty variable name");
+        return false;
+    }
+    return true;
+}
+
+bool MissionScriptEngine::parseConditionRhsThresholdLocked(const char* rhs,
+                                                           CondExpr&   out)
+{
     float thr = 0.0f;
     if (parseFloatValue(rhs, thr))
     {
-        // Plain numeric literal — existing behaviour.
         out.threshold = thr;
         return true;
     }
 
-    // Try variable reference forms.
-    // Strip optional parentheses.
     const char* varExpr = rhs;
     char stripped[ares::AMS_MAX_LINE_LEN] = {};
     if (rhs[0] == '(')
@@ -451,53 +527,15 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
         varExpr = stripped;
     }
 
-    // Attempt "varname +/- offset" or bare "varname".
     char varName[ares::AMS_VAR_NAME_LEN] = {};
     float offset = 0.0f;
     bool hasOffset = false;
-
-    const char* plus  = strstr(varExpr, " + ");
-    const char* minus = strstr(varExpr, " - ");
-
-    if (plus != nullptr || minus != nullptr)
+    if (!parseRhsVarNameOffsetLocked(varExpr, varName, static_cast<uint8_t>(sizeof(varName)),
+                                     offset, hasOffset))
     {
-        // Pick whichever separator appears first.
-        const char* sep   = (minus != nullptr && (plus == nullptr || minus < plus)) ? minus : plus;
-        const bool  isNeg = (sep == minus);
-        const ptrdiff_t nameLen = sep - varExpr;
-        if (nameLen <= 0 || nameLen >= static_cast<ptrdiff_t>(ares::AMS_VAR_NAME_LEN))
-        {
-            setErrorLocked("condition RHS: variable name too long");
-            return false;
-        }
-        memcpy(varName, varExpr, static_cast<size_t>(nameLen));
-        varName[static_cast<size_t>(nameLen)] = '\0';
-        trimInPlace(varName);
-
-        const char* offStr = sep + 3;  // skip " + " or " - "
-        if (!parseFloatValue(offStr, offset))
-        {
-            setErrorLocked("condition RHS: invalid offset value");
-            return false;
-        }
-        if (isNeg) { offset = -offset; }
-        hasOffset = true;
-    }
-    else
-    {
-        // Bare variable name.
-        strncpy(varName, varExpr, sizeof(varName) - 1U);
-        varName[sizeof(varName) - 1U] = '\0';
-        trimInPlace(varName);
-    }
-
-    if (varName[0] == '\0')
-    {
-        setErrorLocked("condition RHS: empty variable name");
         return false;
     }
 
-    // Validate that the variable exists in the program at parse time.
     bool found = false;
     for (uint8_t i = 0; i < program_.varCount; i++)
     {
@@ -505,8 +543,6 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
     }
     if (!found)
     {
-        // AMS-4.12: try named constant — value inlined into threshold at parse time.
-        // Also supports offset forms: (CONST_NAME + offset) / (CONST_NAME - offset).
         for (uint8_t ci = 0; ci < program_.constCount; ci++)
         {
             if (strcmp(program_.consts[ci].name, varName) == 0)
@@ -522,7 +558,7 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
         return false;
     }
 
-    out.useVar    = true;
+    out.useVar = true;
     out.varOffset = hasOffset ? offset : 0.0f;
     strncpy(out.varName, varName, sizeof(out.varName) - 1U);
     out.varName[sizeof(out.varName) - 1U] = '\0';

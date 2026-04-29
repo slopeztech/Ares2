@@ -20,6 +20,52 @@
 
 static constexpr const char* TAG = "API.FLT";
 
+/**
+ * @brief Validate a mode transition and return the target OperatingMode.
+ *
+ * @param[in]  target   Requested mode string ("idle", "test", "flight").
+ * @param[in]  current  Current operating mode.
+ * @param[out] out      Target mode if the transition is valid.
+ * @return 0 on success; 400 for unknown mode; 409 for invalid transition.
+ */
+static int validateModeTransition(const char*            target,
+                                  ares::OperatingMode    current,
+                                  ares::OperatingMode&   out)
+{
+    if (strcmp(target, "idle") == 0)
+    {
+        if (current != ares::OperatingMode::TEST
+            && current != ares::OperatingMode::RECOVERY
+            && current != ares::OperatingMode::ERROR)
+        {
+            return 409;
+        }
+        out = ares::OperatingMode::IDLE;
+    }
+    else if (strcmp(target, "test") == 0)
+    {
+        if (current != ares::OperatingMode::IDLE)
+        {
+            return 409;
+        }
+        out = ares::OperatingMode::TEST;
+    }
+    else if (strcmp(target, "flight") == 0)
+    {
+        if (current != ares::OperatingMode::IDLE
+            && current != ares::OperatingMode::TEST)
+        {
+            return 409;
+        }
+        out = ares::OperatingMode::FLIGHT;
+    }
+    else
+    {
+        return 400;
+    }
+    return 0;
+}
+
 void ApiServer::handleMode(WiFiClient& client,
                             const char* body, uint32_t bodyLen)
 {
@@ -49,53 +95,30 @@ void ApiServer::handleMode(WiFiClient& client,
 
     const char* target = nullptr;
     target = doc["mode"].as<const char*>();
-    const auto current = getMode();
+    const auto  current = getMode();
     const uint8_t rawCurrent = static_cast<uint8_t>(current);
     ARES_ASSERT(rawCurrent <= static_cast<uint8_t>(ares::OperatingMode::LAST));
 
     // REST-6.1: mode transition matrix
-    if (strcmp(target, "idle") == 0)
+    ares::OperatingMode next = current;
+    const int rc = validateModeTransition(target, current, next);
+    if (rc == 409)
     {
-        if (current != ares::OperatingMode::TEST
-            && current != ares::OperatingMode::RECOVERY
-            && current != ares::OperatingMode::ERROR)
-        {
-            sendError(client, 409,
-                      "cannot transition to idle from current mode");
-            LOG_W(TAG, "POST /api/mode 409: bad transition to idle");
-            return;
-        }
-        setMode(ares::OperatingMode::IDLE);
-        armed_.store(false);
+        sendError(client, 409, "invalid mode transition");
+        LOG_W(TAG, "POST /api/mode 409: bad transition to %s", target);
+        return;
     }
-    else if (strcmp(target, "test") == 0)
-    {
-        if (current != ares::OperatingMode::IDLE)
-        {
-            sendError(client, 409, "test mode requires idle");
-            LOG_W(TAG, "POST /api/mode 409: bad transition to test");
-            return;
-        }
-        setMode(ares::OperatingMode::TEST);
-    }
-    else if (strcmp(target, "flight") == 0)
-    {
-        if (current != ares::OperatingMode::IDLE
-            && current != ares::OperatingMode::TEST)
-        {
-            sendError(client, 409,
-                      "flight mode requires idle or test");
-            LOG_W(TAG, "POST /api/mode 409: bad transition to flight");
-            return;
-        }
-        armed_.store(false);
-        setMode(ares::OperatingMode::FLIGHT);
-    }
-    else
+    if (rc == 400)
     {
         sendError(client, 400, "unknown mode (idle|test|flight)");
         LOG_W(TAG, "POST /api/mode 400: unknown mode");
         return;
+    }
+
+    setMode(next);
+    if (next == ares::OperatingMode::IDLE || next == ares::OperatingMode::FLIGHT)
+    {
+        armed_.store(false);
     }
 
     handleStatus(client);
@@ -122,6 +145,11 @@ void ApiServer::handleArm(WiFiClient& client)
         return;
     }
 
+    executeArm(client);
+}
+
+bool ApiServer::executeArm(WiFiClient& client)
+{
     ares::ams::EngineSnapshot before = {};
     mission_->getSnapshot(before);
 
@@ -134,7 +162,7 @@ void ApiServer::handleArm(WiFiClient& client)
         setMode(ares::OperatingMode::FLIGHT);
         LOG_I(TAG, "POST /api/arm: AMS already RUNNING — adopting running state");
         handleStatus(client);
-        return;
+        return true;
     }
 
     if (before.status != ares::ams::EngineStatus::LOADED)
@@ -144,7 +172,7 @@ void ApiServer::handleArm(WiFiClient& client)
         LOG_E(TAG,
               "POST /api/arm 409: AMS status=%u state=%s (expected LOADED) -> mode=ERROR",
               static_cast<uint32_t>(before.status), before.stateName);
-        return;
+        return false;
     }
 
     // Enable execution and inject LAUNCH atomically.  A single mutex
@@ -155,7 +183,7 @@ void ApiServer::handleArm(WiFiClient& client)
         setMode(ares::OperatingMode::ERROR);
         sendError(client, 500, "arm failed: mutex timeout or status changed");
         LOG_E(TAG, "POST /api/arm 500: arm() failed -> mode=ERROR");
-        return;
+        return false;
     }
 
     ares::ams::EngineSnapshot after = {};
@@ -168,15 +196,15 @@ void ApiServer::handleArm(WiFiClient& client)
         LOG_E(TAG,
               "POST /api/arm 409: AMS status=%u state=%s error=%s -> mode=ERROR",
               static_cast<uint32_t>(after.status), after.stateName, after.lastError);
-        return;
+        return false;
     }
 
     armed_.store(true);
     setMode(ares::OperatingMode::FLIGHT);  // blue LED: AMS is now executing
     LOG_I(TAG, "POST /api/arm: armed");
-
     handleStatus(client);
     LOG_I(TAG, "POST /api/arm 200: armed");
+    return true;
 }
 
 void ApiServer::handleAbort(WiFiClient& client)

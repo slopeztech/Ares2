@@ -160,7 +160,7 @@ void ApiServer::handleMissionDownload(WiFiClient& client,
     }
 
     uint32_t fileSize = 0;
-    StorageStatus st = storage_->fileSize(path, fileSize);
+    const StorageStatus st = storage_->fileSize(path, fileSize);
     if (st == StorageStatus::NOT_FOUND)
     {
         sendError(client, 404, "file not found");
@@ -172,34 +172,7 @@ void ApiServer::handleMissionDownload(WiFiClient& client,
         return;
     }
 
-    client.printf("HTTP/1.1 200 OK\r\n");
-    client.print("Content-Type: text/plain\r\n");
-    client.printf("Content-Length: %" PRIu32 "\r\n", fileSize);
-    client.printf("Content-Disposition: attachment; filename=\"%s\"\r\n",
-                  filename);
-    client.print(CORS_HEADERS);
-    client.print("Connection: close\r\n");
-    client.print("\r\n");
-
-    uint8_t chunk[ares::DOWNLOAD_CHUNK_SIZE] = {};
-    uint32_t offset = 0;
-    while (offset < fileSize && client.connected())
-    {
-        uint32_t bytesRead = 0;
-        st = storage_->readFileChunk(path, offset, chunk,
-                                     ares::DOWNLOAD_CHUNK_SIZE,
-                                     bytesRead);
-        if (st != StorageStatus::OK || bytesRead == 0U)
-        {
-            break;
-        }
-
-        ARES_ASSERT(bytesRead <= ares::DOWNLOAD_CHUNK_SIZE);
-        ARES_ASSERT((offset + bytesRead) <= fileSize);
-
-        client.write(chunk, bytesRead);
-        offset += bytesRead;
-    }
+    sendFileChunked(client, path, filename, "text/plain", fileSize);
 }
 
 void ApiServer::handleMissionUpload(WiFiClient& client,

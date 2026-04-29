@@ -182,6 +182,8 @@ private:
     void handleAbort(class WiFiClient& client);
     void handleI2cScan(class WiFiClient& client);
     void handleUartScan(class WiFiClient& client);
+    /// Execute the arm sequence; send error and return false on failure.
+    bool executeArm(class WiFiClient& client);
     // storage/
     void handleLogsList(class WiFiClient& client);
     void handleLogDownload(class WiFiClient& client,
@@ -211,6 +213,21 @@ private:
     void routeRequest(class WiFiClient& client,
                       const char* method, const char* path,
                       const char* body, uint32_t bodyLen);
+    bool routeStatusAndConfigRequest(class WiFiClient& client,
+                                     const char* method,
+                                     const char* path,
+                                     const char* body,
+                                     uint32_t bodyLen);
+    bool routeFlightRequest(class WiFiClient& client,
+                            const char* method,
+                            const char* path,
+                            const char* body,
+                            uint32_t bodyLen);
+    bool routeMissionTopLevelRequest(class WiFiClient& client,
+                                     const char* method,
+                                     const char* path,
+                                     const char* body,
+                                     uint32_t bodyLen);
     void routeLogRequest(class WiFiClient& client,
                          const char* method, const char* sub);
     void routeMissionRequest(class WiFiClient& client,
@@ -223,6 +240,26 @@ private:
     static void sendError(class WiFiClient& client, uint16_t code,
                           const char* message);
     static void sendNoContent(class WiFiClient& client, uint16_t code);
+
+    /**
+     * @brief Send a file from storage as a chunked HTTP 200 response.
+     *
+     * Writes the HTTP headers (Content-Type, Content-Length,
+     * Content-Disposition, CORS) then streams the file in
+     * @c DOWNLOAD_CHUNK_SIZE blocks until all bytes are sent or the
+     * client disconnects.
+     *
+     * @param client        Connected WiFi client.
+     * @param path          Absolute storage path to read from.
+     * @param filename      Bare filename used in Content-Disposition.
+     * @param contentType   MIME type string (e.g. "application/octet-stream").
+     * @param fileSize      Total byte length of the file (pre-queried by caller).
+     */
+    void sendFileChunked(class WiFiClient& client,
+                         const char* path,
+                         const char* filename,
+                         const char* contentType,
+                         uint32_t    fileSize);
 
     /// Check if current mode forbids write operations (REST-6.2).
     bool isFlightLocked() const;

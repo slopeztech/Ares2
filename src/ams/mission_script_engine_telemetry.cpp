@@ -176,68 +176,18 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
     ARES_ASSERT(st.logFieldCount <= ares::AMS_MAX_HK_FIELDS);
     if (!st.hasLogEvery || st.logFieldCount == 0U || logPath_[0] == '\0') { return; }
 
+    if (!writeLogHeaderIfNeededLocked(st))
+    {
+        return;
+    }
+
     char line[256] = {};
-
-    // Write the CSV header row once per log file (on the first log write).
-    if (!logHeaderWritten_)
+    uint32_t len = 0U;
+    if (!buildLogDataRowLocked(st, nowMs, line, sizeof(line), len))
     {
-        // MISRA-1: int required by snprintf() C-standard return type.
-        const int hLen = snprintf(line, sizeof(line), "t_ms,state");
-        if (hLen > 0)
-        {
-            uint32_t hPos = static_cast<uint32_t>(hLen);
-            for (uint8_t i = 0; i < st.logFieldCount; i++)
-            {
-                const int n = snprintf(&line[hPos], sizeof(line) - hPos,
-                                       ",%s", st.logFields[i].label);
-                if (n <= 0) { break; }
-                hPos += static_cast<uint32_t>(n);
-                if (hPos >= sizeof(line) - 2U) { break; }
-            }
-            const int nl = snprintf(&line[hPos], sizeof(line) - hPos, "\n");
-            if (nl > 0)
-            {
-                const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
-                storage_.appendFile(logPath_,
-                                    reinterpret_cast<const uint8_t*>(line),
-                                    hTot);
-                logHeaderWritten_ = true;
-            }
-        }
+        return;
     }
 
-    // Data row: t_ms,state,val1,val2,...
-    // MISRA-1: int required by snprintf() C-standard return type.
-    int headLen = 0;
-    headLen = snprintf(line, sizeof(line),
-                       "%" PRIu32 ",%s", nowMs, st.name);
-    if (headLen <= 0) { return; }
-
-    uint32_t pos = static_cast<uint32_t>(headLen);
-
-    for (uint8_t i = 0; i < st.logFieldCount; i++)
-    {
-        char value[32] = {};
-        if (!formatHkFieldValueLocked(st.logFields[i], value, sizeof(value)))
-        {
-            // Write an empty field to preserve column alignment.
-            const int n = snprintf(&line[pos], sizeof(line) - pos, ",");
-            if (n <= 0) { break; }
-            pos += static_cast<uint32_t>(n);
-            continue;
-        }
-
-        const int n = snprintf(&line[pos], sizeof(line) - pos, ",%s", value);
-        if (n <= 0) { break; }
-
-        pos += static_cast<uint32_t>(n);
-        if (pos >= sizeof(line) - 2U) { break; }
-    }
-
-    const int tail = snprintf(&line[pos], sizeof(line) - pos, "\n");
-    if (tail <= 0) { return; }
-
-    const uint32_t len = pos + static_cast<uint32_t>(tail);
     const StorageStatus stAppend = storage_.appendFile(
         logPath_, reinterpret_cast<const uint8_t*>(line), len);
     if (stAppend != StorageStatus::OK)
@@ -245,6 +195,81 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
         LOG_W(TAG, "append mission log failed: %u",
               static_cast<uint32_t>(stAppend));
     }
+}
+
+bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
+{
+    if (logHeaderWritten_)
+    {
+        return true;
+    }
+
+    char line[256] = {};
+    const int hLen = snprintf(line, sizeof(line), "t_ms,state");
+    if (hLen <= 0)
+    {
+        return false;
+    }
+
+    uint32_t hPos = static_cast<uint32_t>(hLen);
+    for (uint8_t i = 0; i < st.logFieldCount; i++)
+    {
+        const int n = snprintf(&line[hPos], sizeof(line) - hPos, ",%s", st.logFields[i].label);
+        if (n <= 0) { break; }
+        hPos += static_cast<uint32_t>(n);
+        if (hPos >= sizeof(line) - 2U) { break; }
+    }
+
+    const int nl = snprintf(&line[hPos], sizeof(line) - hPos, "\n");
+    if (nl <= 0)
+    {
+        return false;
+    }
+
+    const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
+    storage_.appendFile(logPath_, reinterpret_cast<const uint8_t*>(line), hTot);
+    logHeaderWritten_ = true;
+    return true;
+}
+
+bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
+                                                uint32_t        nowMs,
+                                                char*           outLine,
+                                                uint32_t        outSize,
+                                                uint32_t&       outLen) const
+{
+    int headLen = snprintf(outLine, outSize, "%" PRIu32 ",%s", nowMs, st.name);
+    if (headLen <= 0)
+    {
+        return false;
+    }
+
+    uint32_t pos = static_cast<uint32_t>(headLen);
+    for (uint8_t i = 0; i < st.logFieldCount; i++)
+    {
+        char value[32] = {};
+        const bool hasValue = formatHkFieldValueLocked(st.logFields[i], value, sizeof(value));
+        const int n = hasValue
+                    ? snprintf(&outLine[pos], outSize - pos, ",%s", value)
+                    : snprintf(&outLine[pos], outSize - pos, ",");
+        if (n <= 0)
+        {
+            return false;
+        }
+        pos += static_cast<uint32_t>(n);
+        if (pos >= outSize - 2U)
+        {
+            break;
+        }
+    }
+
+    const int tail = snprintf(&outLine[pos], outSize - pos, "\n");
+    if (tail <= 0)
+    {
+        return false;
+    }
+    outLen = pos + static_cast<uint32_t>(tail);
+    return true;
 }
 
 // ── ensureLogFileLocked ──────────────────────────────────────────────────────

@@ -16,6 +16,61 @@
 
 static constexpr const char* TAG = "API.STS";
 
+static void appendBaroSnapshot(BarometerInterface& baro,
+                                JsonDocument& doc)
+{
+    BaroReading baroData;
+    const BaroStatus baroSt = baro.read(baroData);
+    const bool baroOk = (baroSt == BaroStatus::OK);
+    doc["health"]["baro"] = baroOk;
+    if (baroOk)
+    {
+        JsonObject obj = doc["baro"].to<JsonObject>();
+        obj["pressurePa"]   = baroData.pressurePa;
+        obj["temperatureC"] = baroData.temperatureC;
+        obj["altitudeM"]    = baroData.altitudeM;
+    }
+}
+
+static void appendGpsSnapshot(GpsInterface& gps, JsonDocument& doc)
+{
+    GpsReading gpsData;
+    const GpsStatus gpsSt = gps.read(gpsData);
+    const bool gpsOk = (gpsSt == GpsStatus::OK);
+    doc["health"]["gps"] = gpsOk;
+    if (gpsOk)
+    {
+        JsonObject obj = doc["gps"].to<JsonObject>();
+        obj["fix"]        = true;
+        obj["latitude"]   = gpsData.latitude;
+        obj["longitude"]  = gpsData.longitude;
+        obj["altitudeM"]  = gpsData.altitudeM;
+        obj["speedKmh"]   = gpsData.speedKmh;
+        obj["courseDeg"]  = gpsData.courseDeg;
+        obj["hdop"]       = gpsData.hdop;
+        obj["satellites"] = gpsData.satellites;
+    }
+}
+
+static void appendImuSnapshot(ImuInterface& imu, JsonDocument& doc)
+{
+    ImuReading imuData;
+    const ImuStatus imuSt = imu.read(imuData);
+    const bool imuOk = (imuSt == ImuStatus::OK);
+    doc["health"]["imu"] = imuOk;
+    if (imuOk)
+    {
+        JsonObject obj = doc["imu"].to<JsonObject>();
+        obj["accelX"] = imuData.accelX;
+        obj["accelY"] = imuData.accelY;
+        obj["accelZ"] = imuData.accelZ;
+        obj["gyroX"]  = imuData.gyroX;
+        obj["gyroY"]  = imuData.gyroY;
+        obj["gyroZ"]  = imuData.gyroZ;
+        obj["tempC"]  = imuData.tempC;
+    }
+}
+
 void ApiServer::handleStatus(WiFiClient& client)
 {
     const ares::OperatingMode mode = getMode();
@@ -32,60 +87,11 @@ void ApiServer::handleStatus(WiFiClient& client)
     doc["armed"]       = armed_.load();
     doc["wifiClients"] = wifi_.clientCount();
 
-    // Health flags
-    JsonObject health = doc["health"].to<JsonObject>();
-    health["wifi"] = wifi_.isReady();
+    doc["health"]["wifi"] = wifi_.isReady();
 
-    // Barometer snapshot
-    BaroReading baroData;
-    const BaroStatus baroSt = baro_.read(baroData);
-    const bool baroOk = (baroSt == BaroStatus::OK);
-    health["baro"] = baroOk;
-
-    if (baroOk)
-    {
-        JsonObject baro = doc["baro"].to<JsonObject>();
-        baro["pressurePa"]   = baroData.pressurePa;
-        baro["temperatureC"] = baroData.temperatureC;
-        baro["altitudeM"]    = baroData.altitudeM;
-    }
-
-    // GPS snapshot
-    GpsReading gpsData;
-    const GpsStatus gpsSt = gps_.read(gpsData);
-    const bool gpsOk = (gpsSt == GpsStatus::OK);
-    health["gps"] = gpsOk;
-
-    if (gpsOk)
-    {
-        JsonObject gps = doc["gps"].to<JsonObject>();
-        gps["fix"]        = true;
-        gps["latitude"]   = gpsData.latitude;
-        gps["longitude"]  = gpsData.longitude;
-        gps["altitudeM"]  = gpsData.altitudeM;
-        gps["speedKmh"]   = gpsData.speedKmh;
-        gps["courseDeg"]  = gpsData.courseDeg;
-        gps["hdop"]       = gpsData.hdop;
-        gps["satellites"] = gpsData.satellites;
-    }
-
-    // IMU snapshot
-    ImuReading imuData;
-    const ImuStatus imuSt = imu_.read(imuData);
-    const bool imuOk = (imuSt == ImuStatus::OK);
-    health["imu"] = imuOk;
-
-    if (imuOk)
-    {
-        JsonObject imu = doc["imu"].to<JsonObject>();
-        imu["accelX"] = imuData.accelX;
-        imu["accelY"] = imuData.accelY;
-        imu["accelZ"] = imuData.accelZ;
-        imu["gyroX"]  = imuData.gyroX;
-        imu["gyroY"]  = imuData.gyroY;
-        imu["gyroZ"]  = imuData.gyroZ;
-        imu["tempC"]  = imuData.tempC;
-    }
+    appendBaroSnapshot(baro_, doc);
+    appendGpsSnapshot(gps_, doc);
+    appendImuSnapshot(imu_, doc);
 
     // Config snapshot under mutex
     RuntimeConfig cfg;

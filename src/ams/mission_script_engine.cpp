@@ -285,14 +285,8 @@ void MissionScriptEngine::tick(uint32_t nowMs)
     }
 
     StateDef& state = program_.states[currentState_];
-    if (evaluateTransitionAndMaybeEnterLocked(state, nowMs))
-    {
-        return;
-    }
+    if (evaluateTransitionAndMaybeEnterLocked(state, nowMs)) { return; }
 
-    // AMS-4.9.2: Fallback transition — if no regular transition has fired
-    // within fallbackAfterMs, transition unconditionally to the fallback target.
-    // Evaluated BEFORE the ABORT intercept so missions can designate a safe-state.
     if (state.hasFallback && state.fallbackTargetResolved)
     {
         const uint32_t elapsed = nowMs - stateEnterMs_;
@@ -307,11 +301,6 @@ void MissionScriptEngine::tick(uint32_t nowMs)
         }
     }
 
-    // AMS abort intercept: if ABORT TC is still pending after transition
-    // evaluation (i.e. no transition in this state consumes it), the engine
-    // must stop unconditionally.  Scripts that define an explicit ABORT
-    // transition will consume the token inside evaluateTransitionAndMaybeEnterLocked,
-    // so this path only fires when no ABORT transition is defined.
     if (pendingTc_ == TcCommand::ABORT)
     {
         LOG_W(TAG, "ABORT TC not consumed by state=%s: force-deactivating",
@@ -337,14 +326,17 @@ void MissionScriptEngine::tick(uint32_t nowMs)
 
     (void)saveResumePointLocked(nowMs, false);
 
-    // Terminal state detection: if the current state has no transition,
-    // no fallback transition, no pending on-enter event, and no periodic
-    // HK or LOG actions, the mission is done.
+    const bool hasActiveHk = state.hasHkEvery
+                          && state.hkEveryMs > 0U
+                          && state.hkFieldCount > 0U;
+    const bool hasActiveLog = state.hasLogEvery
+                           && state.logEveryMs > 0U
+                           && state.logFieldCount > 0U;
     if (!state.hasTransition
         && !state.hasFallback
         && !pendingOnEnterEvent_
-        && (!state.hasHkEvery  || state.hkEveryMs  == 0U || state.hkFieldCount  == 0U)
-        && (!state.hasLogEvery || state.logEveryMs == 0U || state.logFieldCount == 0U))
+        && !hasActiveHk
+        && !hasActiveLog)
     {
         if (status_ == EngineStatus::RUNNING)
         {
@@ -385,81 +377,13 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
     }
 
     const Transition& tr = state.transition;
-
-    // AMS-4.6.2: evaluate each sub-condition individually (don't consume TC yet).
-    // Start value depends on logic: AND starts true, OR starts false.
     bool compound = (tr.logic == TransitionLogic::AND);
     bool tcPendingMatch = false;
 
     for (uint8_t i = 0; i < tr.condCount; i++)
     {
-        const CondExpr& cond = tr.conds[i];
-        bool condResult = false;
-
-        switch (cond.kind)
-        {
-        case CondKind::TC_EQ:
-            if (cond.tcDebounce == TcDebounceMode::CONFIRM)
-            {
-                // CONFIRM mode: need at least tcConfirmN successive injections.
-                const uint8_t idx = static_cast<uint8_t>(cond.tcValue);
-                condResult = (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
-                             && (tcConfirmCount_[idx] >= cond.tcConfirmN);
-            }
-            else
-            {
-                // DEFAULT / ONCE: fire on first TC match (existing behavior).
-                condResult = (pendingTc_ == cond.tcValue);
-            }
-            if (condResult) { tcPendingMatch = true; }
-            break;
-
-        case CondKind::TIME_GT:
-            condResult = ((nowMs - stateEnterMs_) > static_cast<uint32_t>(cond.threshold));
-            break;
-
-        case CondKind::SENSOR_LT:
-        case CondKind::SENSOR_GT:
-        {
-            float thr = 0.0f;
-            if (!resolveVarThresholdLocked(cond, thr)) { break; }  // var not ready
-            float val = 0.0f;
-            if (readSensorFloatLocked(cond.alias, cond.field, val))
-            {
-                condResult = (cond.kind == CondKind::SENSOR_LT)
-                             ? (val < thr)
-                             : (val > thr);
-            }
-            break;
-        }
-
-        case CondKind::SENSOR_DELTA_LT:
-        case CondKind::SENSOR_DELTA_GT:
-        {
-            float curVal = 0.0f;
-            float thr    = 0.0f;
-            if (readSensorFloatLocked(cond.alias, cond.field, curVal)
-                && resolveVarThresholdLocked(cond, thr))
-            {
-                if (transitionPrevValid_[i])
-                {
-                    const float delta = curVal - transitionPrevVal_[i];
-                    condResult = (cond.kind == CondKind::SENSOR_DELTA_LT)
-                                 ? (delta < thr)
-                                 : (delta > thr);
-                }
-                // Always update previous value when read succeeds.
-                transitionPrevVal_[i]   = curVal;
-                transitionPrevValid_[i] = true;
-            }
-            // If read fails or var not ready: condResult stays false.
-            break;
-        }
-
-        default:
-            break;
-        }
-
+        const bool condResult = evaluateOneTransitionConditionLocked(
+            tr.conds[i], state, i, nowMs, tcPendingMatch);
         if (tr.logic == TransitionLogic::OR)
         {
             compound = compound || condResult;
@@ -476,49 +400,134 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
         return false;
     }
 
-    // AMS-4.6.1: Persistence modifier.
-    // Skip hold for pure TC transitions (single TC condition, no sensor).
-    const bool isTcOnly = (tr.condCount == 1U && tr.conds[0].kind == CondKind::TC_EQ);
-    const uint32_t holdMs = tr.holdMs;
-    if (holdMs > 0U && !isTcOnly)
+    if (!applyTransitionHoldLocked(tr, nowMs))
     {
-        if (!transitionCondHolding_)
-        {
-            transitionCondHolding_ = true;
-            transitionCondMetMs_   = nowMs;
-            LOG_D(TAG, "hold armed: state=%s holdMs=%" PRIu32, state.name, holdMs);
-            return false;
-        }
-
-        if ((nowMs - transitionCondMetMs_) < holdMs)
-        {
-            return false;  // still inside the persistence window
-        }
-
-        LOG_D(TAG, "hold elapsed: state=%s", state.name);
-        transitionCondHolding_ = false;
+        return false;
     }
 
-    // Compound condition confirmed — consume TC token now (if any).
     if (tcPendingMatch)
     {
-        pendingTc_ = TcCommand::NONE;
-        // AMS-4.11.2: reset CONFIRM counters for any matched TC condition.
-        for (uint8_t ci = 0; ci < tr.condCount; ci++)
-        {
-            if (tr.conds[ci].kind == CondKind::TC_EQ
-                && tr.conds[ci].tcDebounce == TcDebounceMode::CONFIRM)
-            {
-                const uint8_t idx = static_cast<uint8_t>(tr.conds[ci].tcValue);
-                if (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
-                {
-                    tcConfirmCount_[idx] = 0U;
-                }
-            }
-        }
+        consumeMatchedTransitionTcLocked(tr);
         LOG_I(TAG, "TC condition matched in state=%s", state.name);
     }
 
+    return fireResolvedTransitionLocked(state, tr, nowMs);
+}
+
+bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& cond,
+                                                               StateDef&,
+                                                               uint8_t         condIdx,
+                                                               uint32_t        nowMs,
+                                                               bool&           tcPendingMatch)
+{
+    bool condResult = false;
+    switch (cond.kind)
+    {
+    case CondKind::TC_EQ:
+        if (cond.tcDebounce == TcDebounceMode::CONFIRM)
+        {
+            const uint8_t idx = static_cast<uint8_t>(cond.tcValue);
+            condResult = (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
+                       && (tcConfirmCount_[idx] >= cond.tcConfirmN);
+        }
+        else
+        {
+            condResult = (pendingTc_ == cond.tcValue);
+        }
+        if (condResult) { tcPendingMatch = true; }
+        break;
+
+    case CondKind::TIME_GT:
+        condResult = ((nowMs - stateEnterMs_) > static_cast<uint32_t>(cond.threshold));
+        break;
+
+    case CondKind::SENSOR_LT:
+    case CondKind::SENSOR_GT:
+    {
+        float thr = 0.0f;
+        if (!resolveVarThresholdLocked(cond, thr)) { break; }
+        float val = 0.0f;
+        if (readSensorFloatLocked(cond.alias, cond.field, val))
+        {
+            condResult = (cond.kind == CondKind::SENSOR_LT) ? (val < thr) : (val > thr);
+        }
+        break;
+    }
+
+    case CondKind::SENSOR_DELTA_LT:
+    case CondKind::SENSOR_DELTA_GT:
+    {
+        float curVal = 0.0f;
+        float thr = 0.0f;
+        if (readSensorFloatLocked(cond.alias, cond.field, curVal)
+            && resolveVarThresholdLocked(cond, thr))
+        {
+            if (transitionPrevValid_[condIdx])
+            {
+                const float delta = curVal - transitionPrevVal_[condIdx];
+                condResult = (cond.kind == CondKind::SENSOR_DELTA_LT)
+                           ? (delta < thr)
+                           : (delta > thr);
+            }
+            transitionPrevVal_[condIdx] = curVal;
+            transitionPrevValid_[condIdx] = true;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return condResult;
+}
+
+bool MissionScriptEngine::applyTransitionHoldLocked(const Transition& tr,
+                                                    uint32_t          nowMs)
+{
+    const bool isTcOnly = (tr.condCount == 1U && tr.conds[0].kind == CondKind::TC_EQ);
+    if (tr.holdMs == 0U || isTcOnly)
+    {
+        return true;
+    }
+
+    if (!transitionCondHolding_)
+    {
+        transitionCondHolding_ = true;
+        transitionCondMetMs_ = nowMs;
+        return false;
+    }
+
+    if ((nowMs - transitionCondMetMs_) < tr.holdMs)
+    {
+        return false;
+    }
+
+    transitionCondHolding_ = false;
+    return true;
+}
+
+void MissionScriptEngine::consumeMatchedTransitionTcLocked(const Transition& tr)
+{
+    pendingTc_ = TcCommand::NONE;
+    for (uint8_t ci = 0; ci < tr.condCount; ci++)
+    {
+        if (tr.conds[ci].kind == CondKind::TC_EQ
+            && tr.conds[ci].tcDebounce == TcDebounceMode::CONFIRM)
+        {
+            const uint8_t idx = static_cast<uint8_t>(tr.conds[ci].tcValue);
+            if (idx < static_cast<uint8_t>(sizeof(tcConfirmCount_)))
+            {
+                tcConfirmCount_[idx] = 0U;
+            }
+        }
+    }
+}
+
+bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
+                                                       const Transition& tr,
+                                                       uint32_t          nowMs)
+{
     if (!tr.targetResolved || tr.targetIndex >= program_.stateCount)
     {
         setErrorLocked("invalid transition target");
@@ -674,9 +683,115 @@ bool MissionScriptEngine::listScripts(FileEntry* entries,
     return true;
 }
 
-/// Return a human-readable field name for use in guard violation log messages.
-/// Defined as a static helper inside the member function to access the private
-/// SensorField enum without changing the class interface.
+const char* MissionScriptEngine::sensorFieldNameForLog(SensorField f)
+{
+    switch (f)
+    {
+    case SensorField::LAT:       return "lat";
+    case SensorField::LON:       return "lon";
+    case SensorField::ALT:       return "alt";
+    case SensorField::SPEED:     return "speed";
+    case SensorField::TEMP:      return "temp";
+    case SensorField::PRESSURE:  return "pressure";
+    case SensorField::ACCEL_X:   return "accel_x";
+    case SensorField::ACCEL_Y:   return "accel_y";
+    case SensorField::ACCEL_Z:   return "accel_z";
+    case SensorField::ACCEL_MAG: return "accel_mag";
+    case SensorField::GYRO_X:    return "gyro_x";
+    case SensorField::GYRO_Y:    return "gyro_y";
+    case SensorField::GYRO_Z:    return "gyro_z";
+    case SensorField::IMU_TEMP:  return "temp";
+    default:                     return "?";
+    }
+}
+
+bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
+                                                       const StateDef&,
+                                                       uint32_t        nowMs,
+                                                       float&          actualVal) const
+{
+    bool holds = true;
+    switch (expr.kind)
+    {
+    case CondKind::TIME_GT:
+        actualVal = static_cast<float>(nowMs - stateEnterMs_);
+        holds = (static_cast<uint32_t>(actualVal)
+                 <= static_cast<uint32_t>(expr.threshold));
+        break;
+
+    case CondKind::SENSOR_LT:
+    case CondKind::SENSOR_GT:
+        if (readSensorFloatLocked(expr.alias, expr.field, actualVal))
+        {
+            float thr = 0.0f;
+            if (resolveVarThresholdLocked(expr, thr))
+            {
+                holds = (expr.kind == CondKind::SENSOR_LT)
+                      ? (actualVal < thr)
+                      : (actualVal > thr);
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+    return holds;
+}
+
+bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
+                                                     const CondExpr& expr,
+                                                     float           actualVal,
+                                                     uint32_t        nowMs)
+{
+    char valText[16] = {};
+    char thrText[16] = {};
+    if (!formatScaledFloat(actualVal, 3U, valText, sizeof(valText)))
+    {
+        strncpy(valText, "?", sizeof(valText) - 1U);
+        valText[sizeof(valText) - 1U] = '\0';
+    }
+    if (!formatScaledFloat(expr.threshold, 3U, thrText, sizeof(thrText)))
+    {
+        strncpy(thrText, "?", sizeof(thrText) - 1U);
+        thrText[sizeof(thrText) - 1U] = '\0';
+    }
+
+    if (expr.kind == CondKind::TIME_GT)
+    {
+        LOG_W(TAG,
+              "Guard Violation: State '%s', Condition "
+              "'TIME.elapsed > %s' failed (Value: %sms)",
+              state.name, thrText, valText);
+    }
+    else
+    {
+        const char* opStr = (expr.kind == CondKind::SENSOR_LT) ? "<" : ">";
+        LOG_W(TAG,
+              "Guard Violation: State '%s', Condition "
+              "'%s.%s %s %s' failed (Value: %s)",
+              state.name, expr.alias,
+              sensorFieldNameForLog(expr.field), opStr, thrText, valText);
+    }
+
+    if (state.hasOnErrorEvent)
+    {
+        sendEventLocked(state.onErrorVerb, state.onErrorText, nowMs);
+    }
+
+    if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
+    {
+        LOG_I(TAG,
+              "Error recovery: '%s' -> '%s' (guard violated)",
+              state.name,
+              program_.states[state.onErrorTransitionIdx].name);
+        enterStateLocked(state.onErrorTransitionIdx, nowMs);
+        return true;
+    }
+
+    setErrorLocked("guard condition violated");
+    return true;
+}
 
 /**
  * @brief Evaluate all guard conditions for the current state (AMS-4.7).
@@ -699,122 +814,12 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
         return false;
     }
 
-    // Lambda: maps SensorField to a human-readable name for log messages.
-    // Defined here to access the private SensorField enum without API changes.
-    auto fieldName = [](SensorField f) -> const char*
-    {
-        switch (f)
-        {
-        case SensorField::LAT:       return "lat";
-        case SensorField::LON:       return "lon";
-        case SensorField::ALT:       return "alt";
-        case SensorField::SPEED:     return "speed";
-        case SensorField::TEMP:      return "temp";
-        case SensorField::PRESSURE:  return "pressure";
-        case SensorField::ACCEL_X:   return "accel_x";
-        case SensorField::ACCEL_Y:   return "accel_y";
-        case SensorField::ACCEL_Z:   return "accel_z";
-        case SensorField::ACCEL_MAG: return "accel_mag";
-        case SensorField::GYRO_X:    return "gyro_x";
-        case SensorField::GYRO_Y:    return "gyro_y";
-        case SensorField::GYRO_Z:    return "gyro_z";
-        case SensorField::IMU_TEMP:  return "temp";
-        default:                     return "?";
-        }
-    };
-
     for (uint8_t i = 0; i < state.conditionCount; i++)  // PO10-2: bounded
     {
         const CondExpr& expr = state.conditions[i].expr;
-        bool holds = true;   // default: condition satisfied
-        float actualVal = 0.0f;  // actual sensor / elapsed value (for logging)
-
-        switch (expr.kind)
-        {
-        case CondKind::TIME_GT:
-            // TIME.elapsed > N in a conditions: block is a watchdog.
-            // The condition HOLDS (is safe) while elapsed <= threshold.
-            // It FIRES (triggers on_error) once the deadline is exceeded.
-            actualVal = static_cast<float>(nowMs - stateEnterMs_);
-            holds = (static_cast<uint32_t>(actualVal)
-                     <= static_cast<uint32_t>(expr.threshold));
-            break;
-
-        case CondKind::SENSOR_LT:
-        case CondKind::SENSOR_GT:
-            if (readSensorFloatLocked(expr.alias, expr.field, actualVal))
-            {
-                float thr = 0.0f;
-                if (resolveVarThresholdLocked(expr, thr))
-                {
-                    holds = (expr.kind == CondKind::SENSOR_LT)
-                          ? (actualVal < thr)
-                          : (actualVal > thr);
-                }
-                // If variable not ready, treat as holds (AMS-4.8 safety).
-            }
-            // Sensor not available: treat as "holds" (don't fire on_error
-            // for missing optional sensors — AMS-5.6).
-            break;
-
-        default:
-            break;
-        }
-
-        if (!holds)
-        {
-            // Emit structured guard violation log with condition text and value.
-            char valText[16] = {};
-            char thrText[16] = {};
-            if (!formatScaledFloat(actualVal,      3U, valText, sizeof(valText)))
-            {
-                strncpy(valText, "?", sizeof(valText) - 1U);
-                valText[sizeof(valText) - 1U] = '\0';
-            }
-            if (!formatScaledFloat(expr.threshold, 3U, thrText, sizeof(thrText)))
-            {
-                strncpy(thrText, "?", sizeof(thrText) - 1U);
-                thrText[sizeof(thrText) - 1U] = '\0';
-            }
-
-            if (expr.kind == CondKind::TIME_GT)
-            {
-                LOG_W(TAG,
-                      "Guard Violation: State '%s', Condition "
-                      "'TIME.elapsed > %s' failed (Value: %sms)",
-                      state.name, thrText, valText);
-            }
-            else
-            {
-                const char* opStr = (expr.kind == CondKind::SENSOR_LT) ? "<" : ">";
-                LOG_W(TAG,
-                      "Guard Violation: State '%s', Condition "
-                      "'%s.%s %s %s' failed (Value: %s)",
-                      state.name, expr.alias,
-                      fieldName(expr.field), opStr, thrText, valText);
-            }
-
-            if (state.hasOnErrorEvent)
-            {
-                // Send immediately — setErrorLocked halts the engine next.
-                sendEventLocked(state.onErrorVerb, state.onErrorText, nowMs);
-            }
-
-            // AMS-4.10.2: if an on_error recovery transition is defined,
-            // enter the target state instead of halting in ERROR.
-            if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
-            {
-                LOG_I(TAG,
-                      "Error recovery: '%s' -> '%s' (guard violated)",
-                      state.name,
-                      program_.states[state.onErrorTransitionIdx].name);
-                enterStateLocked(state.onErrorTransitionIdx, nowMs);
-                return true;
-            }
-
-            setErrorLocked("guard condition violated");
-            return true;
-        }
+        float actualVal = 0.0f;
+        const bool holds = evaluateGuardExprHoldsLocked(expr, state, nowMs, actualVal);
+        if (!holds) { return handleGuardViolationLocked(state, expr, actualVal, nowMs); }
     }
 
     return false;
@@ -912,6 +917,60 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     (void)saveResumePointLocked(nowMs, true);
 }
 
+bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
+                                                      char*    record,
+                                                      size_t   recSize,
+                                                      int&     outWritten) const
+{
+    const uint32_t stateElapsed = nowMs - stateEnterMs_;
+    const uint32_t hkElapsed    = nowMs - lastHkMs_;
+    const uint32_t logElapsed   = nowMs - lastLogMs_;
+
+    int written = snprintf(record, recSize,
+                           "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
+                           "|%" PRIu32 "|%" PRIu32 "|%" PRIu32
+                           "|%" PRIu32 "|%" PRIu32 "|%" PRIu32,
+                           static_cast<uint32_t>(AMS_RESUME_VERSION),
+                           activeFile_,
+                           static_cast<uint32_t>(currentState_),
+                           executionEnabled_ ? 1U : 0U,
+                           running_ ? 1U : 0U,
+                           static_cast<uint32_t>(status_),
+                           static_cast<uint32_t>(seq_),
+                           stateElapsed, hkElapsed, logElapsed);
+    if (written <= 0 || static_cast<size_t>(written) >= recSize)
+    {
+        return false;
+    }
+
+    if (program_.varCount > 0U)
+    {
+        int w2 = snprintf(record + written, recSize - static_cast<size_t>(written),
+                          "|%" PRIu32, static_cast<uint32_t>(program_.varCount));
+        if (w2 > 0) { written += w2; }
+
+        for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)
+        {
+            const VarEntry& v = program_.vars[vi];
+            char floatBuf[24] = {};
+            (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
+                           static_cast<double>(v.value));
+            const int w3 = snprintf(record + written,
+                                    recSize - static_cast<size_t>(written),
+                                    "|%s=%s=%u",
+                                    v.name, floatBuf, v.valid ? 1U : 0U);
+            if (w3 > 0 &&
+                (static_cast<size_t>(written) + static_cast<size_t>(w3)) < recSize)
+            {
+                written += w3;
+            }
+        }
+    }
+
+    outWritten = written;
+    return true;
+}
+
 bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
 {
     if (!running_ || activeFile_[0] == '\0')
@@ -929,62 +988,14 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
         return false;
     }
 
-    const uint32_t stateElapsed = nowMs - stateEnterMs_;
-    const uint32_t hkElapsed = nowMs - lastHkMs_;
-    const uint32_t logElapsed = nowMs - lastLogMs_;
-
     // v2 format:
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
     //   |varCount|name1=value1=valid1|...|nameN=valueN=validN
     char record[400] = {};
     int written = 0;
-    written = snprintf(record,
-                           sizeof(record),
-                           "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
-                           "|%" PRIu32 "|%" PRIu32 "|%" PRIu32
-                           "|%" PRIu32 "|%" PRIu32 "|%" PRIu32,
-                           static_cast<uint32_t>(AMS_RESUME_VERSION),
-                           activeFile_,
-                           static_cast<uint32_t>(currentState_),
-                           executionEnabled_ ? 1U : 0U,
-                           running_ ? 1U : 0U,
-                           static_cast<uint32_t>(status_),
-                           static_cast<uint32_t>(seq_),
-                           stateElapsed,
-                           hkElapsed,
-                           logElapsed);
-    if (written <= 0 || static_cast<size_t>(written) >= sizeof(record))
+    if (!buildCheckpointRecordLocked(nowMs, record, sizeof(record), written))
     {
         return false;
-    }
-
-    // Append variable data (AMS-4.8 checkpoint v2).
-    if (program_.varCount > 0U)
-    {
-        int w2 = 0;
-        w2 = snprintf(record + written,
-                          sizeof(record) - static_cast<size_t>(written),
-                          "|%" PRIu32,
-                          static_cast<uint32_t>(program_.varCount));
-        if (w2 > 0) { written += w2; }
-
-        for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)
-        {
-            const VarEntry& v = program_.vars[vi];
-            char floatBuf[24] = {};
-            (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
-                           static_cast<double>(v.value));
-            const int w3 = snprintf(record + written,
-                                    sizeof(record) - static_cast<size_t>(written),
-                                    "|%s=%s=%u",
-                                    v.name, floatBuf,
-                                    v.valid ? 1U : 0U);
-            if (w3 > 0 &&
-                (static_cast<size_t>(written) + static_cast<size_t>(w3)) < sizeof(record))
-            {
-                written += w3;
-            }
-        }
     }
 
     const StorageStatus st = storage_.writeFile(
@@ -1015,6 +1026,100 @@ void MissionScriptEngine::clearResumePointLocked()
     {
         LOG_W(TAG, "checkpoint remove failed: %u", static_cast<uint32_t>(stRemove));
     }
+}
+
+bool MissionScriptEngine::parseCheckpointHeaderLocked(const char* buf,
+                                                      uint32_t& version,
+                                                      char*     fileName,
+                                                      uint32_t& stateIdx,
+                                                      uint32_t& execEnabled,
+                                                      uint32_t& running,
+                                                      uint32_t& status,
+                                                      uint32_t& seq,
+                                                      uint32_t& stateElapsed,
+                                                      uint32_t& hkElapsed,
+                                                      uint32_t& logElapsed) const
+{
+    const int parsed = sscanf(buf,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+                              "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
+                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
+                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
+                              &version, fileName,
+                              &stateIdx, &execEnabled, &running,
+                              &status, &seq,
+                              &stateElapsed, &hkElapsed, &logElapsed);
+    return parsed == 10;
+}
+
+void MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
+{
+    uint32_t vcStored = 0U;
+    int vc = sscanf(cursor, "%" SCNu32, &vcStored);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    if (vc != 1 || vcStored == 0U) { return; }
+
+    while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+    for (uint32_t vi = 0; vi < vcStored && *cursor != '\0'; vi++)
+    {
+        if (*cursor == '|') { cursor++; }
+        char vName[ares::AMS_VAR_NAME_LEN] = {};
+        char vValStr[24] = {};
+        uint32_t vValid  = 0U;
+        // cppcheck-suppress [cert-err34-c]
+        const int vp = sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+                              vName, vValStr, &vValid);
+        if (vp == 3)
+        {
+            VarEntry* v = findVarLocked(vName);
+            if (v != nullptr)
+            {
+                float fval = 0.0f;
+                if (parseFloatValue(vValStr, fval))
+                {
+                    v->value = fval;
+                    v->valid = (vValid != 0U);
+                }
+            }
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
+}
+
+bool MissionScriptEngine::applyCheckpointStateLocked(
+    uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
+    uint32_t running, uint32_t status, uint32_t seq,
+    uint32_t stateElapsed, uint32_t hkElapsed, uint32_t logElapsed)
+{
+    currentState_ = static_cast<uint8_t>(stateIdx);
+    stateEnterMs_ = nowMs - stateElapsed;
+    lastHkMs_     = nowMs - hkElapsed;
+    lastLogMs_    = nowMs - logElapsed;
+    seq_          = static_cast<uint8_t>(seq & 0xFFU);
+
+    running_          = (running != 0U);
+    executionEnabled_ = (execEnabled != 0U);
+    // CERT-1: validate enum range before cast to prevent undefined behaviour.
+    if (status > static_cast<uint32_t>(EngineStatus::LAST))
+    {
+        LOG_W(TAG, "resume: invalid status field %" PRIu32 " — discarding checkpoint", status);
+        clearResumePointLocked();
+        return false;
+    }
+    status_ = static_cast<EngineStatus>(status);
+
+    pendingTc_           = TcCommand::NONE;
+    pendingOnEnterEvent_ = false;
+    pendingEventText_[0] = '\0';
+    pendingEventTsMs_    = 0U;
+    lastError_[0]        = '\0';
+    lastCheckpointMs_    = nowMs;
+
+    if (!running_ || !executionEnabled_ || status_ != EngineStatus::RUNNING)
+    {
+        clearResumePointLocked();
+        return false;
+    }
+    return true;
 }
 
 bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
@@ -1051,23 +1156,12 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     uint32_t hkElapsed = 0U;
     uint32_t logElapsed = 0U;
 
-    int parsed = 0;
-    parsed = sscanf(buf,              // NOLINT(bugprone-unchecked-string-to-number-conversion)
-                              "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
-                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
-                              "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
-                              &version,
-                              fileName,
-                              &stateIdx,
-                              &execEnabled,
-                              &running,
-                              &status,
-                              &seq,
-                              &stateElapsed,
-                              &hkElapsed,
-                              &logElapsed);
+    const bool parsed = parseCheckpointHeaderLocked(buf, version, fileName,
+                                                    stateIdx, execEnabled, running,
+                                                    status, seq, stateElapsed,
+                                                    hkElapsed, logElapsed);
     // Accept v1 (no vars) and v2 (with vars).  Reject everything else.
-    if (parsed < 10
+    if (!parsed
         || (version != 1U && version != static_cast<uint32_t>(AMS_RESUME_VERSION)))
     {
         clearResumePointLocked();
@@ -1087,33 +1181,9 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
         return false;
     }
 
-    currentState_ = static_cast<uint8_t>(stateIdx);
-    stateEnterMs_ = nowMs - stateElapsed;
-    lastHkMs_ = nowMs - hkElapsed;
-    lastLogMs_ = nowMs - logElapsed;
-    seq_ = static_cast<uint8_t>(seq & 0xFFU);
-
-    running_ = (running != 0U);
-    executionEnabled_ = (execEnabled != 0U);
-    // CERT-1: validate enum range before cast to prevent undefined behaviour.
-    if (status > static_cast<uint32_t>(EngineStatus::LAST))
+    if (!applyCheckpointStateLocked(nowMs, stateIdx, execEnabled, running, status, seq,
+                                    stateElapsed, hkElapsed, logElapsed))
     {
-        LOG_W(TAG, "resume: invalid status field %" PRIu32 " — discarding checkpoint", status);
-        clearResumePointLocked();
-        return false;
-    }
-    status_ = static_cast<EngineStatus>(status);
-
-    pendingTc_ = TcCommand::NONE;
-    pendingOnEnterEvent_ = false;
-    pendingEventText_[0] = '\0';
-    pendingEventTsMs_ = 0U;
-    lastError_[0] = '\0';
-    lastCheckpointMs_ = nowMs;
-
-    if (!running_ || !executionEnabled_ || status_ != EngineStatus::RUNNING)
-    {
-        clearResumePointLocked();
         return false;
     }
 
@@ -1121,7 +1191,6 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     if (version == static_cast<uint32_t>(AMS_RESUME_VERSION))
     {
         // Locate the 11th '|'-delimited token (index 10 = varCount field).
-        // We walk past the 10 base fields and parse the remainder manually.
         const char* cursor = buf;
         uint8_t pipes = 0;
         while (*cursor != '\0' && pipes < 10U)
@@ -1129,44 +1198,9 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
             if (*cursor == '|') { pipes++; }
             cursor++;
         }
-
         if (*cursor != '\0')
         {
-            uint32_t vcStored = 0U;
-            // cppcheck-suppress [cert-err34-c]
-            int vc = 0;
-            vc = sscanf(cursor, "%" SCNu32, &vcStored);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
-            if (vc == 1 && vcStored > 0U)
-            {
-                // Advance past varCount token.
-                while (*cursor != '\0' && *cursor != '|') { cursor++; }
-
-                for (uint32_t vi = 0; vi < vcStored && *cursor != '\0'; vi++)
-                {
-                    if (*cursor == '|') { cursor++; }
-                    char vName[ares::AMS_VAR_NAME_LEN] = {};
-                    char vValStr[24] = {};
-                    uint32_t vValid  = 0U;
-                    // cppcheck-suppress [cert-err34-c]
-                    const int vp = sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
-                                          vName, vValStr, &vValid);
-                    if (vp == 3)
-                    {
-                        VarEntry* v = findVarLocked(vName);
-                        if (v != nullptr)
-                        {
-                            float fval = 0.0f;
-                            if (parseFloatValue(vValStr, fval))
-                            {
-                                v->value = fval;
-                                v->valid = (vValid != 0U);
-                            }
-                        }
-                    }
-                    // Advance past this var entry.
-                    while (*cursor != '\0' && *cursor != '|') { cursor++; }
-                }
-            }
+            restoreCheckpointVarsLocked(cursor);
         }
     }
 
@@ -1286,6 +1320,76 @@ void MissionScriptEngine::executeSetActionsLocked(StateDef& st,
  * @param[in]     nowMs  Current timestamp for event framing.
  * @pre  mutex_ is held by the caller.
  */
+void MissionScriptEngine::executeCalibrateSetActionLocked(SetAction& act,
+                                                          float&     result,
+                                                          bool&      gotReading,
+                                                          uint32_t   /*nowMs*/)
+{
+    float sum      = 0.0f;
+    uint8_t validN = 0;
+    for (uint8_t s = 0; s < act.calibSamples; s++)
+    {
+        float sample = 0.0f;
+        if (readSensorFloatLocked(act.alias, act.field, sample))
+        {
+            sum += sample;
+            validN++;
+        }
+    }
+    if (validN > 0U)
+    {
+        result     = sum / static_cast<float>(validN);
+        gotReading = true;
+        LOG_I(TAG, "CALIBRATE '%s': avg=%.3f (n=%u/%u)",
+              act.varName, static_cast<double>(result),
+              static_cast<unsigned>(validN),
+              static_cast<unsigned>(act.calibSamples));
+    }
+}
+
+void MissionScriptEngine::executeDeltaSetActionLocked(SetAction& act,
+                                                      float&     result,
+                                                      bool&      gotReading)
+{
+    float curVal = 0.0f;
+    if (readSensorFloatLocked(act.alias, act.field, curVal))
+    {
+        result            = act.deltaValid ? (curVal - act.deltaBaseline) : 0.0f;
+        act.deltaBaseline = curVal;
+        act.deltaValid    = true;
+        gotReading        = true;
+        LOG_I(TAG, "set delta '%s': delta=%.3f (cur=%.3f prev=%.3f)",
+              act.varName,
+              static_cast<double>(result),
+              static_cast<double>(curVal),
+              static_cast<double>(act.deltaBaseline - result));
+    }
+}
+
+void MissionScriptEngine::executeMinMaxSetActionLocked(SetAction&    act,
+                                                       const VarEntry* v,
+                                                       float&         result,
+                                                       bool&          gotReading)
+{
+    float curVal = 0.0f;
+    if (!readSensorFloatLocked(act.alias, act.field, curVal)) { return; }
+
+    const bool isMax = (act.kind == SetActionKind::MAX_VAR);
+    if (isMax)
+    {
+        result = (v->valid && curVal < v->value) ? v->value : curVal;
+        LOG_I(TAG, "set max '%s': %.3f (sensor=%.3f)",
+              act.varName, static_cast<double>(result), static_cast<double>(curVal));
+    }
+    else
+    {
+        result = (v->valid && curVal > v->value) ? v->value : curVal;
+        LOG_I(TAG, "set min '%s': %.3f (sensor=%.3f)",
+              act.varName, static_cast<double>(result), static_cast<double>(curVal));
+    }
+    gotReading = true;
+}
+
 void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t nowMs)
 {
     VarEntry* v = findVarLocked(act.varName);
@@ -1302,84 +1406,17 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
     switch (act.kind)
     {
     case SetActionKind::CALIBRATE:
-    {
-        float sum      = 0.0f;
-        uint8_t validN = 0;
-        for (uint8_t s = 0; s < act.calibSamples; s++)
-        {
-            float sample = 0.0f;
-            if (readSensorFloatLocked(act.alias, act.field, sample))
-            {
-                sum += sample;
-                validN++;
-            }
-        }
-        if (validN > 0U)
-        {
-            result     = sum / static_cast<float>(validN);
-            gotReading = true;
-            LOG_I(TAG, "CALIBRATE '%s': avg=%.3f (n=%u/%u)",
-                  act.varName, static_cast<double>(result),
-                  static_cast<unsigned>(validN),
-                  static_cast<unsigned>(act.calibSamples));
-        }
+        executeCalibrateSetActionLocked(act, result, gotReading, nowMs);
         break;
-    }
 
     case SetActionKind::DELTA:
-    {
-        float curVal = 0.0f;
-        if (readSensorFloatLocked(act.alias, act.field, curVal))
-        {
-            if (act.deltaValid)
-            {
-                result = curVal - act.deltaBaseline;
-            }
-            else
-            {
-                result = 0.0f;
-            }
-            act.deltaBaseline = curVal;
-            act.deltaValid    = true;
-            gotReading        = true;
-            LOG_I(TAG, "set delta '%s': delta=%.3f (cur=%.3f prev=%.3f)",
-                  act.varName,
-                  static_cast<double>(result),
-                  static_cast<double>(curVal),
-                  static_cast<double>(act.deltaBaseline - result));
-        }
+        executeDeltaSetActionLocked(act, result, gotReading);
         break;
-    }
 
     case SetActionKind::MAX_VAR:
-    {
-        float curVal = 0.0f;
-        if (readSensorFloatLocked(act.alias, act.field, curVal))
-        {
-            result = (v->valid && curVal < v->value) ? v->value : curVal;
-            gotReading = true;
-            LOG_I(TAG, "set max '%s': %.3f (sensor=%.3f)",
-                  act.varName,
-                  static_cast<double>(result),
-                  static_cast<double>(curVal));
-        }
-        break;
-    }
-
     case SetActionKind::MIN_VAR:
-    {
-        float curVal = 0.0f;
-        if (readSensorFloatLocked(act.alias, act.field, curVal))
-        {
-            result = (v->valid && curVal > v->value) ? v->value : curVal;
-            gotReading = true;
-            LOG_I(TAG, "set min '%s': %.3f (sensor=%.3f)",
-                  act.varName,
-                  static_cast<double>(result),
-                  static_cast<double>(curVal));
-        }
+        executeMinMaxSetActionLocked(act, v, result, gotReading);
         break;
-    }
 
     case SetActionKind::SIMPLE:
     default:
@@ -1422,6 +1459,36 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
  * @param[in] nowMs  Current system time in milliseconds.
  * @pre  mutex_ is held.  running_ is true.  currentState_ is valid.
  */
+bool MissionScriptEngine::evaluateTaskRuleCondLocked(const TaskRule& rule,
+                                                     uint32_t        nowMs,
+                                                     bool&           condResult) const
+{
+    condResult = false;
+    switch (rule.cond.kind)
+    {
+    case CondKind::SENSOR_LT:
+    case CondKind::SENSOR_GT:
+    {
+        float thr = 0.0f;
+        if (!resolveVarThresholdLocked(rule.cond, thr)) { return true; }
+        float val = 0.0f;
+        if (readSensorFloatLocked(rule.cond.alias, rule.cond.field, val))
+        {
+            condResult = (rule.cond.kind == CondKind::SENSOR_LT)
+                         ? (val < thr) : (val > thr);
+        }
+        return true;
+    }
+    case CondKind::TIME_GT:
+        condResult = (nowMs - stateEnterMs_) >
+                     static_cast<uint32_t>(rule.cond.threshold);
+        return true;
+    default:
+        // Delta and TC conditions are not supported in task if-rules.
+        return true;
+    }
+}
+
 void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
 {
     for (uint8_t i = 0U; i < program_.taskCount; i++)
@@ -1459,32 +1526,7 @@ void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
         {
             TaskRule& rule = td.rules[r];
             bool condResult = false;
-
-            switch (rule.cond.kind)
-            {
-            case CondKind::SENSOR_LT:
-            case CondKind::SENSOR_GT:
-            {
-                float thr = 0.0f;
-                if (!resolveVarThresholdLocked(rule.cond, thr)) { break; }
-                float val = 0.0f;
-                if (readSensorFloatLocked(rule.cond.alias, rule.cond.field, val))
-                {
-                    condResult = (rule.cond.kind == CondKind::SENSOR_LT)
-                                 ? (val < thr)
-                                 : (val > thr);
-                }
-                break;
-            }
-            case CondKind::TIME_GT:
-                condResult = (nowMs - stateEnterMs_) >
-                             static_cast<uint32_t>(rule.cond.threshold);
-                break;
-            default:
-                // Delta and TC conditions are not supported in task if-rules.
-                break;
-            }
-
+            (void)evaluateTaskRuleCondLocked(rule, nowMs, condResult);
             if (!condResult) { continue; }
 
             if (rule.hasEvent)

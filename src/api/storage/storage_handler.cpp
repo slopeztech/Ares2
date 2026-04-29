@@ -138,6 +138,41 @@ void ApiServer::handleLogsList(WiFiClient& client)
     LOG_D(TAG, "GET /api/logs 200: %u files", static_cast<uint32_t>(count));
 }
 
+// ── sendFileChunked ──────────────────────────────────────────────────────────
+
+void ApiServer::sendFileChunked(WiFiClient& client,
+                                const char* path,
+                                const char* filename,
+                                const char* contentType,
+                                uint32_t    fileSize)
+{
+    client.printf("HTTP/1.1 200 OK\r\n");
+    client.printf("Content-Type: %s\r\n", contentType);
+    client.printf("Content-Length: %" PRIu32 "\r\n", fileSize);
+    client.printf("Content-Disposition: attachment; filename=\"%s\"\r\n", filename);
+    client.print(CORS_HEADERS);
+    client.print("Connection: close\r\n");
+    client.print("\r\n");
+
+    uint8_t  chunk[ares::DOWNLOAD_CHUNK_SIZE] = {};
+    uint32_t offset = 0;
+    while (offset < fileSize && client.connected())  // PO10-2: bounded
+    {
+        uint32_t bytesRead = 0;
+        const StorageStatus st = storage_->readFileChunk(
+            path, offset, chunk, ares::DOWNLOAD_CHUNK_SIZE, bytesRead);
+        if (st != StorageStatus::OK || bytesRead == 0)
+        {
+            break;
+        }
+        ARES_ASSERT(bytesRead <= ares::DOWNLOAD_CHUNK_SIZE);
+        ARES_ASSERT((offset + bytesRead) <= fileSize);
+        client.write(chunk, bytesRead);
+        offset += bytesRead;
+    }
+    LOG_I(TAG, "GET %s 200: %" PRIu32 " bytes sent", path, offset);
+}
+
 void ApiServer::handleLogDownload(WiFiClient& client,
                                    const char* filename)
 {
@@ -168,10 +203,8 @@ void ApiServer::handleLogDownload(WiFiClient& client,
         return;
     }
 
-    // Get file size
     uint32_t fileSize = 0;
-    StorageStatus st = storage_->fileSize(path, fileSize);
-
+    const StorageStatus st = storage_->fileSize(path, fileSize);
     if (st == StorageStatus::NOT_FOUND)
     {
         sendError(client, 404, "file not found");
@@ -184,39 +217,8 @@ void ApiServer::handleLogDownload(WiFiClient& client,
         return;
     }
 
-    // Send HTTP headers for binary download
-    client.printf("HTTP/1.1 200 OK\r\n");
-    client.print("Content-Type: application/octet-stream\r\n");
-    client.printf("Content-Length: %" PRIu32 "\r\n", fileSize);
-    client.printf("Content-Disposition: attachment; filename=\"%s\"\r\n",
-                  filename);
-    client.print(CORS_HEADERS);
-    client.print("Connection: close\r\n");
-    client.print("\r\n");
-
     // REST-12.2: send in fixed-size chunks
-    uint8_t chunk[ares::DOWNLOAD_CHUNK_SIZE] = {};
-    uint32_t offset = 0;
-
-    while (offset < fileSize && client.connected())  // PO10-2: bounded
-    {
-        uint32_t bytesRead = 0;
-        st = storage_->readFileChunk(path, offset, chunk,
-                                      ares::DOWNLOAD_CHUNK_SIZE,
-                                      bytesRead);
-        if (st != StorageStatus::OK || bytesRead == 0)
-        {
-            break;  // Error or unexpected EOF
-        }
-
-        ARES_ASSERT(bytesRead <= ares::DOWNLOAD_CHUNK_SIZE);
-        ARES_ASSERT((offset + bytesRead) <= fileSize);
-
-        client.write(chunk, bytesRead);
-        offset += bytesRead;
-    }
-
-    LOG_I(TAG, "GET %s 200: %" PRIu32 " bytes sent", path, offset);
+    sendFileChunked(client, path, filename, "application/octet-stream", fileSize);
 }
 
 void ApiServer::handleLogDelete(WiFiClient& client,

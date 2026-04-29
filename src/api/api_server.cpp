@@ -395,10 +395,11 @@ void ApiServer::handleClient(WiFiClient& client)
 }
 
 void ApiServer::routeRequest(WiFiClient& client,
-                              const char* method, const char* path,
-                              const char* body, uint32_t bodyLen)
+                             const char* method,
+                             const char* path,
+                             const char* body,
+                             uint32_t    bodyLen)
 {
-    // REST-7.2: CORS preflight
     if (strcmp(method, "OPTIONS") == 0)
     {
         sendNoContent(client, 204);
@@ -406,40 +407,64 @@ void ApiServer::routeRequest(WiFiClient& client,
         return;
     }
 
+    if (routeStatusAndConfigRequest(client, method, path, body, bodyLen)) { return; }
+    if (routeFlightRequest(client, method, path, body, bodyLen)) { return; }
+
+    if (strncmp(path, "/api/logs", 9) == 0)
+    {
+        routeLogRequest(client, method, path + 9);
+        return;
+    }
+
+    if (routeMissionTopLevelRequest(client, method, path, body, bodyLen)) { return; }
+
+    sendError(client, 404, "not found");
+    LOG_W(TAG, "%s %s 404", method, path);
+}
+
+bool ApiServer::routeStatusAndConfigRequest(WiFiClient& client,
+                                            const char* method,
+                                            const char* path,
+                                            const char* body,
+                                            uint32_t    bodyLen)
+{
     if (strcmp(path, "/api/status") == 0)
     {
         if (strcmp(method, "GET") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleStatus(client);
         LOG_D(TAG, "GET /api/status 200");
+        return true;
     }
-    else if (strcmp(path, "/api/imu") == 0)
+    if (strcmp(path, "/api/imu") == 0)
     {
         if (strcmp(method, "GET") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleImuGet(client);
         LOG_D(TAG, "GET /api/imu 200");
+        return true;
     }
-    else if (strcmp(path, "/api/imu/health") == 0)
+    if (strcmp(path, "/api/imu/health") == 0)
     {
         if (strcmp(method, "GET") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleImuHealth(client);
         LOG_D(TAG, "GET /api/imu/health 200");
+        return true;
     }
-    else if (strcmp(path, "/api/config") == 0)
+    if (strcmp(path, "/api/config") == 0)
     {
         if (strcmp(method, "GET") == 0)
         {
@@ -455,131 +480,150 @@ void ApiServer::routeRequest(WiFiClient& client,
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
         }
+        return true;
     }
-    else if (strcmp(path, "/api/mode") == 0)
+    return false;
+}
+
+bool ApiServer::routeFlightRequest(WiFiClient& client,
+                                   const char* method,
+                                   const char* path,
+                                   const char* body,
+                                   uint32_t    bodyLen)
+{
+    if (strcmp(path, "/api/mode") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleMode(client, body, bodyLen);
+        return true;
     }
-    else if (strcmp(path, "/api/arm") == 0)
+    if (strcmp(path, "/api/arm") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleArm(client);
+        return true;
     }
-    else if (strcmp(path, "/api/abort") == 0)
+    if (strcmp(path, "/api/abort") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleAbort(client);
+        return true;
     }
-    else if (strcmp(path, "/api/scans/i2c") == 0)
+    if (strcmp(path, "/api/scans/i2c") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleI2cScan(client);
+        return true;
     }
-    else if (strcmp(path, "/api/scans/uart") == 0)
+    if (strcmp(path, "/api/scans/uart") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleUartScan(client);
+        return true;
     }
-    else if (strncmp(path, "/api/logs", 9) == 0)
-    {
-        routeLogRequest(client, method, path + 9);
-    }
-    else if (strcmp(path, "/api/storage/health") == 0)
+    return false;
+}
+
+bool ApiServer::routeMissionTopLevelRequest(WiFiClient& client,
+                                            const char* method,
+                                            const char* path,
+                                            const char* body,
+                                            uint32_t    bodyLen)
+{
+    if (strcmp(path, "/api/storage/health") == 0)
     {
         if (strcmp(method, "GET") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleStorageHealth(client);
+        return true;
     }
-    else if (strcmp(path, "/api/mission") == 0
-             || strcmp(path, "/api/missions/active") == 0)
+    if (strcmp(path, "/api/mission") == 0 || strcmp(path, "/api/missions/active") == 0)
     {
         if (strcmp(method, "GET") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleMissionStatus(client);
+        return true;
     }
-    else if (strncmp(path, "/api/missions", 13) == 0)
+    if (strncmp(path, "/api/missions", 13) == 0)
     {
         routeMissionRequest(client, method, path + 13, body, bodyLen);
+        return true;
     }
-    else if (strcmp(path, "/api/mission/activate") == 0)
+    if (strcmp(path, "/api/mission/activate") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleMissionActivate(client, body, bodyLen);
+        return true;
     }
-    else if (strcmp(path, "/api/mission/deactivate") == 0)
+    if (strcmp(path, "/api/mission/deactivate") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleMissionDeactivate(client);
+        return true;
     }
-    else if (strcmp(path, "/api/mission/command") == 0)
+    if (strcmp(path, "/api/mission/command") == 0)
     {
         if (strcmp(method, "POST") != 0)
         {
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s %s 405", method, path);
-            return;
+            return true;
         }
         handleMissionCommand(client, body, bodyLen);
+        return true;
     }
-    else
-    {
-        // REST-1.5: unknown route
-        sendError(client, 404, "not found");
-        LOG_W(TAG, "%s %s 404", method, path);
-    }
+    return false;
 }
 
 void ApiServer::routeLogRequest(WiFiClient& client,
-                                 const char* method,
-                                 const char* sub)
+                                const char* method,
+                                const char* sub)
 {
     if (sub[0] == '\0')
     {
-        // /api/logs (exact)
         if (strcmp(method, "GET") == 0)
         {
             handleLogsList(client);
@@ -593,33 +637,36 @@ void ApiServer::routeLogRequest(WiFiClient& client,
             sendError(client, 405, "method not allowed");
             LOG_W(TAG, "%s /api/logs 405", method);
         }
+        return;
     }
-    else if (sub[0] == '/')
-    {
-        const char* filename = sub + 1;
-        if (filename[0] == '\0')
-        {
-            sendError(client, 400, "missing filename");
-            LOG_W(TAG, "%s /api/logs/ 400: missing filename", method);
-        }
-        else if (strcmp(method, "GET") == 0)
-        {
-            handleLogDownload(client, filename);
-        }
-        else if (strcmp(method, "DELETE") == 0)
-        {
-            handleLogDelete(client, filename);
-        }
-        else
-        {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s /api/logs/%s 405", method, filename);
-        }
-    }
-    else
+
+    if (sub[0] != '/')
     {
         sendError(client, 404, "not found");
         LOG_W(TAG, "%s /api/logs%s 404", method, sub);
+        return;
+    }
+
+    const char* filename = sub + 1;
+    if (filename[0] == '\0')
+    {
+        sendError(client, 400, "missing filename");
+        LOG_W(TAG, "%s /api/logs/ 400: missing filename", method);
+        return;
+    }
+
+    if (strcmp(method, "GET") == 0)
+    {
+        handleLogDownload(client, filename);
+    }
+    else if (strcmp(method, "DELETE") == 0)
+    {
+        handleLogDelete(client, filename);
+    }
+    else
+    {
+        sendError(client, 405, "method not allowed");
+        LOG_W(TAG, "%s /api/logs/%s 405", method, filename);
     }
 }
 
