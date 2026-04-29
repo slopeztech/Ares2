@@ -35,9 +35,12 @@ void NeopixelDriver::set(const RgbColor& color)
     if (!ready_) { return; }  // guard — not yet initialised
 
     // Apply brightness scaling (CERT-4: 16-bit intermediate)
-    const uint8_t r = static_cast<uint8_t>((static_cast<uint16_t>(color.r) * brightness_) / 255U);
-    const uint8_t g = static_cast<uint8_t>((static_cast<uint16_t>(color.g) * brightness_) / 255U);
-    const uint8_t b = static_cast<uint8_t>((static_cast<uint16_t>(color.b) * brightness_) / 255U);
+    uint8_t r = 0U;
+    r = static_cast<uint8_t>((static_cast<uint16_t>(color.r) * brightness_) / 255U);
+    uint8_t g = 0U;
+    g = static_cast<uint8_t>((static_cast<uint16_t>(color.g) * brightness_) / 255U);
+    uint8_t b = 0U;
+    b = static_cast<uint8_t>((static_cast<uint16_t>(color.b) * brightness_) / 255U);
 
     neopixelWrite(pin_, r, g, b);
 }

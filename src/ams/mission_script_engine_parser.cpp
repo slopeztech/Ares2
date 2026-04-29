@@ -600,7 +600,7 @@ bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
     {
         // " retry=" is 7 chars; the digit(s) follow immediately.
         uint32_t retries = 0U;
-        if (sscanf(retryP + 7, "%" SCNu32, &retries) != 1
+        if (sscanf(retryP + 7, "%" SCNu32, &retries) != 1  // NOLINT(bugprone-unchecked-string-to-number-conversion)
             || retries == 0U
             || retries > static_cast<uint32_t>(ares::AMS_MAX_SENSOR_RETRY))
         {
@@ -906,25 +906,25 @@ bool MissionScriptEngine::parsePrioritiesValuesLocked(const char* line,
                                                       const StateDef& st)
 {
     int n = 0;
-    n = sscanf(line,
+    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                    "priorities event=%" SCNu32 " hk=%" SCNu32
                    " log=%" SCNu32 " budget=%" SCNu32,
                    &event, &hk, &log, &budget);
     if (n == 4) { return true; }
 
-    n = sscanf(line,
+    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                "priorities event=%" SCNu32 " hk=%" SCNu32
                " log=%" SCNu32,
                &event, &hk, &log);
     if (n == 3) { budget = st.actionBudget; return true; }
 
-    n = sscanf(line,
+    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                "priorities hk=%" SCNu32 " log=%" SCNu32
                " budget=%" SCNu32,
                &hk, &log, &budget);
     if (n == 3) { event = st.eventPriority; return true; }
 
-    n = sscanf(line,
+    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                "priorities hk=%" SCNu32 " log=%" SCNu32,
                &hk, &log);
     if (n == 2) { event = st.eventPriority; budget = st.actionBudget; return true; }
@@ -2551,7 +2551,7 @@ bool MissionScriptEngine::parseAssertLineLocked(const char* line)
     {
         uint32_t limit = 0;
         // cppcheck-suppress [cert-err34-c]
-        const int nr = sscanf(line, "max_transition_depth < %u", &limit);
+        const int nr = sscanf(line, "max_transition_depth < %u", &limit);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
         if (nr != 1 || limit == 0U || limit > 255U)
         {
             setErrorLocked("assert: invalid 'max_transition_depth' (expected: max_transition_depth < N, 1<=N<=255)");

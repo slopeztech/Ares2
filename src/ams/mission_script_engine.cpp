@@ -1052,7 +1052,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
     uint32_t logElapsed = 0U;
 
     int parsed = 0;
-    parsed = sscanf(buf,
+    parsed = sscanf(buf,              // NOLINT(bugprone-unchecked-string-to-number-conversion)
                               "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
@@ -1135,7 +1135,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
             uint32_t vcStored = 0U;
             // cppcheck-suppress [cert-err34-c]
             int vc = 0;
-            vc = sscanf(cursor, "%" SCNu32, &vcStored);
+            vc = sscanf(cursor, "%" SCNu32, &vcStored);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
             if (vc == 1 && vcStored > 0U)
             {
                 // Advance past varCount token.
@@ -1148,7 +1148,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
                     char vValStr[24] = {};
                     uint32_t vValid  = 0U;
                     // cppcheck-suppress [cert-err34-c]
-                    const int vp = sscanf(cursor, "%15[^=]=%23[^=]=%u",
+                    const int vp = sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                                           vName, vValStr, &vValid);
                     if (vp == 3)
                     {

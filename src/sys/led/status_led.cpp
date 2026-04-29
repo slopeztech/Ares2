@@ -89,7 +89,8 @@ void StatusLed::run()
 {
     while (true)  // RTOS: task loop — blocks on vTaskDelay
     {
-        const uint8_t rawMode = mode_.load();
+        uint8_t rawMode = 0U;
+        rawMode = mode_.load();
         const OperatingMode mode = decodeOperatingMode(rawMode);
 
         switch (mode)

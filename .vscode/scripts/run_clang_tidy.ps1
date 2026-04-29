@@ -90,11 +90,69 @@ $xtensaFlags = @(
 $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ares_ct_" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
+# ── Inject GCC implicit system include paths ──────────────────────────────────
+# GCC cross-compilers have intrinsic include search paths that are NOT listed in
+# compile_commands.json (C++ stdlib, C stdlib, GCC internals). clang-tidy uses
+# the raw compile command and therefore misses them, causing "cstdint not found",
+# "atomic not found", "stdio.h not found" errors that abort analysis and produce
+# false-positive misc-unused-parameters warnings.
+$xtensaToolchain = Join-Path $env:USERPROFILE '.platformio\packages\toolchain-xtensa-esp32s3'
+$extraIsystems   = [System.Collections.Generic.List[string]]::new()
+if (Test-Path $xtensaToolchain) {
+    # Detect GCC C++ stdlib version from the directory name under include/c++
+    $cxxBase    = Join-Path $xtensaToolchain 'xtensa-esp32s3-elf\include\c++'
+    $gccVersion = Get-ChildItem $cxxBase -Directory -ErrorAction SilentlyContinue |
+                  Select-Object -First 1 -ExpandProperty Name
+    if ($gccVersion) {
+        # C++ stdlib headers (cstdint, atomic, …)
+        $cxxDir     = (Join-Path $cxxBase $gccVersion).Replace('\', '/')
+        $cxxArchDir = (Join-Path $cxxBase "$gccVersion\xtensa-esp32s3-elf").Replace('\', '/')
+        $extraIsystems.Add("-isystem `"$cxxDir`"")
+        $extraIsystems.Add("-isystem `"$cxxArchDir`"")
+        # GCC internal headers (stdint.h, …)
+        $gccInternal = (Join-Path $xtensaToolchain "lib\gcc\xtensa-esp32s3-elf\$gccVersion\include").Replace('\', '/')
+        if (Test-Path $gccInternal) { $extraIsystems.Add("-isystem `"$gccInternal`"") }
+    }
+    # Newlib C stdlib headers (stdio.h, …)
+    $newlibInclude = (Join-Path $xtensaToolchain 'xtensa-esp32s3-elf\include').Replace('\', '/')
+    if (Test-Path $newlibInclude) { $extraIsystems.Add("-isystem `"$newlibInclude`"") }
+}
+# ── Define GCC built-in atomic macros that clang does not predefine ───────────
+# GCC's <atomic> uses __GCC_ATOMIC_*_LOCK_FREE macros which are compiler
+# built-ins emitted by gcc -dM but NOT by clang.  Without them, <atomic>
+# fails to compile when we inject the GCC C++ stdlib via -isystem above.
+# Values for xtensa-esp32s3 (LX7, 32-bit, hardware atomics for <=32-bit):
+$extraDefines = @(
+    '-D__GCC_ATOMIC_BOOL_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_CHAR_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_CHAR16_T_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_CHAR32_T_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_WCHAR_T_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_SHORT_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_INT_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_LONG_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_LLONG_LOCK_FREE=0',
+    '-D__GCC_ATOMIC_POINTER_LOCK_FREE=2',
+    '-D__GCC_ATOMIC_TEST_AND_SET_TRUEVAL=1'
+)
+
+if ($extraIsystems.Count -gt 0) {
+    Write-Host ("Injecting {0} -isystem path(s) + GCC atomic macros for toolchain headers" -f $extraIsystems.Count)
+} else {
+    Write-Warning "xtensa toolchain not found at '$xtensaToolchain' -- cstdint/stdio.h may not resolve."
+}
+
 $patchedDb = $db | ForEach-Object {
     $cmd = $_.command
     foreach ($flag in $xtensaFlags) {
         $cmd = $cmd -replace (' ' + [regex]::Escape($flag) + '(?=\s|$)'), ''
     }
+    # Inject GCC implicit system include paths so clang can find cstdint, atomic, stdio.h...
+    if ($extraIsystems.Count -gt 0) {
+        $cmd += ' ' + ($extraIsystems -join ' ')
+    }
+    # Inject GCC built-in atomic macros that clang does not predefine.
+    $cmd += ' ' + ($extraDefines -join ' ')
     # Resolve relative file path to absolute so clang-tidy can locate it.
     $absFile = $_.file
     if (-not [System.IO.Path]::IsPathRooted($absFile)) {

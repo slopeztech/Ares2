@@ -78,6 +78,8 @@ public:
 
     ScopedLock(const ScopedLock&)            = delete;
     ScopedLock& operator=(const ScopedLock&) = delete;
+    ScopedLock(ScopedLock&&)                 = delete;
+    ScopedLock& operator=(ScopedLock&&)      = delete;
 
 private:
     SemaphoreHandle_t mutex_;
