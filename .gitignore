@@ -9,4 +9,5 @@ ams_examples
 evidence
 compile_commands.json
 scripts/downloads/
+scripts/_pycache__/
 docs/doxygen/
