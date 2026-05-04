@@ -400,6 +400,20 @@ private:
     };
 
     /**
+     * One scheduled HK (telemetry) or LOG (CSV) report slot (AMS-4.3.1).
+     *
+     * A state may have up to @c AMS_MAX_HK_SLOTS of these for each of
+     * the @c every (HK) and @c log_every (LOG) directives, allowing
+     * independent cadences (e.g. IMU at 10 ms and GPS at 1 s).
+     */
+    struct HkSlot
+    {
+        uint32_t everyMs    = 0U;                            ///< Report interval (ms); 0 = unused.
+        uint8_t  fieldCount = 0U;                            ///< Number of populated fields.
+        HkField  fields[ares::AMS_MAX_HK_FIELDS] = {};      ///< Field descriptors.
+    };
+
+    /**
      * A single guard condition (evaluated every tick).
      * TC.command is intentionally excluded — use transitions for TC gates.
      */
@@ -440,15 +454,25 @@ private:
         EventVerb onEnterVerb = EventVerb::INFO;
         char onEnterText[ares::AMS_MAX_EVENT_TEXT] = {};
 
-        bool hasHkEvery = false;
-        uint32_t hkEveryMs = 0;
-        uint8_t hkFieldCount = 0;
-        HkField hkFields[ares::AMS_MAX_HK_FIELDS] = {};
+        // ── HK (every) and LOG (log_every) slots (AMS-4.3.1) ────────────────
+        // Up to AMS_MAX_HK_SLOTS independent cadences per state.
+        uint8_t hkSlotCount  = 0U;                            ///< Active every slots.
+        HkSlot  hkSlots[ares::AMS_MAX_HK_SLOTS]  = {};       ///< Scheduled HK reports.
+        uint8_t logSlotCount = 0U;                            ///< Active log_every slots.
+        HkSlot  logSlots[ares::AMS_MAX_HK_SLOTS] = {};       ///< Scheduled LOG reports.
 
-        bool hasLogEvery = false;
-        uint32_t logEveryMs = 0;
-        uint8_t logFieldCount = 0;
-        HkField logFields[ares::AMS_MAX_HK_FIELDS] = {};
+        // ── Legacy single-slot accessors (kept for telemetry helpers) ────────
+        // Mirrors hkSlots[0] / logSlots[0]; kept so existing helper code
+        // that references hasHkEvery / hkFields etc. still compiles.
+        bool     hasHkEvery   = false;
+        uint32_t hkEveryMs    = 0U;
+        uint8_t  hkFieldCount = 0U;
+        HkField  hkFields[ares::AMS_MAX_HK_FIELDS] = {};
+
+        bool     hasLogEvery   = false;
+        uint32_t logEveryMs    = 0U;
+        uint8_t  logFieldCount = 0U;
+        HkField  logFields[ares::AMS_MAX_HK_FIELDS] = {};
 
         uint8_t hkPriority    = 2;  ///< Higher value = higher priority.
         uint8_t logPriority   = 1;  ///< Keep local log below PUS HK by default.
@@ -544,8 +568,7 @@ private:
     bool parseStateLineLocked(const char* line, uint8_t& currentState);
     bool parseEventLineLocked(const char* line, StateDef& st);
     bool parseEveryLineLocked(const char* line, StateDef& st);
-    bool parseLogEveryLineLocked(const char* line, StateDef& st);
-    static bool parsePrioritiesValuesLocked(const char* line,
+    bool parseLogEveryLineLocked(const char* line, StateDef& st);    static bool parsePrioritiesValuesLocked(const char* line,
                                             uint32_t& event,
                                             uint32_t& hk,
                                             uint32_t& log,
@@ -703,7 +726,11 @@ private:
                                     float           actualVal,
                                     uint32_t        nowMs);
     void sendHkReportLocked(uint32_t nowMs);
+    void sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot);       ///< AMS-4.3.1: single slot variant.
     void appendLogReportLocked(uint32_t nowMs);
+    void appendLogReportSlotLocked(uint32_t nowMs,
+                                   const HkSlot& slot,
+                                   uint8_t slotIdx);                       ///< AMS-4.3.1: single slot variant.
     bool writeLogHeaderIfNeededLocked(const StateDef& st);
     bool buildLogDataRowLocked(const StateDef& st,
                                uint32_t        nowMs,
@@ -764,6 +791,9 @@ private:
     uint32_t stateEnterMs_ = 0;
     uint32_t lastHkMs_ = 0;
     uint32_t lastLogMs_ = 0;
+    /// Per-slot last-fire timestamps (AMS-4.3.1). Index matches hkSlots[]/logSlots[].
+    uint32_t lastHkSlotMs_[ares::AMS_MAX_HK_SLOTS]  = {};
+    uint32_t lastLogSlotMs_[ares::AMS_MAX_HK_SLOTS] = {};
     bool pendingOnEnterEvent_ = false;
     EventVerb pendingEventVerb_ = EventVerb::INFO;
     char pendingEventText_[ares::AMS_MAX_EVENT_TEXT] = {};
@@ -785,6 +815,7 @@ private:
     bool  transitionPrevValid_[ares::AMS_MAX_TRANSITION_CONDS] = {};
 
     bool logHeaderWritten_ = false;
+    bool logSlotHeaderWritten_[ares::AMS_MAX_HK_SLOTS] = {}; ///< Per-slot CSV header written flags (AMS-4.3.1).
     uint32_t lastCheckpointMs_ = 0;
 
     // ── IMU read cache ────────────────────────────────────────────────────────
@@ -814,6 +845,10 @@ private:
     // ── Parser context for task blocks (valid only during parseScriptLocked) ──
     uint8_t  parseCurrentTask_     = 0xFFU; ///< Index of task being parsed; 0xFF = none.
     uint8_t  parseCurrentTaskRule_ = 0xFFU; ///< Index of current if-rule within task; 0xFF = none.
+
+    // ── Parser context for multi-slot every/log_every (AMS-4.3.1) ────────────
+    uint8_t  parseCurrentHkSlot_  = 0xFFU; ///< Index of HK slot being parsed; 0xFF = none.
+    uint8_t  parseCurrentLogSlot_ = 0xFFU; ///< Index of LOG slot being parsed; 0xFF = none.
 };
 
 } // namespace ams

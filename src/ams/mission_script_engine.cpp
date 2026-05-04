@@ -136,6 +136,8 @@ bool MissionScriptEngine::activate(const char* fileName)
     seq_ = 0;
     lastHkMs_ = 0;
     lastLogMs_ = 0;
+    memset(lastHkSlotMs_,  0U, sizeof(lastHkSlotMs_));
+    memset(lastLogSlotMs_, 0U, sizeof(lastLogSlotMs_));
 
     uint8_t startIdx = 0;
     const uint8_t waitIdx = findStateByNameLocked("WAIT");
@@ -326,12 +328,14 @@ void MissionScriptEngine::tick(uint32_t nowMs)
 
     (void)saveResumePointLocked(nowMs, false);
 
-    const bool hasActiveHk = state.hasHkEvery
-                          && state.hkEveryMs > 0U
-                          && state.hkFieldCount > 0U;
-    const bool hasActiveLog = state.hasLogEvery
-                           && state.logEveryMs > 0U
-                           && state.logFieldCount > 0U;
+    const bool hasActiveHk = (state.hkSlotCount > 0U)
+                          || (state.hasHkEvery
+                              && state.hkEveryMs > 0U
+                              && state.hkFieldCount > 0U);
+    const bool hasActiveLog = (state.logSlotCount > 0U)
+                           || (state.hasLogEvery
+                               && state.logEveryMs > 0U
+                               && state.logFieldCount > 0U);
     if (!state.hasTransition
         && !state.hasFallback
         && !pendingOnEnterEvent_
@@ -558,19 +562,52 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
 {
     ARES_ASSERT(currentState_ < program_.stateCount);
 
-    const bool hkDue = state.hasHkEvery
-                    && state.hkEveryMs > 0U
-                    && state.hkFieldCount > 0U
-                    && ((nowMs - lastHkMs_) >= state.hkEveryMs);
+    // AMS-4.3.1: evaluate due status for every HK and LOG slot.
+    // Slots beyond hkSlotCount/logSlotCount are never due.
+    bool hkSlotDue[ares::AMS_MAX_HK_SLOTS]  = {};
+    bool logSlotDue[ares::AMS_MAX_HK_SLOTS] = {};
 
-    const bool logDue = state.hasLogEvery
-                     && state.logEveryMs > 0U
-                     && state.logFieldCount > 0U
-                     && ((nowMs - lastLogMs_) >= state.logEveryMs);
+    for (uint8_t s = 0; s < state.hkSlotCount; s++)
+    {
+        const HkSlot& sl = state.hkSlots[s];
+        hkSlotDue[s] = (sl.everyMs > 0U)
+                    && (sl.fieldCount > 0U)
+                    && ((nowMs - lastHkSlotMs_[s]) >= sl.everyMs);
+    }
+    for (uint8_t s = 0; s < state.logSlotCount; s++)
+    {
+        const HkSlot& sl = state.logSlots[s];
+        logSlotDue[s] = (sl.everyMs > 0U)
+                     && (sl.fieldCount > 0U)
+                     && ((nowMs - lastLogSlotMs_[s]) >= sl.everyMs);
+    }
+
+    // Legacy single-slot due flags (used by pickBestDueActionIndex).
+    // A slot group is "due" if any slot within it is due.
+    bool anyHkDue  = false;
+    bool anyLogDue = false;
+    for (uint8_t s = 0; s < state.hkSlotCount;  s++) { if (hkSlotDue[s])  { anyHkDue  = true; break; } }
+    for (uint8_t s = 0; s < state.logSlotCount; s++) { if (logSlotDue[s]) { anyLogDue = true; break; } }
+
+    // Fall back to legacy single-slot logic when no multi-slot data is present.
+    if (state.hkSlotCount == 0U)
+    {
+        anyHkDue = state.hasHkEvery
+                && state.hkEveryMs > 0U
+                && state.hkFieldCount > 0U
+                && ((nowMs - lastHkMs_) >= state.hkEveryMs);
+    }
+    if (state.logSlotCount == 0U)
+    {
+        anyLogDue = state.hasLogEvery
+                 && state.logEveryMs > 0U
+                 && state.logFieldCount > 0U
+                 && ((nowMs - lastLogMs_) >= state.logEveryMs);
+    }
 
     const bool eventDue = pendingOnEnterEvent_;
 
-    bool due[3] = {eventDue, hkDue, logDue};
+    bool due[3] = {eventDue, anyHkDue, anyLogDue};
     const uint8_t priorities[3] = {
         state.eventPriority,
         state.hkPriority,
@@ -592,19 +629,54 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
             sendEventLocked(pendingEventVerb_, pendingEventText_, pendingEventTsMs_);
             pendingOnEnterEvent_ = false;
             pendingEventText_[0] = '\0';
+            due[0] = false;
         }
         else if (best == 1)
         {
-            sendHkReportLocked(nowMs);
-            lastHkMs_ += state.hkEveryMs;
+            // AMS-4.3.1: fire all due HK slots within this budget step.
+            if (state.hkSlotCount > 0U)
+            {
+                for (uint8_t s = 0; s < state.hkSlotCount; s++)
+                {
+                    if (hkSlotDue[s])
+                    {
+                        sendHkReportSlotLocked(nowMs, state.hkSlots[s]);
+                        lastHkSlotMs_[s] += state.hkSlots[s].everyMs;
+                        hkSlotDue[s] = false;
+                    }
+                }
+            }
+            else
+            {
+                // Legacy fallback.
+                sendHkReportLocked(nowMs);
+                lastHkMs_ += state.hkEveryMs;
+            }
+            due[1] = false;
         }
         else
         {
-            appendLogReportLocked(nowMs);
-            lastLogMs_ += state.logEveryMs;
+            // AMS-4.3.1: fire all due LOG slots within this budget step.
+            if (state.logSlotCount > 0U)
+            {
+                for (uint8_t s = 0; s < state.logSlotCount; s++)
+                {
+                    if (logSlotDue[s])
+                    {
+                        appendLogReportSlotLocked(nowMs, state.logSlots[s], s);
+                        lastLogSlotMs_[s] += state.logSlots[s].everyMs;
+                        logSlotDue[s] = false;
+                    }
+                }
+            }
+            else
+            {
+                // Legacy fallback.
+                appendLogReportLocked(nowMs);
+                lastLogMs_ += state.logEveryMs;
+            }
+            due[2] = false;
         }
-
-        due[static_cast<uint8_t>(best)] = false;
     }
 }
 

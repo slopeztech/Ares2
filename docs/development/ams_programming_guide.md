@@ -63,6 +63,8 @@ on_enter:
 
 Use `every` + `HK.report` for PUS telemetry over radio.
 
+A single `every` block per state is sufficient for one cadence:
+
 ```ams
 every 1000ms:
   HK.report {
@@ -70,6 +72,19 @@ every 1000ms:
     baro_alt: BARO.alt
   }
 ```
+
+**Multiple `every` blocks per state (AMS-4.3.1):** Up to `AMS_MAX_HK_SLOTS` (currently 4) independent
+cadences can be declared in the same state. Each block generates its own independent PUS-3 HK frame:
+
+```ams
+state FLIGHT:
+  every 1000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  gps_alt: GPS.alt }
+  every 50ms:
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+```
+
+Each slot fires at its own cadence independently. The minimum interval is `TELEMETRY_INTERVAL_MIN` (100 ms).
 
 ### 2.4 Local Sensor Logging (File)
 
@@ -83,6 +98,22 @@ log_every 200ms:
     pressure: BARO.pressure
   }
 ```
+
+**Multiple `log_every` blocks per state (AMS-4.3.1):** Similarly, up to `AMS_MAX_HK_SLOTS` (4) log cadences
+can coexist per state. Each slot appends its own rows to the same CSV file. The CSV includes a `slot` column
+(0-based index) to distinguish cadences in post-flight analysis:
+
+```ams
+state FLIGHT:
+  log_every 1000ms:
+    LOG.report { gps_lat: GPS.lat  gps_lon: GPS.lon }
+  log_every 10ms:
+    LOG.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+```
+
+CSV row format: `t_ms, state, slot, <fields...>`
+
+The slot header (`t_ms,state,slot,...`) is written once per slot on first use.
 
 ### 2.5 conditions + on_error
 
@@ -109,7 +140,7 @@ Current profile notes:
 
 ## 3. Independent Cadence Strategy
 
-Common pattern:
+Common pattern — one HK cadence over radio, one LOG cadence to file:
 - HK every `1000ms` (lower bandwidth, radio-safe)
 - LOG every `200ms` (higher local resolution)
 
@@ -120,6 +151,27 @@ every 1000ms:
 log_every 200ms:
   LOG.report { ... }
 ```
+
+For scenarios requiring multiple independent sensor cadences within the same state,
+use multiple `every` / `log_every` blocks (AMS-4.3.1):
+
+```ams
+state FLIGHT:
+  every 1000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  baro_alt: BARO.alt }
+  every 100ms:
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+  log_every 1000ms:
+    LOG.report { gps_lat: GPS.lat  gps_lon: GPS.lon }
+  log_every 10ms:
+    LOG.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+```
+
+Constraints:
+- Max `AMS_MAX_HK_SLOTS = 4` blocks of each type per state
+- Each slot is independent — its timer resets when the state is activated
+- Budget arbitration (APUS-19.2) still applies: if multiple slots and tasks are due
+  in the same tick, the engine dispatches up to `actionBudget` actions in priority order
 
 Recommendation:
 - Keep LOG faster than HK during dynamic phases (ascent/descent)

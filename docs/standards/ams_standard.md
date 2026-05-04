@@ -165,6 +165,8 @@ Allowed statements inside a state:
 
 ### AMS-4.3 Independent HK/LOG Cadence
 
+A state may declare a single pair of `every` / `log_every` blocks:
+
 ```ams
 every 1000ms:
   HK.report { ... }
@@ -173,10 +175,38 @@ log_every 200ms:
   LOG.report { ... }
 ```
 
+#### AMS-4.3.1 Multiple cadences per state
+
+Each state may declare up to `AMS_MAX_HK_SLOTS` (currently 4) independent `every` blocks
+and up to `AMS_MAX_HK_SLOTS` independent `log_every` blocks. Each block constitutes a
+**slot** with its own cadence timer and its own field list:
+
+```ams
+state FLIGHT:
+  every 1000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  baro_alt: BARO.alt }
+  every 50ms:
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+  log_every 1000ms:
+    LOG.report { gps_lat: GPS.lat  gps_lon: GPS.lon }
+  log_every 10ms:
+    LOG.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+```
+
+Normative constraints:
+- Each `every` block generates an independent PUS-3 HK frame at its declared cadence.
+- Each `log_every` block appends independent rows to the mission CSV file.
+- Slot timers reset to zero on state activation (`activate()`).
+- The minimum allowed cadence is `TELEMETRY_INTERVAL_MIN` (100 ms).
+- All slot arrays are statically allocated; no heap allocation (PO10-3).
+- Exceeding `AMS_MAX_HK_SLOTS` in a single state is a parse-time error.
+- CSV rows include a `slot` column (0-based) to distinguish cadences: `t_ms, state, slot, <fields...>`.
+- Each slot's CSV header is written once on its first active row.
+
 Rules:
 - `HK.report` requires a preceding `every` block
 - `LOG.report` requires a preceding `log_every` block
-- HK and LOG use independent per-state timers
+- HK and LOG slots use independent per-slot per-state timers
 
 ### AMS-4.4 Priorities and Tick Budget
 

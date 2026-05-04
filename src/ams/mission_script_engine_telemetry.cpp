@@ -90,6 +90,52 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
     }
 }
 
+// ── sendHkReportSlotLocked ───────────────────────────────────────────────────
+
+/**
+ * @brief Build and transmit a PUS TM Service 3 housekeeping frame for one slot.
+ *
+ * AMS-4.3.1: each @c every block creates an independent @c HkSlot.
+ * This function builds a @c TelemetryPayload from the slot's field list
+ * and transmits it, independent of the legacy single-slot path.
+ *
+ * @param[in] nowMs  Current millis() timestamp.
+ * @param[in] slot   The HK slot to transmit.
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot)
+{
+    ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
+    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
+
+    TelemetryPayload tm = {};
+    tm.timestampMs = nowMs;
+    tm.statusBits  = {};
+
+    for (uint8_t i = 0; i < slot.fieldCount; i++)
+    {
+        applyHkFieldToPayloadLocked(slot.fields[i], tm);
+    }
+
+    Frame frame = {};
+    frame.ver   = PROTOCOL_VERSION;
+    frame.flags = 0;
+    frame.node  = program_.nodeId;
+    frame.type  = MsgType::TELEMETRY;
+    frame.seq   = seq_++;
+    frame.len   = static_cast<uint8_t>(sizeof(TelemetryPayload));
+    memcpy(frame.payload, &tm, sizeof(tm));
+
+    if (!sendFrameLocked(frame))
+    {
+        LOG_W(TAG, "HK slot frame send failed");
+    }
+    else
+    {
+        LOG_D(TAG, "HK slot frame sent seq=%u len=%u", frame.seq, frame.len);
+    }
+}
+
 // ── applyHkFieldToPayloadLocked ──────────────────────────────────────────────
 
 /**
@@ -193,6 +239,89 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
     if (stAppend != StorageStatus::OK)
     {
         LOG_W(TAG, "append mission log failed: %u",
+              static_cast<uint32_t>(stAppend));
+    }
+}
+
+// ── appendLogReportSlotLocked ────────────────────────────────────────────────
+
+/**
+ * @brief Append a CSV data row for one log_every slot (AMS-4.3.1).
+ *
+ * Each @c log_every slot has an independent cadence and field list.
+ * A per-slot CSV header is written on the first call for that slot,
+ * then data rows are appended on subsequent calls.
+ *
+ * @param[in] nowMs    Current millis() timestamp.
+ * @param[in] slot     The LOG slot descriptor (fields + interval).
+ * @param[in] slotIdx  Zero-based slot index (used to track header state).
+ * @pre  Caller holds the engine mutex.  @c logPath_ is set.
+ */
+void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
+                                                    const HkSlot& slot,
+                                                    uint8_t       slotIdx)
+{
+    if (currentState_ >= program_.stateCount) { return; }
+    ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
+    if (slot.everyMs == 0U || slot.fieldCount == 0U || logPath_[0] == '\0') { return; }
+    ARES_ASSERT(slotIdx < ares::AMS_MAX_HK_SLOTS);
+
+    const StateDef& st = program_.states[currentState_];
+
+    // Write per-slot header if this is the first row for this slot.
+    if (!logSlotHeaderWritten_[slotIdx])
+    {
+        char hLine[256] = {};
+        const int hLen = snprintf(hLine, sizeof(hLine), "t_ms,state,slot");
+        if (hLen > 0)
+        {
+            uint32_t hPos = static_cast<uint32_t>(hLen);
+            for (uint8_t i = 0; i < slot.fieldCount && hPos < sizeof(hLine) - 2U; i++)
+            {
+                const int n = snprintf(&hLine[hPos], sizeof(hLine) - hPos,
+                                       ",%s", slot.fields[i].label);
+                if (n <= 0) { break; }
+                hPos += static_cast<uint32_t>(n);
+            }
+            const int nl = snprintf(&hLine[hPos], sizeof(hLine) - hPos, "\n");
+            if (nl > 0)
+            {
+                const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
+                storage_.appendFile(logPath_,
+                                    reinterpret_cast<const uint8_t*>(hLine), hTot);
+                logSlotHeaderWritten_[slotIdx] = true;
+            }
+        }
+    }
+
+    // Build data row: t_ms, state_name, slot_index, field values.
+    char line[256] = {};
+    int head = snprintf(line, sizeof(line), "%" PRIu32 ",%s,%u",
+                        nowMs, st.name, static_cast<uint32_t>(slotIdx));
+    if (head <= 0) { return; }
+
+    uint32_t pos = static_cast<uint32_t>(head);
+    for (uint8_t i = 0; i < slot.fieldCount && pos < sizeof(line) - 2U; i++)
+    {
+        char value[32] = {};
+        const bool hasValue = formatHkFieldValueLocked(slot.fields[i], value, sizeof(value));
+        const int n = hasValue
+                    ? snprintf(&line[pos], sizeof(line) - pos, ",%s", value)
+                    : snprintf(&line[pos], sizeof(line) - pos, ",");
+        if (n <= 0) { break; }
+        pos += static_cast<uint32_t>(n);
+    }
+
+    const int tail = snprintf(&line[pos], sizeof(line) - pos, "\n");
+    if (tail <= 0) { return; }
+    const uint32_t totalLen = pos + static_cast<uint32_t>(tail);
+
+    const StorageStatus stAppend = storage_.appendFile(
+        logPath_, reinterpret_cast<const uint8_t*>(line), totalLen);
+    if (stAppend != StorageStatus::OK)
+    {
+        LOG_W(TAG, "append log slot %u failed: %u",
+              static_cast<uint32_t>(slotIdx),
               static_cast<uint32_t>(stAppend));
     }
 }
@@ -313,6 +442,7 @@ bool MissionScriptEngine::ensureLogFileLocked(const char* fileName)
     }
 
     logHeaderWritten_ = false;
+    memset(logSlotHeaderWritten_, 0, sizeof(logSlotHeaderWritten_));
     const StorageStatus stWrite = storage_.writeFile(
         logPath_, reinterpret_cast<const uint8_t*>(""), 0U);
     return stWrite == StorageStatus::OK;

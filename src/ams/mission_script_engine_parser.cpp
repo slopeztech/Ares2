@@ -134,6 +134,11 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
     program_.apid   = ares::AMS_DEFAULT_APID;
     program_.nodeId = ares::DEFAULT_NODE_ID;
 
+    parseCurrentTask_     = 0xFFU;
+    parseCurrentTaskRule_ = 0xFFU;
+    parseCurrentHkSlot_   = 0xFFU;
+    parseCurrentLogSlot_  = 0xFFU;
+
     BlockType blockType   = BlockType::NONE;
     uint8_t currentState  = ares::AMS_MAX_STATES;
 
@@ -359,9 +364,11 @@ bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
     if (startsWith(line, "pus.apid")) { return parsePusApidDirectiveLocked(line); }
     if (startsWith(line, "state "))
     {
-        blockType             = BlockType::NONE;
-        parseCurrentTask_     = 0xFFU;
-        parseCurrentTaskRule_ = 0xFFU;
+        blockType              = BlockType::NONE;
+        parseCurrentTask_      = 0xFFU;
+        parseCurrentTaskRule_  = 0xFFU;
+        parseCurrentHkSlot_    = 0xFFU;
+        parseCurrentLogSlot_   = 0xFFU;
         return parseStateLineLocked(line, currentState);
     }
     if (startsWith(line, "var "))   { return parseVarLineLocked(line); }
@@ -541,11 +548,45 @@ bool MissionScriptEngine::parseStateBlockContentLocked(const char* line,
     }
     if (blockType == BlockType::HK)
     {
-        return parseFieldLineLocked(line, st.hkFields, st.hkFieldCount, "HK");
+        // AMS-4.3.1: fill the active HK slot, and mirror into legacy slot-0 fields.
+        if (parseCurrentHkSlot_ >= st.hkSlotCount)
+        {
+            setErrorLocked("HK field outside every block");
+            return false;
+        }
+        HkSlot& slot = st.hkSlots[parseCurrentHkSlot_];
+        if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "HK")) { return false; }
+        // Keep legacy fields in sync with slot-0 for single-slot code paths.
+        if (parseCurrentHkSlot_ == 0U)
+        {
+            st.hkFieldCount = slot.fieldCount;
+            if (slot.fieldCount > 0U)
+            {
+                st.hkFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
+            }
+        }
+        return true;
     }
     if (blockType == BlockType::LOG)
     {
-        return parseFieldLineLocked(line, st.logFields, st.logFieldCount, "LOG");
+        // AMS-4.3.1: fill the active LOG slot, and mirror into legacy slot-0 fields.
+        if (parseCurrentLogSlot_ >= st.logSlotCount)
+        {
+            setErrorLocked("LOG field outside log_every block");
+            return false;
+        }
+        HkSlot& slot = st.logSlots[parseCurrentLogSlot_];
+        if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "LOG")) { return false; }
+        // Keep legacy fields in sync with slot-0 for single-slot code paths.
+        if (parseCurrentLogSlot_ == 0U)
+        {
+            st.logFieldCount = slot.fieldCount;
+            if (slot.fieldCount > 0U)
+            {
+                st.logFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
+            }
+        }
+        return true;
     }
     handled = false;
     return true;
@@ -837,6 +878,19 @@ bool MissionScriptEngine::parseEveryLineLocked(const char* line, StateDef& st)
     st.hasHkEvery   = true;
     st.hkEveryMs    = everyMs;
     st.hkFieldCount = 0;
+
+    // AMS-4.3.1: allocate a new HK slot for this every directive.
+    if (st.hkSlotCount >= ares::AMS_MAX_HK_SLOTS)
+    {
+        setErrorLocked("too many every blocks in state (max AMS_MAX_HK_SLOTS)");
+        return false;
+    }
+    const uint8_t slotIdx = st.hkSlotCount;
+    st.hkSlots[slotIdx].everyMs    = everyMs;
+    st.hkSlots[slotIdx].fieldCount = 0U;
+    st.hkSlotCount++;
+    parseCurrentHkSlot_ = slotIdx;
+
     return true;
 }
 
@@ -899,6 +953,19 @@ bool MissionScriptEngine::parseLogEveryLineLocked(const char* line, StateDef& st
     st.hasLogEvery   = true;
     st.logEveryMs    = everyMs;
     st.logFieldCount = 0;
+
+    // AMS-4.3.1: allocate a new LOG slot for this log_every directive.
+    if (st.logSlotCount >= ares::AMS_MAX_HK_SLOTS)
+    {
+        setErrorLocked("too many log_every blocks in state (max AMS_MAX_HK_SLOTS)");
+        return false;
+    }
+    const uint8_t slotIdx = st.logSlotCount;
+    st.logSlots[slotIdx].everyMs    = everyMs;
+    st.logSlots[slotIdx].fieldCount = 0U;
+    st.logSlotCount++;
+    parseCurrentLogSlot_ = slotIdx;
+
     return true;
 }
 

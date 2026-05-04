@@ -112,6 +112,7 @@ constexpr uint8_t     AMS_MAX_STATES       = 10;           ///< Max states per m
 constexpr uint8_t     AMS_MAX_STATE_NAME   = 16;           ///< Max state name length.
 constexpr uint8_t     AMS_MAX_EVENT_TEXT   = 64;           ///< Max EVENT message text.
 constexpr uint8_t     AMS_MAX_HK_FIELDS    = 16;           ///< Max HK fields inside report block.
+constexpr uint8_t     AMS_MAX_HK_SLOTS     = 4U;           ///< Max every/log_every blocks per state (AMS-4.3.1).
 constexpr uint8_t     AMS_MAX_CONDITIONS        = 4;  ///< Max guard conditions per state.
 constexpr uint8_t     AMS_MAX_TRANSITION_CONDS = 4;  ///< Max sub-conditions in one transition (AMS-4.6.2).
 constexpr uint8_t     AMS_MAX_VARS             = 8U; ///< Max global variables per script (AMS-4.8).
