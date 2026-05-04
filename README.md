@@ -78,17 +78,18 @@ Related documents:
 | **DX-LR03-433T30D** | UART2     | LoRa 433/868 MHz (current profile), telemetry downlink |
 | **BN-220**          | UART1     | u-blox GNSS, NMEA 0183 (GGA + RMC)            |
 | **BMP280**          | I2C       | Barometer + temperature (barometric altitude)  |
-| **MPU-6050**        | I2C       | 6-axis IMU (accelerometer ±2g + gyro ±250°/s) |
+| **ADXL375**         | I2C       | Primary IMU — 3-axis accelerometer ±200 g (shock-rated) |
+| **MPU-6050**        | I2C       | Secondary IMU — 6-axis (accelerometer ±2g + gyro ±250°/s) |
 | **WS2812B**         | GPIO 21   | RGB status LED (Neopixel)                      |
-
-Note: The BMP280 and, especially, the MPU-6050 are currently being used for testing purposes. They are planned to be replaced with higher-precision hardware, and support (drivers) for these new sensors will be added in future versions.
 
 ### Pin Map
 
 | GPIO | Function       | Notes                              |
 |------|----------------|------------------------------------|
-| 1    | I2C SDA        | BMP280 + MPU-6050                  |
-| 2    | I2C SCL        | 400 kHz fast mode                  |
+| 1    | I2C0 SDA       | BMP280 (barometer bus)             |
+| 2    | I2C0 SCL       | 400 kHz fast mode                  |
+| 12   | I2C1 SDA       | ADXL375 + MPU-6050 (IMU bus)       |
+| 13   | I2C1 SCL       | 50 kHz                             |
 | 5    | GPS UART1 RX   | ← BN-220 TX                        |
 | 6    | GPS UART1 TX   | → BN-220 RX                        |
 | 7    | LoRa UART2 TX  | → DX-LR03 RX                       |
@@ -129,7 +130,8 @@ The firmware follows a **HAL → Driver → Engine** pattern where all applicati
                │
    ┌───────────▼────────────────────────────────────────────┐
    │                  Concrete Drivers                       │
-   │  Bmp280Driver · Bn220Driver · Mpu6050Driver             │
+   │  Bmp280Driver · Bn220Driver                            │
+   │  Adxl375Driver · Mpu6050Driver                          │
    │  DxLr03Driver · LittleFsStorage · NeopixelDriver        │
    └────────────────────────────────────────────────────────┘
 ```
@@ -142,7 +144,7 @@ The firmware follows a **HAL → Driver → Engine** pattern where all applicati
 
 - The AMS engine owns mission state, transition evaluation, guard checks, and local logging/telemetry scheduling.
 - The API server exposes a ground-operations surface over WiFi for configuration, mission upload/activation, and arming.
-- HAL interfaces isolate application logic from specific devices such as the BMP280, BN-220, MPU-6050, and DX-LR03.
+- HAL interfaces isolate application logic from specific devices such as the BMP280, BN-220, ADXL375, MPU-6050, and DX-LR03.
 - The radio path emits compact PUS-adapted binary frames, while LittleFS preserves higher-rate logs that do not fit the telemetry budget.
 
 ### Memory Management
@@ -344,7 +346,7 @@ CRC-32 binary protocol over LoRa UART. Transport-agnostic — works over any UAR
 | PAYLOAD | 0–200 B | PUS ST[3] or ST[5] data                 |
 | CRC-32  | 4 B     | Over bytes [4..9+LEN] (Ethernet poly)    |
 
-The HK telemetry payload is a fixed 38-byte struct (APUS-3.6), aligned with the adapted PUS standard (APUS). The MPU-6050 `accelMag` field is the only IMU value mapped directly into the telemetry payload; all other IMU axes are available in local logs only.
+The HK telemetry payload is a fixed 38-byte struct (APUS-3.6), aligned with the adapted PUS standard (APUS). The `accelMag` field of the active IMU (ADXL375 by default) is the only IMU value mapped directly into the telemetry payload; all other IMU axes are available in local logs only.
 
 ARES does not implement the full ESA PUS stack. Instead it uses an embedded-friendly adaptation called APUS, which keeps the service-oriented structure of PUS while reducing framing and runtime complexity for a small flight computer. In practice that means:
 
@@ -567,7 +569,7 @@ Ares2/
 │   ├── drivers/
 │   │   ├── baro/                  # Bmp280Driver
 │   │   ├── gps/                   # Bn220Driver
-│   │   ├── imu/                   # Mpu6050Driver
+│   │   ├── imu/                   # Adxl375Driver (primary), Mpu6050Driver (secondary)
 │   │   └── radio/                 # DxLr03Driver
 │   ├── hal/
 │   │   ├── baro/                  # BarometerInterface

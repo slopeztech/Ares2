@@ -483,7 +483,7 @@ Valid expressions for HK.report and LOG.report:
 - `IMU.temp` — On-chip temperature (°C)
 
 IMU transitions support `IMU.accel_x`, `IMU.accel_y`, `IMU.accel_z`, and `IMU.accel_mag`.
-If no MPU-6050 is connected (or read fails) at runtime:
+If no IMU is connected (or if the active IMU read fails) at runtime:
 - Transition conditions using IMU fields evaluate as false (no transition trigger).
 - Guard conditions in `conditions:` treat missing sensor data as "holds" (no immediate ERROR).
 - LOG.report writes `nan` for unreadable IMU fields to preserve CSV column alignment.

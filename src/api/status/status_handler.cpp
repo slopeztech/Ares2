@@ -23,9 +23,10 @@ static void appendBaroSnapshot(BarometerInterface& baro,
     const BaroStatus baroSt = baro.read(baroData);
     const bool baroOk = (baroSt == BaroStatus::OK);
     doc["health"]["baro"] = baroOk;
+    JsonObject obj = doc["baro"].to<JsonObject>();
+    obj["driver"] = baro.driverModel();
     if (baroOk)
     {
-        JsonObject obj = doc["baro"].to<JsonObject>();
         obj["pressurePa"]   = baroData.pressurePa;
         obj["temperatureC"] = baroData.temperatureC;
         obj["altitudeM"]    = baroData.altitudeM;
@@ -38,9 +39,10 @@ static void appendGpsSnapshot(GpsInterface& gps, JsonDocument& doc)
     const GpsStatus gpsSt = gps.read(gpsData);
     const bool gpsOk = (gpsSt == GpsStatus::OK);
     doc["health"]["gps"] = gpsOk;
+    JsonObject obj = doc["gps"].to<JsonObject>();
+    obj["driver"] = gps.driverModel();
     if (gpsOk)
     {
-        JsonObject obj = doc["gps"].to<JsonObject>();
         obj["fix"]        = true;
         obj["latitude"]   = gpsData.latitude;
         obj["longitude"]  = gpsData.longitude;
@@ -58,9 +60,10 @@ static void appendImuSnapshot(ImuInterface& imu, JsonDocument& doc)
     const ImuStatus imuSt = imu.read(imuData);
     const bool imuOk = (imuSt == ImuStatus::OK);
     doc["health"]["imu"] = imuOk;
+    JsonObject obj = doc["imu"].to<JsonObject>();
+    obj["driver"] = imu.driverModel();
     if (imuOk)
     {
-        JsonObject obj = doc["imu"].to<JsonObject>();
         obj["accelX"] = imuData.accelX;
         obj["accelY"] = imuData.accelY;
         obj["accelZ"] = imuData.accelZ;

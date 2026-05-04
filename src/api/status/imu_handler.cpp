@@ -35,8 +35,9 @@ void ApiServer::handleImuGet(WiFiClient& client)
     const ImuStatus st = imu_.read(imuData);
 
     JsonDocument doc;
-    doc["ok"] = (st == ImuStatus::OK);
-    doc["status"] = imuStatusToString(st);
+    doc["ok"]          = (st == ImuStatus::OK);
+    doc["status"]      = imuStatusToString(st);
+    doc["driver"]      = imu_.driverModel();
     doc["timestampMs"] = millis();
 
     if (st == ImuStatus::OK)
@@ -62,8 +63,9 @@ void ApiServer::handleImuHealth(WiFiClient& client)
     const ImuStatus st = imu_.read(imuData);
 
     JsonDocument doc;
-    doc["ok"] = (st == ImuStatus::OK);
-    doc["status"] = imuStatusToString(st);
+    doc["ok"]          = (st == ImuStatus::OK);
+    doc["status"]      = imuStatusToString(st);
+    doc["driver"]      = imu_.driverModel();
     doc["timestampMs"] = millis();
 
     char buf[ares::API_MAX_RESPONSE_BODY] = {};

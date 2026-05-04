@@ -135,7 +135,7 @@ If `ok` is `false`, only `ok`, `status`, and `timestampMs` are present.
 
 #### `POST /api/scans/i2c`
 
-**When to use:** After first assembly or any hardware change. Confirm that BMP280 (`0x76` or `0x77`) and MPU-6050 (`0x68` or `0x69`) are present and correctly wired before flight.
+**When to use:** After first assembly or any hardware change. Confirm that BMP280 (`0x76` or `0x77`), ADXL375 (`0x53`), and MPU-6050 (`0x68`, if fitted) are present and correctly wired before flight.
 
 **Why:** An I2C device missing from the scan means a wiring fault, a missing pull-up, or a broken solder joint. Catching this on the bench avoids a silent sensor failure mid-flight. The scan covers the full valid I2C address range (`0x03–0x77`) across all registered buses.
 
@@ -508,7 +508,7 @@ Command name max length: 16 characters.
 
 ```
 1. GET  /api/status                      # verify sensors and mode = IDLE
-2. POST /api/scans/i2c                   # confirm BMP280 + MPU-6050 addresses
+2. POST /api/scans/i2c                   # confirm BMP280 + ADXL375 (+ MPU-6050 if fitted)
 3. POST /api/scans/uart                  # confirm GPS NMEA stream + LoRa ready
 4. GET  /api/storage/health              # confirm LittleFS mounted
 5. GET  /api/missions                    # list stored scripts

@@ -19,6 +19,7 @@
 #include "drivers/baro/bmp280_driver.h"
 #include "drivers/gps/bn220_driver.h"
 #include "drivers/imu/mpu6050_driver.h"
+#include "drivers/imu/adxl375_driver.h"
 #include "drivers/radio/dxlr03_driver.h"
 #include "sys/led/neopixel_driver.h"
 #include "sys/led/status_led.h"
@@ -46,6 +47,7 @@ static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
                              ares::PIN_LORA_RX, ares::PIN_LORA_AUX,
                              ares::LORA_UART_BAUD);
 static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
+static Adxl375Driver  imu2(imuWire, ares::ADXL375_I2C_ADDR);
 static NeopixelDriver led(ares::PIN_LED_RGB);
 static StatusLed      statusLed(led);
 
@@ -56,19 +58,19 @@ static WifiAp wifiAp;
 static LittleFsStorage storage;
 
 // Interface references — all downstream code uses these.
-static BarometerInterface& baroIf    = baro;
-static GpsInterface&       gpsIf     = gps;
 static LedInterface&       ledIf     = led;
 static StorageInterface&   storageIf = storage;
 static RadioInterface&     radioIf   = radio;
-static ImuInterface&       imuIf     = imu;
-
 // Driver registries — enumerate every physical peripheral available to AMS scripts.
 // Scripts select which driver to use via: include MODEL as ALIAS
-static const ares::ams::GpsEntry  kGpsDrivers[]  = { { "BN220",   &gpsIf   } };
-static const ares::ams::BaroEntry kBaroDrivers[]  = { { "BMP280",  &baroIf  } };
-static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03",  &radioIf } };
-static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", &imuIf   } };
+static BarometerInterface* const  kBaroIfaces[]   = { &baro };
+static GpsInterface* const        kGpsIfaces[]    = { &gps  };
+static const ares::ams::GpsEntry  kGpsDrivers[]   = { { "BN220",  kGpsIfaces[0]  } };
+static const ares::ams::BaroEntry kBaroDrivers[]  = { { "BMP280", kBaroIfaces[0] } };
+static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03", &radioIf } };
+static ImuInterface* const        kImuIfaces[]    = { &imu, &imu2 };
+static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", kImuIfaces[0] },
+                                                       { "ADXL375", kImuIfaces[1] } };
 
 // REST API server — receives references to interfaces.
 static ares::ams::MissionScriptEngine missionEngine(
@@ -76,8 +78,8 @@ static ares::ams::MissionScriptEngine missionEngine(
     kGpsDrivers,  static_cast<uint8_t>(1),
     kBaroDrivers, static_cast<uint8_t>(1),
     kComDrivers,  static_cast<uint8_t>(1),
-    kImuDrivers,  static_cast<uint8_t>(1));
-static ApiServer apiServer(wifiAp, baroIf, gpsIf, imuIf,
+    kImuDrivers,  static_cast<uint8_t>(2));
+static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
                            &storageIf, &missionEngine,
                            &statusLed,
                            &Wire, &imuWire,
@@ -100,10 +102,9 @@ void setup()
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
     imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
 
-    (void)baroIf.begin();
-    (void)imuIf.begin();
-
-    (void)gpsIf.begin();
+    for (BarometerInterface* iface : kBaroIfaces) { (void)iface->begin(); }
+    for (ImuInterface*        iface : kImuIfaces)  { (void)iface->begin(); }
+    for (GpsInterface*        iface : kGpsIfaces)  { (void)iface->begin(); }
 
     // Status LED — NeoPixel on GPIO 21
     (void)ledIf.begin();
@@ -146,7 +147,7 @@ void loop()
 
     // GPS bytes must be consumed every iteration to keep
     // the UART FIFO from overflowing (72-byte HW FIFO).
-    gpsIf.update();
+    for (GpsInterface* iface : kGpsIfaces) { iface->update(); }
 
     // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(now);

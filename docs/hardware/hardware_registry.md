@@ -108,7 +108,7 @@ Full details: [gps_bn220.md](gps_bn220.md)
 
 ---
 
-### MPU-6050 IMU (Accelerometer + Gyroscope)
+### MPU-6050 IMU (Accelerometer + Gyroscope) — secondary
 
 | Property          | Value                                         |
 |-------------------|-----------------------------------------------|
@@ -140,6 +140,39 @@ Pins: I2C SDA/SCL per board (see [Pin Map](pin_map.md)).
 
 `IMU.accel_mag` is the only IMU field mapped to the fixed-layout
 `TelemetryPayload` (HK frame). All IMU tokens are available in `LOG.report`.
+
+---
+
+### ADXL375 High-g Accelerometer — primary IMU
+
+| Property          | Value                                                |
+|-------------------|------------------------------------------------------|
+| Type              | I2C 3-axis accelerometer (shock / high-g)            |
+| Sensor            | Analog Devices ADXL375                               |
+| I2C Address       | 0x53 (ALT_ADDRESS/CS → GND, default)                |
+| Accel Range       | ±200 g (fixed), 49 mg/LSB                           |
+| Gyro              | None — gyro fields of ImuReading are 0.0f            |
+| Temperature       | None — tempC is 0.0f                                 |
+| Sample Rate       | 100 Hz (BW_RATE=0x0A, normal power, FIFO bypass)     |
+| Supply            | 3.3 V                                                |
+| Driver            | `Adxl375Driver` (`src/drivers/imu/`)                 |
+| HAL Interface     | `ImuInterface` (`src/hal/imu/`)                      |
+
+Pins: same I2C1 SDA/SCL as MPU-6050 (GPIO 12/13) — addresses are distinct (0x53 vs 0x68),
+no bus conflict.  See [Pin Map](pin_map.md).
+
+**AMS sensor tokens** (via `include ADXL375 as IMU`):
+
+| Token            | Unit   | Description                                  |
+|------------------|--------|----------------------------------------------|
+| `IMU.accel_x`    | m/s²   | Acceleration X axis                          |
+| `IMU.accel_y`    | m/s²   | Acceleration Y axis                          |
+| `IMU.accel_z`    | m/s²   | Acceleration Z axis                          |
+| `IMU.accel_mag`  | m/s²   | Acceleration vector magnitude `√(x²+y²+z²)` |
+| `IMU.gyro_x`     | deg/s  | Always 0.0 (no gyroscope)                   |
+| `IMU.gyro_y`     | deg/s  | Always 0.0 (no gyroscope)                   |
+| `IMU.gyro_z`     | deg/s  | Always 0.0 (no gyroscope)                   |
+| `IMU.temp`       | °C     | Always 0.0 (no on-chip temperature sensor)  |
 
 ---
 

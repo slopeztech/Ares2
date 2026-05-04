@@ -71,6 +71,18 @@ constexpr uint8_t BMP280_I2C_ADDR = 0x77;  ///< SDO → VCC (AHT20+BMP280 defaul
 // ── IMU (I2C MPU-6050) ──────────────────────────────────────
 constexpr uint8_t MPU6050_I2C_ADDR = 0x68; ///< AD0 → GND (default address).
 
+// ── IMU (I2C ADXL375) ───────────────────────────────────────
+constexpr uint8_t ADXL375_I2C_ADDR  = 0x53U; ///< ALT_ADDRESS/CS → GND (default address).
+constexpr uint8_t ADXL375_SETTLE_MS = 5U;    ///< Wait after POWER_CTL → Measure before first read.
+
+// ── IMU (SPI ADXL375) ───────────────────────────────────────
+/// Chip-select GPIO for the SPI ADXL375 variant.  Assign per schematic.
+constexpr uint8_t  ADXL375_SPI_CS_PIN   = 10U;
+/// SPI clock frequency — 5 MHz max per ADXL375 datasheet §Serial Comm.
+constexpr uint32_t ADXL375_SPI_FREQ_HZ  = 5000000UL;
+/// SPI bus index passed to SPIClass (HSPI=1).  Override as needed.
+constexpr uint8_t  ADXL375_SPI_BUS      = 1U;
+
 // ── UART (GPS) ──────────────────────────────────────────────
 constexpr uint32_t GPS_BAUD      = 9600;   ///< Factory default baud rate.
 
