@@ -88,7 +88,7 @@ ENDPOINTS: list[EndpointDef] = [
         "Mission activate",
         "POST",
         "/api/mission/activate",
-        '{"file":"lectura_baro.ams"}',
+        '{"file":"flight_test.ams"}',
         "application/json",
         "Activate script",
     ),
