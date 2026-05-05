@@ -709,7 +709,10 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
 
         if (best == 0)
         {
-            sendEventLocked(pendingEventVerb_, pendingEventText_, pendingEventTsMs_);
+            sendEventLocked(pendingEventVerb_,
+                            ares::proto::EventId::PHASE_CHANGE,
+                            pendingEventText_,
+                            pendingEventTsMs_);
             pendingOnEnterEvent_ = false;
             pendingEventText_[0] = '\0';
             due[0] = false;
@@ -931,7 +934,10 @@ bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
 
     if (state.hasOnErrorEvent)
     {
-        sendEventLocked(state.onErrorVerb, state.onErrorText, nowMs);
+        sendEventLocked(state.onErrorVerb,
+                        ares::proto::EventId::FPL_VIOLATION,
+                        state.onErrorText,
+                        nowMs);
     }
 
     if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
@@ -1595,7 +1601,9 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
         snprintf(warnMsg, sizeof(warnMsg),
                  "set '%s': sensor read failed, value not updated", act.varName);
         LOG_W(TAG, "%s", warnMsg);
-        sendEventLocked(EventVerb::WARN, warnMsg, nowMs);
+        sendEventLocked(EventVerb::WARN,
+                        ares::proto::EventId::SENSOR_FAILURE,
+                        warnMsg, nowMs);
     }
 }
 
@@ -1686,7 +1694,9 @@ void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
 
             if (rule.hasEvent)
             {
-                sendEventLocked(rule.eventVerb, rule.eventText, nowMs);
+                sendEventLocked(rule.eventVerb,
+                                inferEventId(rule.eventVerb),
+                                rule.eventText, nowMs);
             }
             if (rule.hasSet)
             {

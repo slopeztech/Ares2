@@ -92,6 +92,47 @@ private:
     uint8_t  lastRxSeq_ = 0U;    ///< SEQ of the last accepted COMMAND (APUS-4.7).
     bool     seenFirst_ = false; ///< True after the first COMMAND is accepted.
 
+    // ── TX retry buffer (APUS-4.5, APUS-4.6, APUS-2.3) ─────────────────────
+    /**
+     * One slot in the retransmission buffer.
+     *
+     * When a frame is sent via @c sendReliable() a copy is stored here.
+     * If no ACK for that SEQ arrives within @c proto::ACK_TIMEOUT_MS the
+     * frame is re-sent (with @c FLAG_RETRANSMIT added) up to
+     * @c proto::MAX_RETRIES times, then abandoned.
+     */
+    struct TxRetrySlot
+    {
+        proto::Frame frame;      ///< Copy of the outgoing frame awaiting ACK.
+        uint32_t     sentMs;     ///< Timestamp of the most recent send attempt.
+        uint8_t      retries;    ///< Retransmission count (0 on first send).
+        bool         active;     ///< true = slot occupied and awaiting ACK.
+    };
+    static constexpr uint8_t kMaxRetrySlots = 4U;
+    TxRetrySlot retrySlots_[kMaxRetrySlots] = {};
+
+    // ── Priority command queue (APUS-2.1, APUS-2.2, APUS-2.4) ──────────────
+    static constexpr uint8_t kCriticalPriority = 0U;  ///< ABORT, FIRE_PYRO, FACTORY_RESET.
+    static constexpr uint8_t kHighPriority     = 1U;  ///< ARM, SET_MODE, SET_FCS_ACTIVE.
+    static constexpr uint8_t kNormalPriority   = 2U;  ///< REQUEST_TELEMETRY, SET_TELEM_INTERVAL.
+    static constexpr uint8_t kLowPriority      = 3U;  ///< REQUEST_STATUS, config queries.
+
+    /// Max queued commands (2 per priority level × 4 levels).
+    static constexpr uint8_t kCmdQueueDepth = 8U;
+
+    /**
+     * One queued command awaiting priority-ordered execution.
+     * The acceptance ACK has already been sent at insertion time.
+     */
+    struct PendingCmd
+    {
+        proto::Frame frame;     ///< Full decoded command frame copy.
+        uint8_t      priority;  ///< 0=CRITICAL … 3=LOW (lower = higher priority).
+        bool         active;    ///< true = slot occupied.
+    };
+    PendingCmd cmdQueue_[kCmdQueueDepth] = {};
+    uint8_t    cmdQueueCount_ = 0U;       ///< Number of active entries in cmdQueue_.
+
     // ── Internal helpers ─────────────────────────────────────
 
     /**
@@ -122,8 +163,8 @@ private:
      * Sequence:
      *   1. Duplicate-SEQ check — discard silently if duplicate (APUS-4.7).
      *   2. Acceptance ACK — sent unconditionally (APUS-9.1).
-     *   3. executeCommand() — returns FailureCode result.
-     *   4. Completion ACK/NACK — sent only if FLAG_ACK_REQ (APUS-9.3).
+     *   3. enqueueCmd() — insert into the priority queue (APUS-2.2).
+     *   4. Completion ACK/NACK deferred to drainCmdQueue().
      *
      * @param[in] frame  Decoded COMMAND frame.
      * @param[in] nowMs  Current millis() timestamp.
@@ -169,6 +210,71 @@ private:
      * @return FailureCode::NONE on success, or a specific FailureCode on error.
      */
     proto::FailureCode executeCommand(const proto::Frame& frame, uint32_t nowMs);
-};
+
+    // ── TX retry helpers (APUS-4.5, APUS-4.6) ───────────────────────────────
+
+    /**
+     * @brief Store a frame copy for retransmission-on-timeout (APUS-4.5).
+     * @param[in] frame  Frame already sent; must have @c FLAG_ACK_REQ set.
+     * @param[in] nowMs  Current timestamp.
+     * @return true if a free slot was found; false if the buffer is full.
+     */
+    bool enqueueRetry(const proto::Frame& frame, uint32_t nowMs);
+
+    /**
+     * @brief Check all active retry slots; retransmit or expire as needed (APUS-4.6).
+     * @param[in] nowMs  Current timestamp.
+     */
+    void processRetries(uint32_t nowMs);
+
+    /**
+     * @brief Remove the retry slot whose stored SEQ matches @p seq (APUS-4.5).
+     * Called when an ACK is received for that SEQ.
+     * @param[in] seq  SEQ field from the received ACK payload.
+     */
+    void clearRetryForSeq(uint8_t seq);
+
+    // ── Priority-queue command helpers (APUS-2.1, APUS-2.2, APUS-2.4) ───────
+
+    /**
+     * @brief Map a CommandId to its priority level (APUS-2.1).
+     * @return 0=CRITICAL, 1=HIGH, 2=NORMAL, 3=LOW.
+     */
+    static uint8_t commandPriority(proto::CommandId id);
+
+    /**
+     * @brief Insert a command into the priority queue (APUS-2.2).
+     * @param[in] frame  Fully decoded COMMAND frame.
+     * @return true on success; false if the queue is full.
+     */
+    bool enqueueCmd(const proto::Frame& frame);
+
+    /**
+     * @brief Execute all queued commands in priority order (APUS-2.1, APUS-2.4).
+     *
+     * Each iteration finds the highest-priority active slot and executes it.
+     * Sends completion ACK/NACK for entries with FLAG_ACK_REQ set (APUS-9.3).
+     * CRITICAL (0) executes before HIGH (1) before NORMAL (2) before LOW (3).
+     *
+     * @param[in] nowMs  Forwarded to executeCommand().
+     */
+    void drainCmdQueue(uint32_t nowMs);
+
+public:
+    /**
+     * @brief Encode and transmit a frame, registering it for retransmission
+     *        on timeout if no ACK is received within @c proto::ACK_TIMEOUT_MS
+     *        (APUS-4.5, APUS-4.6).
+     *
+     * Sets @c FLAG_ACK_REQ automatically.  If the retry buffer is full the
+     * frame is still sent once (best-effort with a warning log).
+     *
+     * @param[in] frame  Fully populated frame (@c seq and @c node must be set).
+     * @param[in] nowMs  Current millis() timestamp.
+     * @return true if the frame was successfully encoded and sent.
+     */
+    bool sendReliable(const proto::Frame& frame, uint32_t nowMs);
+
+}; // class RadioDispatcher
 
 } // namespace ares

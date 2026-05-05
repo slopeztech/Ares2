@@ -60,6 +60,9 @@ void RadioDispatcher::poll(uint32_t nowMs)
     {
         processBuffer(nowMs);
     }
+
+    processRetries(nowMs);
+    drainCmdQueue(nowMs);
 }
 
 // ── processBuffer ─────────────────────────────────────────────────────────────
@@ -196,9 +199,24 @@ void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs)
         break;
 
     case proto::MsgType::ACK:
-        LOG_D(TAG, "RX ACK seq=%u — discarded",
-              static_cast<unsigned>(frame.seq));
+    {
+        // Clear the matching retry slot when an ACK confirms a sendReliable frame.
+        if (frame.len >= static_cast<uint8_t>(sizeof(proto::AckPayload)))
+        {
+            proto::AckPayload ack = {};
+            (void)memcpy(&ack, frame.payload, sizeof(ack));
+            clearRetryForSeq(ack.originalSeq);
+            LOG_D(TAG, "RX ACK seq=%u clears retry for origSeq=%u",
+                  static_cast<unsigned>(frame.seq),
+                  static_cast<unsigned>(ack.originalSeq));
+        }
+        else
+        {
+            LOG_D(TAG, "RX ACK seq=%u (no retry data)",
+                  static_cast<unsigned>(frame.seq));
+        }
         break;
+    }
 
     case proto::MsgType::NONE:
     default:
@@ -230,18 +248,18 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
     lastRxSeq_ = frame.seq;
     seenFirst_ = true;
 
-    // ── Execute command and capture result code ─────────────────────────────
-    const proto::FailureCode result = executeCommand(frame, nowMs);
-
-    // ── APUS-9.3: completion ACK/NACK — only if FLAG_ACK_REQ ───────────────
-    if ((frame.flags & proto::FLAG_ACK_REQ) != 0U)
+    // ── APUS-2.2: insert into the priority queue; drainCmdQueue() executes ──
+    if (!enqueueCmd(frame))
     {
-        // Carry commandId as diagnostic byte in the completion NACK (APUS-9.4).
-        const uint8_t diagByte = (result != proto::FailureCode::NONE)
-                                 ? frame.payload[1U]   // CommandHeader.commandId
-                                 : 0U;
-        sendAckNack(frame.seq, frame.node, result, diagByte);
+        // Queue full: send completion NACK immediately (APUS-9.3).
+        if ((frame.flags & proto::FLAG_ACK_REQ) != 0U)
+        {
+            sendAckNack(frame.seq, frame.node,
+                        proto::FailureCode::QUEUE_FULL,
+                        frame.payload[1U]);  // CommandHeader.commandId as diagnostic
+        }
     }
+    // Completion ACK/NACK for queued commands is sent by drainCmdQueue().
 }
 
 // ── handleHeartbeat ───────────────────────────────────────────────────────────
@@ -532,4 +550,282 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame,
     }
 }
 
+// ── enqueueRetry ──────────────────────────────────────────────────────────────
+
+/**
+ * @brief Store a frame copy in the TX retry buffer (APUS-4.5).
+ *
+ * Must only be called for frames that have @c FLAG_ACK_REQ set.  The frame
+ * is retransmitted by @c processRetries() if no ACK arrives in time.
+ *
+ * @param[in] frame  Frame that was just sent (copy stored here).
+ * @param[in] nowMs  Timestamp of this send attempt.
+ * @return true if a free slot was found; false if the buffer is full.
+ */
+bool RadioDispatcher::enqueueRetry(const proto::Frame& frame, uint32_t nowMs)
+{
+    for (uint8_t i = 0U; i < kMaxRetrySlots; ++i)
+    {
+        if (!retrySlots_[i].active)
+        {
+            retrySlots_[i].frame   = frame;
+            retrySlots_[i].sentMs  = nowMs;
+            retrySlots_[i].retries = 0U;
+            retrySlots_[i].active  = true;
+            return true;
+        }
+    }
+    LOG_W(TAG, "retry buffer full — seq=%u sent best-effort",
+          static_cast<unsigned>(frame.seq));
+    return false;
+}
+
+// ── processRetries ────────────────────────────────────────────────────────────
+
+/**
+ * @brief Retransmit or expire timed-out frames (APUS-4.5, APUS-4.6, APUS-2.3).
+ *
+ * For each active retry slot: if @c ACK_TIMEOUT_MS has elapsed since the
+ * last send and the retry count is below @c MAX_RETRIES, re-sends the frame
+ * with @c FLAG_RETRANSMIT set.  Expires the slot after @c MAX_RETRIES attempts.
+ *
+ * @param[in] nowMs  Current timestamp.
+ */
+void RadioDispatcher::processRetries(uint32_t nowMs)
+{
+    for (uint8_t i = 0U; i < kMaxRetrySlots; ++i)
+    {
+        TxRetrySlot& slot = retrySlots_[i];
+        if (!slot.active) { continue; }
+
+        const uint32_t elapsed = nowMs - slot.sentMs;
+        if (elapsed < static_cast<uint32_t>(proto::ACK_TIMEOUT_MS)) { continue; }
+
+        if (slot.retries >= static_cast<uint8_t>(proto::MAX_RETRIES))
+        {
+            LOG_W(TAG, "retry exhausted seq=%u after %u attempts — giving up",
+                  static_cast<unsigned>(slot.frame.seq),
+                  static_cast<unsigned>(slot.retries));
+            slot.active = false;
+            continue;
+        }
+
+        // Set FLAG_RETRANSMIT on the copy (APUS-2.3).
+        slot.frame.flags = static_cast<uint8_t>(slot.frame.flags | proto::FLAG_RETRANSMIT);
+
+        uint8_t wire[proto::MAX_FRAME_LEN] = {};
+        const uint16_t wireLen = proto::encode(slot.frame, wire, sizeof(wire));
+        if (wireLen > 0U)
+        {
+            (void)radio_.send(wire, wireLen);
+            slot.retries++;
+            slot.sentMs = nowMs;
+            LOG_D(TAG, "RETRANSMIT seq=%u attempt %u/%u",
+                  static_cast<unsigned>(slot.frame.seq),
+                  static_cast<unsigned>(slot.retries),
+                  static_cast<unsigned>(proto::MAX_RETRIES));
+        }
+    }
+}
+
+// ── clearRetryForSeq ──────────────────────────────────────────────────────────
+
+/**
+ * @brief Deactivate the retry slot whose SEQ matches @p seq (APUS-4.5).
+ *
+ * Called on receipt of an ACK from the ground station to confirm delivery.
+ *
+ * @param[in] seq  SEQ of the original sent frame, taken from AckPayload.originalSeq.
+ */
+void RadioDispatcher::clearRetryForSeq(uint8_t seq)
+{
+    for (uint8_t i = 0U; i < kMaxRetrySlots; ++i)
+    {
+        if (retrySlots_[i].active && retrySlots_[i].frame.seq == seq)
+        {
+            retrySlots_[i].active = false;
+            LOG_D(TAG, "retry cleared for seq=%u", static_cast<unsigned>(seq));
+            return;
+        }
+    }
+}
+
+// ── sendReliable ──────────────────────────────────────────────────────────────
+
+/**
+ * @brief Encode and transmit a frame with automatic retransmission-on-timeout.
+ *
+ * Sets @c FLAG_ACK_REQ, sends the encoded frame, then stores a copy in the
+ * retry buffer so @c processRetries() can re-send it if no ACK arrives within
+ * @c proto::ACK_TIMEOUT_MS (APUS-4.5).
+ *
+ * @param[in] frame  Frame to send; @c seq must already be set.
+ * @param[in] nowMs  Current millis() timestamp.
+ * @return true if encode + send succeeded; false on encode failure.
+ */
+bool RadioDispatcher::sendReliable(const proto::Frame& frame, uint32_t nowMs)
+{
+    proto::Frame f    = frame;
+    f.flags = static_cast<uint8_t>(f.flags | proto::FLAG_ACK_REQ);
+
+    uint8_t wire[proto::MAX_FRAME_LEN] = {};
+    const uint16_t wireLen = proto::encode(f, wire, sizeof(wire));
+    if (wireLen == 0U) { return false; }
+
+    const bool ok = (radio_.send(wire, wireLen) == RadioStatus::OK);
+    if (ok)
+    {
+        (void)enqueueRetry(f, nowMs);
+        LOG_D(TAG, "TX reliable seq=%u (retries up to %u if no ACK in %u ms)",
+              static_cast<unsigned>(f.seq),
+              static_cast<unsigned>(proto::MAX_RETRIES),
+              static_cast<unsigned>(proto::ACK_TIMEOUT_MS));
+    }
+    return ok;
+}
+
+// ── commandPriority ───────────────────────────────────────────────────────────
+
+/**
+ * @brief Return the priority level for a given CommandId (APUS-2.1).
+ *
+ * Priority levels:
+ *   - 0 (CRITICAL): ABORT, FIRE_PYRO_A/B, FACTORY_RESET
+ *   - 1 (HIGH):     ARM_FLIGHT, SET_MODE, SET_FCS_ACTIVE, SET_CONFIG_PARAM
+ *   - 2 (NORMAL):   REQUEST_TELEMETRY, SET_TELEM_INTERVAL
+ *   - 3 (LOW):      REQUEST_STATUS, REQUEST_CONFIG, VERIFY_CONFIG
+ *
+ * @param[in] id  Command identifier.
+ * @return Priority level 0–3 (lower value = higher priority).
+ */
+uint8_t RadioDispatcher::commandPriority(proto::CommandId id)
+{
+    switch (id)
+    {
+    case proto::CommandId::ABORT:
+    case proto::CommandId::FIRE_PYRO_A:
+    case proto::CommandId::FIRE_PYRO_B:
+    case proto::CommandId::FACTORY_RESET:
+        return kCriticalPriority;
+
+    case proto::CommandId::ARM_FLIGHT:
+    case proto::CommandId::SET_MODE:
+    case proto::CommandId::SET_FCS_ACTIVE:
+    case proto::CommandId::SET_CONFIG_PARAM:
+        return kHighPriority;
+
+    case proto::CommandId::REQUEST_TELEMETRY:
+    case proto::CommandId::SET_TELEM_INTERVAL:
+        return kNormalPriority;
+
+    case proto::CommandId::REQUEST_STATUS:
+    case proto::CommandId::REQUEST_CONFIG:
+    case proto::CommandId::VERIFY_CONFIG:
+    default:
+        return kLowPriority;
+    }
+}
+
+// ── enqueueCmd ────────────────────────────────────────────────────────────────
+
+/**
+ * @brief Insert a decoded COMMAND frame into the priority queue (APUS-2.2).
+ *
+ * The priority is derived from the CommandId via @c commandPriority().
+ * If the queue is full @c QUEUE_FULL is logged and the function returns false;
+ * the caller is responsible for sending the NACK.
+ *
+ * @param[in] frame  Decoded COMMAND frame (acceptance ACK already sent).
+ * @return true on success; false if the queue is full.
+ */
+bool RadioDispatcher::enqueueCmd(const proto::Frame& frame)
+{
+    if (cmdQueueCount_ >= kCmdQueueDepth)
+    {
+        LOG_W(TAG, "CMD queue full seq=%u — command dropped",
+              static_cast<unsigned>(frame.seq));
+        return false;
+    }
+
+    // CommandHeader: [0]=priority_field, [1]=commandId
+    const auto cmdId = static_cast<proto::CommandId>(frame.payload[1U]);
+    const uint8_t prio = commandPriority(cmdId);
+
+    for (uint8_t i = 0U; i < kCmdQueueDepth; ++i)
+    {
+        if (!cmdQueue_[i].active)
+        {
+            cmdQueue_[i].frame    = frame;
+            cmdQueue_[i].priority = prio;
+            cmdQueue_[i].active   = true;
+            cmdQueueCount_++;
+            LOG_D(TAG, "CMD enqueued seq=%u id=0x%02X prio=%u qsize=%u",
+                  static_cast<unsigned>(frame.seq),
+                  static_cast<unsigned>(frame.payload[1U]),
+                  static_cast<unsigned>(prio),
+                  static_cast<unsigned>(cmdQueueCount_));
+            return true;
+        }
+    }
+    return false;  // Defensive: should not reach here when cmdQueueCount_ < kCmdQueueDepth.
+}
+
+// ── drainCmdQueue ─────────────────────────────────────────────────────────────
+
+/**
+ * @brief Execute all queued commands in priority order (APUS-2.1, APUS-2.4).
+ *
+ * Each iteration performs a linear scan to find the active slot with the
+ * lowest priority value (0 = CRITICAL).  The slot is cleared before
+ * @c executeCommand() is called so that a re-entrant poll() cannot
+ * double-execute it.  Completion ACK/NACK is sent here for entries with
+ * @c FLAG_ACK_REQ set (APUS-9.3).
+ *
+ * The outer loop is bounded by @c kCmdQueueDepth (PO10-2).
+ *
+ * @param[in] nowMs  Forwarded to executeCommand().
+ */
+void RadioDispatcher::drainCmdQueue(uint32_t nowMs)
+{
+    for (uint8_t n = 0U; n < kCmdQueueDepth; ++n)
+    {
+        // Find highest-priority (lowest value) active slot.
+        int8_t  best     = -1;
+        uint8_t bestPrio = 0xFFU;
+        for (uint8_t i = 0U; i < kCmdQueueDepth; ++i)
+        {
+            if (cmdQueue_[i].active && cmdQueue_[i].priority < bestPrio)
+            {
+                bestPrio = cmdQueue_[i].priority;
+                best     = static_cast<int8_t>(i);
+            }
+        }
+
+        if (best < 0) { break; }  // Queue empty.
+
+        // Dequeue before executing so the slot is free if executeCommand()
+        // re-enters poll() indirectly (e.g. via engine callbacks).
+        PendingCmd cmd = cmdQueue_[static_cast<uint8_t>(best)];
+        cmdQueue_[static_cast<uint8_t>(best)].active = false;
+        cmdQueueCount_--;
+
+        const proto::FailureCode result = executeCommand(cmd.frame, nowMs);
+
+        // ── APUS-9.3: completion ACK/NACK if FLAG_ACK_REQ ─────────────────
+        if ((cmd.frame.flags & proto::FLAG_ACK_REQ) != 0U)
+        {
+            const uint8_t diagByte = (result != proto::FailureCode::NONE)
+                                     ? cmd.frame.payload[1U]  // commandId as diagnostic
+                                     : 0U;
+            sendAckNack(cmd.frame.seq, cmd.frame.node, result, diagByte);
+        }
+
+        LOG_D(TAG, "CMD executed seq=%u prio=%u result=0x%02X",
+              static_cast<unsigned>(cmd.frame.seq),
+              static_cast<unsigned>(cmd.priority),
+              static_cast<unsigned>(static_cast<uint8_t>(result)));
+    }
+}
+
 } // namespace ares
+

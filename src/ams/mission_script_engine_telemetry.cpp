@@ -65,6 +65,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
 
     TelemetryPayload tm = {};
     tm.timestampMs = nowMs;
+    tm.flightPhase = static_cast<uint8_t>(currentState_);
     tm.statusBits  = buildStatusBitsLocked();
 
     for (uint8_t i = 0; i < st.hkFieldCount; i++)
@@ -111,6 +112,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
 
     TelemetryPayload tm = {};
     tm.timestampMs = nowMs;
+    tm.flightPhase = static_cast<uint8_t>(currentState_);
     tm.statusBits  = buildStatusBitsLocked();
 
     for (uint8_t i = 0; i < slot.fieldCount; i++)
@@ -177,6 +179,24 @@ ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
     bits.pyroBFired = pyroBFired_ ? 1U : 0U;
     bits.reserved   = 0U;
     return bits;
+}
+
+// ── inferEventId ────────────────────────────────────────────────────────────
+
+/**
+ * @brief Infer the APUS-8 EventId from an AMS EventVerb.
+ *
+ * Used when the exact EventId cannot be determined at the call site,
+ * for example in user-defined task rule events (APUS-8).
+ *
+ * @param[in] verb  AMS event verb (INFO, WARN, or ERROR).
+ * @return Corresponding APUS-8 EventId.
+ */
+/*static*/ ares::proto::EventId MissionScriptEngine::inferEventId(EventVerb verb)
+{
+    if (verb == EventVerb::INFO)  { return ares::proto::EventId::PHASE_CHANGE;   }
+    if (verb == EventVerb::WARN)  { return ares::proto::EventId::SENSOR_FAILURE; }
+    return ares::proto::EventId::FPL_VIOLATION;
 }
 
 // ── applyHkFieldToPayloadLocked ──────────────────────────────────────────────
@@ -559,16 +579,17 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
  * @pre  Caller holds the engine mutex.  @p text != nullptr.
  * @post An EVENT frame is transmitted; @c seq_ is advanced.
  */
-void MissionScriptEngine::sendEventLocked(EventVerb   verb,
-                                          const char* text,
-                                          uint32_t    nowMs)
+void MissionScriptEngine::sendEventLocked(EventVerb         verb,
+                                          ares::proto::EventId id,
+                                          const char*       text,
+                                          uint32_t          nowMs)
 {
     ARES_ASSERT(text != nullptr);
 
     EventHeader header = {};
     header.timestampMs = nowMs;
-    // APUS-8: AMS events represent flight-phase transitions → PHASE_CHANGE (0x02)
-    header.eventId = static_cast<uint8_t>(EventId::PHASE_CHANGE);
+    // APUS-8: use the caller-supplied EventId so each event class is distinct.
+    header.eventId = static_cast<uint8_t>(id);
 
     if      (verb == EventVerb::INFO) { header.severity = static_cast<uint8_t>(EventSeverity::INFO); }
     else if (verb == EventVerb::WARN) { header.severity = static_cast<uint8_t>(EventSeverity::WARN); }

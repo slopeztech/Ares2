@@ -793,7 +793,21 @@ private:
                                char*           outLine,
                                uint32_t        outSize,
                                uint32_t&       outLen) const;
-    void sendEventLocked(EventVerb verb, const char* text, uint32_t nowMs);
+    void sendEventLocked(EventVerb verb, ares::proto::EventId id, const char* text, uint32_t nowMs);
+
+    /**
+     * @brief Infer the APUS-8 EventId from an AMS EventVerb.
+     *
+     * Used when the exact EventId cannot be determined at the call site
+     * (e.g. user-defined task rule events).  Mapping:
+     *   - INFO  → PHASE_CHANGE  (informational state update)
+     *   - WARN  → SENSOR_FAILURE (anomaly detected)
+     *   - ERROR → FPL_VIOLATION  (flight parameter limit violated)
+     *
+     * @param[in] verb  AMS event verb.
+     * @return Corresponding APUS-8 EventId.
+     */
+    static ares::proto::EventId inferEventId(EventVerb verb);
     bool ensureLogFileLocked(const char* fileName);
     void applyHkFieldToPayloadLocked(const HkField&               f,
                                      ares::proto::TelemetryPayload& tm) const;
