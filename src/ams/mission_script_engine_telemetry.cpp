@@ -36,6 +36,7 @@ using ares::proto::MAX_PAYLOAD_LEN;
 using ares::proto::MsgType;
 using ares::proto::PROTOCOL_VERSION;
 using ares::proto::TelemetryPayload;
+using ares::proto::StatusBits;
 
 using detail::formatScaledFloat;
 
@@ -64,7 +65,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
 
     TelemetryPayload tm = {};
     tm.timestampMs = nowMs;
-    tm.statusBits  = {};
+    tm.statusBits  = buildStatusBitsLocked();
 
     for (uint8_t i = 0; i < st.hkFieldCount; i++)
     {
@@ -110,7 +111,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
 
     TelemetryPayload tm = {};
     tm.timestampMs = nowMs;
-    tm.statusBits  = {};
+    tm.statusBits  = buildStatusBitsLocked();
 
     for (uint8_t i = 0; i < slot.fieldCount; i++)
     {
@@ -134,6 +135,48 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
     {
         LOG_D(TAG, "HK slot frame sent seq=%u len=%u", frame.seq, frame.len);
     }
+}
+
+// ── applyHkFieldToPayloadLocked ──────────────────────────────────────────────
+
+// ── buildStatusBitsLocked ────────────────────────────────────────────────────
+
+/**
+ * @brief Derive the wire-protocol StatusBits from the engine's current runtime
+ *        state.
+ *
+ * Called from every send path that produces a @c TelemetryPayload so that the
+ * GCS always receives accurate status flags.  Complies with APUS-6.
+ *
+ * - @c armed      true when the engine is in the RUNNING state.
+ * - @c fcsActive  true when execution is enabled (not paused).
+ * - @c gpsValid   true when at least one registered GPS driver reports hasFix().
+ * - @c pyroAFired / @c pyroBFired set via notifyPyroFired().
+ *
+ * @pre  Caller holds mutex_.
+ * @return StatusBits struct with reserved bits cleared.
+ */
+ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
+{
+    StatusBits bits = {};
+    bits.armed    = (status_ == EngineStatus::RUNNING) ? 1U : 0U;
+    bits.fcsActive = executionEnabled_ ? 1U : 0U;
+
+    // gpsValid: true if any registered GPS driver has a current fix.
+    bits.gpsValid = 0U;
+    for (uint8_t i = 0U; i < gpsCount_; ++i)
+    {
+        if ((gpsDrivers_[i].iface != nullptr) && gpsDrivers_[i].iface->hasFix())
+        {
+            bits.gpsValid = 1U;
+            break;
+        }
+    }
+
+    bits.pyroAFired = pyroAFired_ ? 1U : 0U;
+    bits.pyroBFired = pyroBFired_ ? 1U : 0U;
+    bits.reserved   = 0U;
+    return bits;
 }
 
 // ── applyHkFieldToPayloadLocked ──────────────────────────────────────────────

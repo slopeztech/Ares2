@@ -1064,3 +1064,97 @@ assert:
   max_transition_depth < 10
 ```
 
+---
+
+## 17. Ground-to-Rocket Command Reception via Radio (APUS)
+
+The AMS engine exposes a set of public methods that the `RadioDispatcher`
+class calls when it receives APUS command frames from the GCS.  This section
+documents the full receive path and the mapping between APUS command IDs and
+engine API calls.
+
+### 17.1 Receive path overview
+
+```
+Radio UART  →  RadioDispatcher::poll()          (called every loop() tick)
+                │
+                ├─ processBuffer()              SYNC scan + frame assembly
+                ├─ proto::decode()              CRC-32 validation
+                └─ dispatchFrame()
+                    ├─ handleCommand()          duplicate check → accept ACK
+                    │   └─ executeCommand()     maps CommandId → engine call
+                    │       └─ sendAckNack()    completion ACK/NACK if FLAG_ACK_REQ
+                    └─ handleHeartbeat()        echo HEARTBEAT from NODE_ROCKET
+```
+
+`RadioDispatcher::poll()` is non-blocking (drains UART FIFO only) and is
+called from `loop()` **before** `missionEngine.tick()`.
+
+### 17.2 Command-to-engine mapping
+
+| APUS CommandId        | Engine call / action                                                  | Precondition check               |
+|-----------------------|-----------------------------------------------------------------------|----------------------------------|
+| `ARM_FLIGHT`          | `engine_.arm()`                                                       | None                             |
+| `ABORT`               | `engine_.injectTcCommand("ABORT")`                                    | None                             |
+| `FACTORY_RESET`       | `engine_.injectTcCommand("RESET")`                                    | None                             |
+| `FIRE_PYRO_A`         | HAL not yet connected — returns `EXECUTION_ERROR`                     | `status == RUNNING`              |
+| `FIRE_PYRO_B`         | HAL not yet connected — returns `EXECUTION_ERROR`                     | `status == RUNNING`              |
+| `SET_MODE`            | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
+| `SET_FCS_ACTIVE`      | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
+| `REQUEST_TELEMETRY`   | `engine_.requestTelemetry(nowMs)` — sends all active HK slots now     | None                             |
+| `SET_TELEM_INTERVAL`  | `engine_.setTelemInterval(interval_ms)` — range [100, 60 000] ms     | None                             |
+| `REQUEST_STATUS`      | Builds `TelemetryPayload` via `engine_.getStatusBits()` / `getSnapshot()` and sends directly | None        |
+| `REQUEST_CONFIG`      | ACK only (no dedicated config frame in APUS)                          | None                             |
+| `VERIFY_CONFIG`       | ACK only (config assumed valid while RUNNING)                         | None                             |
+| `SET_CONFIG_PARAM`    | `EXECUTION_ERROR` — not implemented                                   | None                             |
+| `FACTORY_RESET`       | `engine_.injectTcCommand("RESET")`                                    | None                             |
+| Unknown ID            | `EXECUTION_ERROR`                                                     | None                             |
+
+### 17.3 ACK/NACK protocol (APUS-9)
+
+Every accepted command receives an **acceptance ACK** unconditionally
+(`FailureCode::NONE`).  A **completion ACK/NACK** is sent only when the sender
+sets `FLAG_ACK_REQ` in the frame flags.
+
+| FailureCode         | Meaning                                                   |
+|---------------------|-----------------------------------------------------------|
+| `NONE`              | Success                                                   |
+| `PRECONDITION_FAIL` | Rejected because a precondition was not met (e.g. not RUNNING for pyro) |
+| `EXECUTION_ERROR`   | Command accepted but runtime failed (HAL not connected, etc.) |
+
+### 17.4 Interaction with AMS mission scripts
+
+Commands received over radio can interact with a running AMS mission in three
+ways:
+
+1. **Direct state change** — `ARM_FLIGHT`, `SET_MODE`, `SET_FCS_ACTIVE` change
+   the engine's execution state immediately, which takes effect on the next
+   `tick()`.
+2. **TC token injection** — `ABORT` and `FACTORY_RESET` inject a TC token
+   (`TcCommand::ABORT` / `TcCommand::RESET`) that scripts can listen to via
+   `TC.command` transition conditions:
+
+   ```ams
+   transition to ABORT when TC.command == ABORT
+   ```
+
+3. **Telemetry on demand** — `REQUEST_TELEMETRY` triggers an immediate HK
+   transmission for every active slot in the current state, bypassing the
+   normal cadence timer.  Useful for GCS to verify sensor data at any time.
+
+### 17.5 StatusBits population (APUS-6 gap resolution)
+
+Prior to this implementation, all five `statusBits` flags were always `0`
+(default zero-initialised struct).  The fix introduced:
+
+- `MissionScriptEngine::buildStatusBitsLocked()` — private locked helper that
+  derives all five bits from live engine state and GPS driver `hasFix()`.
+- `MissionScriptEngine::getStatusBits()` — public thread-safe wrapper used by
+  `RadioDispatcher`.
+- `MissionScriptEngine::notifyPyroFired(channel)` — call this after a
+  successful pyro GPIO pulse to latch `pyroAFired` / `pyroBFired`.
+
+All three telemetry TX paths (`sendHkReportLocked`, `sendHkReportSlotLocked`,
+and the `REQUEST_STATUS` handler) now call `buildStatusBitsLocked()` so the GCS
+always receives accurate status flags.
+

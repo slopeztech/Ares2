@@ -171,6 +171,58 @@ public:
     void setExecutionEnabled(bool enabled);
 
     /**
+     * Immediately transmit all active HK telemetry slots for the current state.
+     *
+     * Acquires the engine mutex, builds a @c TelemetryPayload for every
+     * active HK slot in the current state, and sends each as a TELEMETRY frame
+     * via the primary COM link. Falls back to the legacy single-slot path if
+     * no multi-slot data is present.
+     *
+     * Called by @c RadioDispatcher on reception of a @c REQUEST_TELEMETRY
+     * command (APUS-7, @c CommandId::REQUEST_TELEMETRY).
+     *
+     * @param[in] nowMs  Current millis() timestamp (written into the frame).
+     * @return true if at least one frame was transmitted.
+     */
+    bool requestTelemetry(uint32_t nowMs);
+
+    /**
+     * Override the HK report interval for all active telemetry slots in the
+     * current state.  The change is in-RAM only — it does not persist across
+     * state transitions or script reloads.
+     *
+     * Called by @c RadioDispatcher on reception of a @c SET_TELEM_INTERVAL
+     * command (APUS-7, @c CommandId::SET_TELEM_INTERVAL).
+     *
+     * @param[in] intervalMs  New interval in milliseconds.
+     * @return true if at least one slot was updated.
+     */
+    bool setTelemInterval(uint32_t intervalMs);
+
+    /**
+     * Thread-safe read of the current wire-protocol StatusBits
+     * (armed, fcsActive, gpsValid, pyroAFired, pyroBFired).
+     *
+     * Used by @c RadioDispatcher when building an immediate status
+     * response to a @c REQUEST_STATUS command (APUS-6).
+     *
+     * @return StatusBits populated from the engine's current runtime state.
+     */
+    ares::proto::StatusBits getStatusBits() const;
+
+    /**
+     * Record that a pyro channel was successfully actuated.
+     *
+     * Sets the corresponding bit in StatusBits so the next telemetry
+     * frame reflects the actuation.  Must be called by the layer that
+     * drives the pyro GPIO after a confirmed FIRE_PYRO_A / FIRE_PYRO_B
+     * command.
+     *
+     * @param[in] channel  0 = pyro A (drogue), 1 = pyro B (main).
+     */
+    void notifyPyroFired(uint8_t channel);
+
+    /**
      * Thread-safe snapshot of the engine's current state.
      * @param[out] out  Populated with a copy of the engine's public state.
      */
@@ -745,6 +797,12 @@ private:
     bool ensureLogFileLocked(const char* fileName);
     void applyHkFieldToPayloadLocked(const HkField&               f,
                                      ares::proto::TelemetryPayload& tm) const;
+    /**
+     * Build the StatusBits word from current engine state and GPS health.
+     * @pre  Caller holds mutex_.
+     * @return Populated StatusBits struct (all reserved bits cleared).
+     */
+    ares::proto::StatusBits buildStatusBitsLocked() const;
     bool formatHkFieldValueLocked(const HkField& f,
                                   char*          out,
                                   uint32_t       outSize) const;
@@ -805,6 +863,8 @@ private:
 
     TcCommand pendingTc_ = TcCommand::NONE;
     uint8_t   tcConfirmCount_[4] = {}; ///< Per-TC injection counter for CONFIRM mode (AMS-4.11.2).
+    bool      pyroAFired_ = false;     ///< True after FIRE_PYRO_A was successfully executed (APUS-6).
+    bool      pyroBFired_ = false;     ///< True after FIRE_PYRO_B was successfully executed (APUS-6).
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
 

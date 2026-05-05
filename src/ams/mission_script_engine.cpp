@@ -267,6 +267,89 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
     (void)saveResumePointLocked(millis(), true);
 }
 
+bool MissionScriptEngine::requestTelemetry(uint32_t nowMs)
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired()) { return false; }
+    if (currentState_ >= program_.stateCount) { return false; }
+
+    const StateDef& st = program_.states[currentState_];
+    bool sent = false;
+
+    // Transmit each active multi-slot HK entry (AMS-4.3.1).
+    for (uint8_t i = 0U; i < st.hkSlotCount; ++i)
+    {
+        if (st.hkSlots[i].fieldCount > 0U)
+        {
+            sendHkReportSlotLocked(nowMs, st.hkSlots[i]);
+            sent = true;
+        }
+    }
+
+    // Legacy single-slot fallback — keeps backward compatibility with scripts
+    // that use the original single 'every' block.
+    if (!sent && st.hasHkEvery)
+    {
+        sendHkReportLocked(nowMs);
+        sent = true;
+    }
+
+    return sent;
+}
+
+bool MissionScriptEngine::setTelemInterval(uint32_t intervalMs)
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired()) { return false; }
+    if (currentState_ >= program_.stateCount) { return false; }
+
+    StateDef& st = program_.states[currentState_];
+    bool updated = false;
+
+    for (uint8_t i = 0U; i < st.hkSlotCount; ++i)
+    {
+        st.hkSlots[i].everyMs = intervalMs;
+        updated = true;
+    }
+
+    // Keep legacy single-slot fields in sync.
+    if (st.hasHkEvery)
+    {
+        st.hkEveryMs = intervalMs;
+        updated = true;
+    }
+
+    if (updated)
+    {
+        LOG_I(TAG, "telem interval updated to %" PRIu32 " ms", intervalMs);
+    }
+    return updated;
+}
+
+// ── getStatusBits ─────────────────────────────────────────────────────────────
+
+ares::proto::StatusBits MissionScriptEngine::getStatusBits() const
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired())
+    {
+        ares::proto::StatusBits empty = {};
+        return empty;
+    }
+    return buildStatusBitsLocked();
+}
+
+// ── notifyPyroFired ───────────────────────────────────────────────────────────
+
+void MissionScriptEngine::notifyPyroFired(uint8_t channel)
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired()) { return; }
+    if (channel == 0U) { pyroAFired_ = true; }
+    else if (channel == 1U) { pyroBFired_ = true; }
+    else { /* invalid channel — ignore */ }
+}
+
 void MissionScriptEngine::tick(uint32_t nowMs)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));

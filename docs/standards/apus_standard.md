@@ -262,6 +262,15 @@ Command uplink is optional and depends on hardware configuration.
 | APUS-4.6 | Retransmissions must set `FLAG_RETRANSMIT` and preserve the SEQ.  |
 | APUS-4.7 | Duplicate SEQ detection is mandatory on the receiver side.        |
 
+### Implementation status
+
+| Rule      | Status          | Module                               |
+|-----------|-----------------|--------------------------------------|
+| APUS-4.4  | ✅ Implemented   | `src/comms/radio_dispatcher.cpp` — `poll()` called from `loop()` every SENSOR_RATE_MS interval |
+| APUS-4.5  | ⏳ Planned       | Retransmit logic not yet implemented (ground-side responsibility for now) |
+| APUS-4.6  | ⏳ Planned       | `FLAG_RETRANSMIT` checked in `isDuplicate()` path |
+| APUS-4.7  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — `seenFirst_` guard + `isDuplicate(seq, lastRxSeq_)` |
+
 ### Transmission cadence
 
 | Traffic Type       | Rate / Policy                                     |
@@ -342,6 +351,29 @@ Total: **38 bytes** (fits in a single frame with margin).
 | 3   | pyroAFired | Drogue pyro has fired   |
 | 4   | pyroBFired | Main pyro has fired     |
 | 5–7 | reserved   | Must be zero            |
+
+### Implementation status (APUS-6)
+
+| Bit field    | Status | Source in firmware                                                                  |
+|--------------|--------|-------------------------------------------------------------------------------------|
+| `armed`      | ✅     | `status_ == EngineStatus::RUNNING` — set by `MissionScriptEngine::arm()`            |
+| `fcsActive`  | ✅     | `executionEnabled_` — toggled by `SET_MODE` / `SET_FCS_ACTIVE` commands             |
+| `gpsValid`   | ✅     | Iterates `gpsDrivers_[]` and calls `GpsInterface::hasFix()` on each registered GPS  |
+| `pyroAFired` | ✅     | `pyroAFired_` — set via `MissionScriptEngine::notifyPyroFired(0)` after FIRE_PYRO_A |
+| `pyroBFired` | ✅     | `pyroBFired_` — set via `MissionScriptEngine::notifyPyroFired(1)` after FIRE_PYRO_B |
+
+Populated by `MissionScriptEngine::buildStatusBitsLocked()` (private, locked helper) and
+exposed via `MissionScriptEngine::getStatusBits()` (public, thread-safe).  All three TX
+paths that produce a `TelemetryPayload` call this helper:
+
+- `sendHkReportLocked()` — periodic HK on `hk.every` cadence
+- `sendHkReportSlotLocked()` — per-slot HK (AMS-4.3.1 multi-slot)
+- `RadioDispatcher::executeCommand()` → `REQUEST_STATUS` — immediate status response
+
+> **Note on pyro tracking**: `pyroAFired_` / `pyroBFired_` are set only after a
+> confirmed FIRE_PYRO_A/B execution.  When the HAL pyro driver is connected, the
+> caller must invoke `notifyPyroFired(channel)` after the GPIO pulse completes.
+> Until then, both bits remain `0` (conservative — safer than false positives).
 
 ---
 
@@ -502,6 +534,16 @@ the ACK/NACK payload:
 | APUS-9.3  | Completion ACK/NACK is sent only if `FLAG_ACK_REQ` was set.      |
 | APUS-9.4  | Failure codes must be defined at compile time — no dynamic strings.|
 | APUS-9.5  | The `originalSeq` in a NACK must match the SEQ of the failing TC.|
+
+### Implementation status
+
+| Rule      | Status          | Module                               |
+|-----------|-----------------|--------------------------------------|
+| APUS-9.1  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — acceptance ACK (`FailureCode::NONE`) sent before execution |
+| APUS-9.2  | ✅ Implemented   | `RadioDispatcher::sendAckNack()` — NACK sent with `FailureCode` on all error paths |
+| APUS-9.3  | ✅ Implemented   | Completion ACK/NACK gated by `(frame.flags & FLAG_ACK_REQ) != 0` |
+| APUS-9.4  | ✅ Implemented   | `FailureCode` enum defined in `ares_radio_protocol.h`; no heap strings |
+| APUS-9.5  | ✅ Implemented   | `AckPayload.originalSeq = frame.seq` in `sendAckNack()` |
 
 ---
 
@@ -815,6 +857,15 @@ discard for unknown NODE values.
 | APUS-14.2 | Every routing decision must be logged (debug level).              |
 | APUS-14.3 | Routing failures must generate a NACK if the source is known.    |
 | APUS-14.4 | The dispatcher must not block — non-matching frames are discarded.|
+
+### Implementation status
+
+| Rule      | Status          | Module                               |
+|-----------|-----------------|--------------------------------------|
+| APUS-14.1 | ✅ Implemented   | `RadioDispatcher::dispatchFrame()` — O(1) `switch(frame.type)` |
+| APUS-14.2 | ✅ Implemented   | Every branch calls `LOG_D(TAG, ...)` before discard or dispatch |
+| APUS-14.3 | ✅ Implemented   | Unknown NODE → LOG_D discard; decode failure → LOG_D skip; unknown commandId → `FailureCode::UNKNOWN_COMMAND` NACK |
+| APUS-14.4 | ✅ Implemented   | `poll()` drains FIFO without blocking; `processBuffer()` returns early if incomplete frame |
 
 ---
 

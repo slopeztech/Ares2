@@ -28,6 +28,7 @@
 #include "api/api_server.h"
 #include "ams/mission_script_engine.h"
 #include "comms/ares_radio_protocol.h"
+#include "comms/radio_dispatcher.h"
 
 #include <Arduino.h>
 #include <freertos/task.h>
@@ -85,6 +86,10 @@ static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[
                            &Wire, &imuWire,
                            &gpsSerial, &loraSerial,
                            &radioIf);
+
+// Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
+// frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
+static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine);
 
 // ═══════════════════════════════════════════════════════════
 void setup()
@@ -148,6 +153,12 @@ void loop()
     // GPS bytes must be consumed every iteration to keep
     // the UART FIFO from overflowing (72-byte HW FIFO).
     for (GpsInterface* iface : kGpsIfaces) { iface->update(); }
+
+    // Radio receive path — poll LoRa FIFO, decode APUS frames, dispatch
+    // commands, and send ACK/NACK responses (APUS-4.4, APUS-9, APUS-14).
+    // Must run before missionEngine.tick() so that injected TC commands
+    // (ABORT, LAUNCH, RESET) are visible to the state machine this cycle.
+    radioDispatcher.poll(now);
 
     // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(now);
