@@ -985,43 +985,46 @@ void RadioDispatcher::drainCmdQueue(uint32_t nowMs)
  * When all segments have been received the assembled payload is queued via
  * enqueueCmd() using the last segment's frame as the carrier.
  */
+// MISRA-12 deviation: handleFragmentedCommand() exceeds the 80-line recommended
+// limit (ARES-MISRA-DEV-004).  Fragmented-transfer reassembly requires sequential
+// validation → session management → data storage → assembly, which cannot be split
+// without introducing additional inter-function state coupling.
+// Cyclomatic complexity is ≤15; justification accepted per APUS-15 scope.
 void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame,
                                               uint32_t            nowMs)
 {
-    // Minimum: 6-byte frag header
-    if (frame.len < 6U)
+    // Decode and validate frag header via the shared helper (APUS-15, MISRA-7).
+    // Validates: FLAG_FRAGMENT set, len >= FRAG_HEADER_LEN, totalSegments != 0,
+    // segmentNum < totalSegments.  Eliminates duplicated header-parse logic.
+    proto::FragHeader fh = {};
+    if (!proto::decodeFrag(frame, fh))
     {
-        LOG_W(TAG, "FRAG: frame too short (%u bytes) — NACK", static_cast<unsigned>(frame.len));
+        LOG_W(TAG, "FRAG: decodeFrag failed (len=%u flags=0x%02X) — NACK",
+              static_cast<unsigned>(frame.len),
+              static_cast<unsigned>(frame.flags));
         sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
         return;
     }
 
-    // Decode frag header (little-endian).
-    uint16_t transferId = 0U;
-    uint16_t segmentNum = 0U;
-    uint16_t totalSegs  = 0U;
-    (void)memcpy(&transferId, &frame.payload[0U], sizeof(uint16_t));
-    (void)memcpy(&segmentNum, &frame.payload[2U], sizeof(uint16_t));
-    (void)memcpy(&totalSegs,  &frame.payload[4U], sizeof(uint16_t));
-
-    const uint8_t  segDataLen = static_cast<uint8_t>(frame.len - 6U);
-
-    // ── Validate segment counts ───────────────────────────────────────────
-    if (totalSegs == 0U || totalSegs > kMaxFragSegments)
+    // Reject transfers that exceed the single-session reassembly buffer.
+    if (fh.totalSegments > kMaxFragSegments)
     {
-        LOG_W(TAG, "FRAG: totalSegs=%u out of range — NACK", static_cast<unsigned>(totalSegs));
-        sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
-        return;
-    }
-    if (segmentNum >= totalSegs)
-    {
-        LOG_W(TAG, "FRAG: segNum=%u >= total=%u — NACK",
-              static_cast<unsigned>(segmentNum), static_cast<unsigned>(totalSegs));
+        LOG_W(TAG, "FRAG: totalSegs=%u > kMaxFragSegments=%u — NACK",
+              static_cast<unsigned>(fh.totalSegments),
+              static_cast<unsigned>(kMaxFragSegments));
         sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
         return;
     }
 
-    // ── Session management (APUS-15.3 — single concurrent session) ───────
+    const uint16_t transferId = fh.transferId;
+    const uint16_t segmentNum = fh.segmentNum;
+    const uint16_t totalSegs  = fh.totalSegments;
+    // Segment data starts after the FRAG_HEADER_LEN-byte sub-header (MISRA-7).
+    const uint8_t  segDataLen = static_cast<uint8_t>(
+        static_cast<uint16_t>(frame.len) -
+        static_cast<uint16_t>(proto::FRAG_HEADER_LEN));
+
+    // ── Session management (APUS-15.5 — only one active transfer session) ──────
     const bool timedOut = fragSession_.active &&
                           ((nowMs - fragSession_.lastActivityMs) >= kFragTimeoutMs);
 
@@ -1117,8 +1120,10 @@ void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame,
 
     // Build a synthetic frame with the reassembled payload.
     proto::Frame assembled = frame;   // copy meta (seq, node, flags, type)
-    assembled.flags = static_cast<uint8_t>(assembled.flags &
-                      ~static_cast<uint8_t>(proto::FLAG_FRAGMENT));
+    // Clear FLAG_FRAGMENT (MISRA-13: XOR mask avoids bitwise-NOT integer promotion).
+    static constexpr uint8_t kFlagClearFragment =
+        static_cast<uint8_t>(0xFFU ^ proto::FLAG_FRAGMENT);
+    assembled.flags = static_cast<uint8_t>(assembled.flags & kFlagClearFragment);
 
     const uint8_t copyLen = (fragSession_.dataLen <= proto::MAX_PAYLOAD_LEN)
                              ? static_cast<uint8_t>(fragSession_.dataLen)

@@ -289,11 +289,22 @@ private:
     /**
      * @brief Find the config entry for @p id, or nullptr if not found.
      * O(kConfigParamCount) — small linear search is acceptable for N=6.
+     *
+     * @param[in] id  Parameter identifier to search for.
+     * @return Pointer to the matching ConfigEntry, or nullptr if not found.
      */
     ConfigEntry* findConfigParam(proto::ConfigParamId id);
 
     /**
      * @brief Validate and store a new parameter value, then apply it.
+     *
+     * Verifies write permission (APUS-16.1), bounds [minVal, maxVal],
+     * persists the new value, and triggers the corresponding side-effect
+     * (e.g. updates telemetry interval or monitoring threshold).
+     *
+     * @param[in] id     Parameter identifier.
+     * @param[in] value  New value to apply.
+     * @param[in] nowMs  Current millis() (forwarded to side-effect callbacks).
      * @return FailureCode::NONE on success, INVALID_PARAM / EXECUTION_ERROR otherwise.
      */
     proto::FailureCode applyConfigParam(proto::ConfigParamId id, float value,
@@ -306,6 +317,9 @@ private:
      *
      * Reassembles multi-segment transfers.  Once all segments are present the
      * assembled payload is passed to enqueueCmd() as a synthetic frame.
+     *
+     * @param[in] frame  Decoded COMMAND frame with FLAG_FRAGMENT set.
+     * @param[in] nowMs  Current millis() timestamp (session timeout tracking).
      */
     void handleFragmentedCommand(const proto::Frame& frame, uint32_t nowMs);
 
@@ -313,9 +327,9 @@ private:
     static constexpr uint8_t  kMaxFragSegments  = 16U;
     /// Session inactivity timeout (ms) — stale session is discarded (APUS-15.4).
     static constexpr uint32_t kFragTimeoutMs    = 30000U;
-    /// Per-segment payload bytes (MAX_PAYLOAD_LEN − 6-byte FragHeader).
-    static constexpr uint16_t kFragSegDataSize  =
-        static_cast<uint16_t>(proto::MAX_PAYLOAD_LEN) - 6U;   // 194 bytes
+    /// Per-segment payload bytes (MAX_FRAG_PAYLOAD = MAX_PAYLOAD_LEN − FRAG_HEADER_LEN).
+    static constexpr uint16_t kFragSegDataSize =
+        static_cast<uint16_t>(proto::MAX_FRAG_PAYLOAD);  // 194 bytes
 
     /**
      * @brief Fragmented-transfer reassembly state for one active transfer.

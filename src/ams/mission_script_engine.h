@@ -855,6 +855,9 @@ private:
 
     /**
      * @brief Extract the value of @p id from @p tm.
+     *
+     * @param[in] id  Monitored parameter identifier.
+     * @param[in] tm  Telemetry payload from the current HK frame.
      * @return The corresponding field value, or 0.0f for unknown IDs.
      */
     static float extractMonitorParam(ares::proto::MonitorParamId id,

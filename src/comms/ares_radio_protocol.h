@@ -328,22 +328,22 @@ enum class ConfigParamId : uint8_t
 
 // ── ST[12] on-board monitoring (APUS-12) ─────────────────────────────────────
 
-/** Monitored parameter identifiers — maps to TelemetryPayload fields. */
+/** Monitored parameter identifiers — maps to TelemetryPayload fields (APUS-12.1). */
 enum class MonitorParamId : uint8_t
 {
-    ALTITUDE_AGL_M  = 0x01,
-    VERTICAL_VEL_MS = 0x02,
-    ACCEL_MAG       = 0x03,
-    PRESSURE_PA     = 0x04,
-    TEMPERATURE_C   = 0x05,
+    ALTITUDE_AGL_M  = 0x01,  ///< Altitude above ground level (m).
+    VERTICAL_VEL_MS = 0x02,  ///< Vertical velocity, positive = up (m/s).
+    ACCEL_MAG       = 0x03,  ///< Inertial acceleration magnitude (m/s²).
+    PRESSURE_PA     = 0x04,  ///< Barometric pressure (Pa).
+    TEMPERATURE_C   = 0x05,  ///< Board / baro temperature (°C).
 };
 
 /** APUS-12 monitoring state machine states. */
 enum class MonitoringState : uint8_t
 {
-    MON_DISABLED = 0U,
-    MON_ENABLED  = 1U,
-    MON_ALARM    = 2U,
+    MON_DISABLED = 0U,  ///< Monitor disabled — evaluation skipped (APUS-12.5).
+    MON_ENABLED  = 1U,  ///< Monitor active, no limit violation detected.
+    MON_ALARM    = 2U,  ///< Limit exceeded for consecutiveRequired samples.
 };
 
 } // namespace proto
