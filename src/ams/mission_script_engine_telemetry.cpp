@@ -893,6 +893,35 @@ bool MissionScriptEngine::configureMonitorFromParam(ares::proto::ConfigParamId i
     }
 }
 
+// ── getScriptRadioConfig ─────────────────────────────────────────────────────
+
+/**
+ * @brief Return the script-declared override for @p id, if any (AMS-4.13).
+ *
+ * @param[in]  id     Parameter identifier.
+ * @param[out] value  Populated with the script value when @c true is returned.
+ * @return @c true if the currently loaded script declared an override for @p id.
+ * @pre  The engine may be locked or unlocked; the @c program_ struct is
+ *       immutable while the script is armed.
+ */
+bool MissionScriptEngine::getScriptRadioConfig(ares::proto::ConfigParamId id,
+                                               float&                     value) const
+{
+    using Id = ares::proto::ConfigParamId;
+    const uint8_t idx = static_cast<uint8_t>(id) -
+                        static_cast<uint8_t>(Id::FIRST);
+    if (idx >= Program::kRadioConfigCount)
+    {
+        return false;
+    }
+    if (!program_.radioConfig[idx].set)
+    {
+        return false;
+    }
+    value = program_.radioConfig[idx].value;
+    return true;
+}
+
 // ── sendFrameLocked ──────────────────────────────────────────────────────────
 
 /**

@@ -252,6 +252,20 @@ public:
      */
     bool configureMonitorFromParam(ares::proto::ConfigParamId id, float value);
 
+    /**
+     * @brief Query whether the loaded script declares a @c radio.config override
+     *        for @p id (AMS-4.13).
+     *
+     * Called by RadioDispatcher after a successful @c arm() to apply
+     * script-declared default parameter values into the config table.
+     * Ground can still override these values later via @c SET_CONFIG_PARAM.
+     *
+     * @param[in]  id     Parameter identifier.
+     * @param[out] value  Set to the script-declared value when @c true is returned.
+     * @return @c true if the script declared an override for @p id.
+     */
+    bool getScriptRadioConfig(ares::proto::ConfigParamId id, float& value) const;
+
 private:
     enum class BlockType : uint8_t
     {
@@ -597,6 +611,26 @@ private:
         char       hkAlias[16]    = {};  ///< PUS ST[3] service alias (default: "HK").
         char       eventAlias[16] = {};  ///< PUS ST[5] service alias (default: "EVENT").
         char       tcAlias[16]    = {};  ///< PUS ST[1] service alias (default: "TC").
+
+        // ── AMS-4.13: script-declared radio config overrides ─────────────────
+        /**
+         * One @c radio.config override declared in the script metadata section.
+         *
+         * When @c set is true, @c value replaces the compile-time default in
+         * RadioDispatcher::configParams_ at arm time.  Ground can still send
+         * SET_CONFIG_PARAM afterwards to further adjust the value (APUS-16.1).
+         */
+        struct RadioConfigParam
+        {
+            ares::proto::ConfigParamId id;    ///< Parameter identifier.
+            float                      value; ///< Script-declared default value.
+            bool                       set;   ///< true when this slot has been populated.
+        };
+        /// Indexed by (ConfigParamId - ConfigParamId::FIRST), size == 6.
+        static constexpr uint8_t kRadioConfigCount =
+            static_cast<uint8_t>(ares::proto::ConfigParamId::LAST) -
+            static_cast<uint8_t>(ares::proto::ConfigParamId::FIRST) + 1U;
+        RadioConfigParam radioConfig[kRadioConfigCount] = {};
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -615,6 +649,7 @@ private:
                                       bool& handled);
     bool parsePusApidDirectiveLocked(const char* line);
     bool parsePusServiceDirectiveLocked(const char* line);
+    bool parseRadioConfigLineLocked(const char* line);  ///< AMS-4.13: radio.config PARAM = VALUE.
     bool parseNonStateBlockLineLocked(const char* line,
                                       BlockType& blockType,
                                       bool& handled);

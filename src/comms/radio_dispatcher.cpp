@@ -386,6 +386,20 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame,
             LOG_W(TAG, "ARM_FLIGHT: engine.arm() failed (not LOADED?)");
             return proto::FailureCode::PRECONDITION_FAIL;
         }
+        // Apply script-declared radio.config overrides before first telemetry tick.
+        // Ground can still override these values later via SET_CONFIG_PARAM (APUS-16.1).
+        // MISRA-8: loop over all config param IDs via compile-time sentinel (AMS-4.13).
+        for (uint8_t pidRaw = static_cast<uint8_t>(proto::ConfigParamId::FIRST);
+             pidRaw <= static_cast<uint8_t>(proto::ConfigParamId::LAST);
+             ++pidRaw)
+        {
+            const auto pid = static_cast<proto::ConfigParamId>(pidRaw);
+            float      override = 0.0F;
+            if (engine_.getScriptRadioConfig(pid, override))
+            {
+                (void)applyConfigParam(pid, override, nowMs);
+            }
+        }
         LOG_I(TAG, "ARM_FLIGHT: engine armed via radio TC");
         return proto::FailureCode::NONE;
 

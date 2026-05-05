@@ -405,6 +405,94 @@ bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
     return true;
 }
 
+// ── parseRadioConfigLineLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c radio.config directive and store the override into
+ *        @c program_.radioConfig (AMS-4.13).
+ *
+ * Syntax: @c "radio.config PARAM_NAME = VALUE"
+ *
+ * Supported @c PARAM_NAME tokens and their valid ranges:
+ * | Token              | ConfigParamId         | Range (inclusive)          |
+ * |--------------------|----------------------|----------------------------|
+ * | telem_interval     | TELEM_INTERVAL_MS    | 100 – 60000 (ms)           |
+ * | monitor.alt.high   | MONITOR_ALT_HIGH_M   |    0 – 15000 (m)           |
+ * | monitor.alt.low    | MONITOR_ALT_LOW_M    | –500 – 1000  (m)           |
+ * | monitor.accel.max  | MONITOR_ACCEL_HIGH   |    0 – 1000  (m/s²)        |
+ * | monitor.temp.high  | MONITOR_TEMP_HIGH_C  |  –40 – 150   (°C)          |
+ * | monitor.temp.low   | MONITOR_TEMP_LOW_C   | –100 – 50    (°C)          |
+ *
+ * @param[in] line  Script line starting with @c "radio.config ".
+ * @return @c true if the directive was parsed and stored without error.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
+{
+    // Parse:  radio.config PARAM_NAME = VALUE
+    char  key[32] = {};
+    float value   = 0.0F;
+    // cppcheck-suppress [cert-err34-c]
+    const int n = sscanf(line, "radio.config %31s = %f", key, &value);
+    if (n != 2 || key[0] == '\0')
+    {
+        setErrorLocked("invalid radio.config syntax (expected: radio.config PARAM = VALUE)");
+        return false;
+    }
+
+    // Resolve token → ConfigParamId + bounds.
+    using Id = ares::proto::ConfigParamId;
+
+    struct ParamSpec
+    {
+        const char* token;   ///< AMS keyword.
+        Id          id;      ///< Wire-protocol identifier.
+        float       minVal;  ///< Inclusive lower bound.
+        float       maxVal;  ///< Inclusive upper bound.
+    };
+
+    // MISRA-7: bounds must match RadioDispatcher::configParams_ defaults.
+    static const ParamSpec kSpecs[] = {
+        { "telem_interval",    Id::TELEM_INTERVAL_MS,
+          static_cast<float>(ares::TELEMETRY_INTERVAL_MIN),
+          static_cast<float>(ares::TELEMETRY_INTERVAL_MAX) },
+        { "monitor.alt.high",  Id::MONITOR_ALT_HIGH_M,    0.0F,  15000.0F },
+        { "monitor.alt.low",   Id::MONITOR_ALT_LOW_M,  -500.0F,   1000.0F },
+        { "monitor.accel.max", Id::MONITOR_ACCEL_HIGH,    0.0F,   1000.0F },
+        { "monitor.temp.high", Id::MONITOR_TEMP_HIGH_C, -40.0F,    150.0F },
+        { "monitor.temp.low",  Id::MONITOR_TEMP_LOW_C, -100.0F,     50.0F },
+    };
+
+    const ParamSpec* found = nullptr;
+    for (uint8_t i = 0U; i < static_cast<uint8_t>(sizeof(kSpecs) / sizeof(kSpecs[0])); ++i)
+    {
+        if (strcmp(key, kSpecs[i].token) == 0)
+        {
+            found = &kSpecs[i];
+            break;
+        }
+    }
+    if (found == nullptr)
+    {
+        setErrorLocked("radio.config: unknown parameter name");
+        return false;
+    }
+    if (value < found->minVal || value > found->maxVal)
+    {
+        setErrorLocked("radio.config: value out of allowed range");
+        return false;
+    }
+
+    // Store override — index = (id - FIRST).
+    const uint8_t idx = static_cast<uint8_t>(found->id) -
+                        static_cast<uint8_t>(Id::FIRST);
+    program_.radioConfig[idx].id    = found->id;
+    program_.radioConfig[idx].value = value;
+    program_.radioConfig[idx].set   = true;
+
+    return true;
+}
+
 bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
                                                        uint8_t&    currentState,
                                                        BlockType&  blockType,
@@ -417,6 +505,7 @@ bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
         return true;
     }
     if (startsWith(line, "include ")) { return parseIncludeLineLocked(line); }
+    if (startsWith(line, "radio.config ")) { return parseRadioConfigLineLocked(line); }
     if (startsWith(line, "pus.service ")) { return parsePusServiceDirectiveLocked(line); }
     if (startsWith(line, "pus.apid")) { return parsePusApidDirectiveLocked(line); }
     if (startsWith(line, "state "))

@@ -946,7 +946,77 @@ state LANDED:
 
 ---
 
-## 15. Background Tasks (AMS-11)
+## 15. Radio Configuration (AMS-4.13)
+
+The `radio.config` directive lets a script override the compile-time default values of
+radio and monitoring parameters **at arm time**, before the first telemetry tick.
+The ground station can still refine these values later by sending a
+`SET_CONFIG_PARAM` telecommand (APUS-16.1).
+
+### 15.1 Syntax
+
+```ams
+radio.config PARAM_NAME = VALUE
+```
+
+- Must appear **at the top level** of the script (outside any `state`, `task`, or
+  `assert` block).
+- Each `radio.config` line sets one parameter.
+- Multiple lines are allowed; each must use a different `PARAM_NAME`.
+
+### 15.2 Supported parameters
+
+| `PARAM_NAME`         | Description                                    | Min      | Max    | Unit  |
+|----------------------|------------------------------------------------|----------|--------|-------|
+| `telem_interval`     | Telemetry report period                        | 100      | 60000  | ms    |
+| `monitor.alt.high`   | Altitude high-alarm threshold (ST\[12\])       | 0        | 15000  | m     |
+| `monitor.alt.low`    | Altitude low-alarm threshold (ST\[12\])        | −500     | 1000   | m     |
+| `monitor.accel.max`  | Acceleration magnitude alarm threshold (ST\[12\]) | 0     | 1000   | m/s²  |
+| `monitor.temp.high`  | Temperature high-alarm threshold (ST\[12\])    | −40      | 150    | °C    |
+| `monitor.temp.low`   | Temperature low-alarm threshold (ST\[12\])     | −100     | 50     | °C    |
+
+### 15.3 Override priority
+
+```
+Compile-time defaults  ←  radio.config (at arm)  ←  SET_CONFIG_PARAM (ground, runtime)
+```
+
+A `radio.config` value **replaces** the compile-time default.  A subsequent
+`SET_CONFIG_PARAM` from the ground **replaces** the `radio.config` value.
+If no `radio.config` line is present for a given parameter, the compile-time
+default remains active.
+
+### 15.4 Validation
+
+The parser validates every `radio.config` value during script load.
+If the value is outside the allowed range, the script is **rejected** (status
+`ERROR`) and an error message is stored.  The script will not activate.
+
+### 15.5 Example
+
+```ams
+# ── Radio / Monitoring overrides ─────────────────────────────
+radio.config telem_interval    = 1000    # 1 s instead of 2 s
+radio.config monitor.alt.high  = 4500    # High-altitude pad
+radio.config monitor.alt.low   = -10     # Slight depression in terrain
+radio.config monitor.accel.max = 200     # Competition rocket profile
+radio.config monitor.temp.high = 90      # Avionics bay thermal limit
+radio.config monitor.temp.low  = -30     # Cold-soaked motor case
+
+state PAD:
+  …
+```
+
+### 15.6 Interaction with ST\[12\] monitoring
+
+Monitoring thresholds set by `radio.config` are applied to the engine's
+monitoring slots (see §2.3 and §6.x) using the same internal path as a
+`SET_CONFIG_PARAM` telecommand.  The ST\[12\] monitoring FSM will use these
+values from the first evaluation tick onward.
+
+---
+
+## 16. Background Tasks (AMS-11)
 
 Background tasks run on a fixed timer **regardless of the active state**.
 They are ideal for cross-cutting concerns — thermal monitoring, battery watch,
@@ -1002,7 +1072,7 @@ Tasks may not trigger state transitions — use `transition` inside state blocks
 
 ---
 
-## 16. Formal Validation (`assert:`) (AMS-15)
+## 17. Formal Validation (`assert:`) (AMS-15)
 
 The optional `assert:` block runs **at parse time** before the script activates.
 If any assertion fails, the script is rejected with a descriptive error — it will
@@ -1066,7 +1136,7 @@ assert:
 
 ---
 
-## 17. Ground-to-Rocket Command Reception via Radio (APUS)
+## 18. Ground-to-Rocket Command Reception via Radio (APUS)
 
 The AMS engine exposes a set of public methods that the `RadioDispatcher`
 class calls when it receives APUS command frames from the GCS.  This section
