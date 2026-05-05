@@ -119,6 +119,9 @@ class AmsParser:
         self._block: Optional[str] = None   # "HK" | "LOG" | None
         self._apid: Optional[int] = None
         self._aliases: dict[str, str] = {}  # alias -> peripheral kind
+        self._hk_alias: str = "HK"
+        self._event_alias: str = "EVENT"
+        self._tc_alias: str = "TC"
 
     # ── Public entry point ───────────────────────────────────────────────────
 
@@ -185,6 +188,7 @@ class AmsParser:
 
         # Ignored directives
         if line.startswith("pus.service "):
+            self._parse_service(line, ln)
             return
 
         # pus.apid
@@ -236,6 +240,26 @@ class AmsParser:
             kind = "UNKNOWN"
 
         self._aliases[alias] = kind
+
+    def _parse_service(self, line: str, ln: int) -> None:
+        m = re.match(r"pus\.service\s+(\d+)\s+as\s+(\S+)", line)
+        if not m:
+            self._error(ln, "invalid pus.service syntax (expected: pus.service N as ALIAS)")
+            return
+        svc = int(m.group(1))
+        alias = m.group(2)
+        if svc not in (1, 3, 5):
+            self._error(ln, f"pus.service: unsupported service number {svc} (valid: 1, 3, 5)")
+            return
+        if alias in ("TIME", "LOG"):
+            self._error(ln, f"pus.service: alias '{alias}' conflicts with reserved keyword")
+            return
+        if svc == 1:
+            self._tc_alias = alias
+        elif svc == 3:
+            self._hk_alias = alias
+        elif svc == 5:
+            self._event_alias = alias
 
     def _parse_apid(self, line: str, ln: int) -> None:
         m = re.search(r"=\s*(\S+)", line)
@@ -294,7 +318,7 @@ class AmsParser:
             self._block = None
             return
 
-        if line.startswith("EVENT."):
+        if line.startswith(self._event_alias + "."):
             self._block = None
             self._parse_event(line, ln)
             return
@@ -314,7 +338,7 @@ class AmsParser:
             self._parse_priorities(line, ln)
             return
 
-        if line.startswith("HK.report"):
+        if line.startswith(self._hk_alias + ".report"):
             self._block = None
             if not self._current.has_hk_every:
                 self._error(ln, "HK.report requires an 'every NNNms:' block above it")
@@ -345,8 +369,9 @@ class AmsParser:
         self._error(ln, f"unsupported statement: '{line}'")
 
     def _parse_event(self, line: str, ln: int) -> None:
-        # EVENT.<verb> "<text>"
-        m = re.match(r'EVENT\.(\w+)\s+"([^"]{0,63})"', line)
+        # <ALIAS>.<verb> "<text>"
+        pfx = re.escape(self._event_alias)
+        m = re.match(rf'{pfx}\.(\w+)\s+"([^"]{{0,63}})"', line)
         if not m:
             # Check common mistakes
             if '"' not in line:
@@ -480,7 +505,8 @@ class AmsParser:
         self._current.transition_target = target
 
         # TC.command == LAUNCH|ABORT|RESET
-        if lhs == "TC.command":
+        tc_cmd = f"{self._tc_alias}.command"
+        if lhs == tc_cmd:
             if op != "==":
                 self._error(ln, f"TC.command transition requires '==' operator, got '{op}'")
                 return

@@ -528,6 +528,9 @@ private:
         TaskDef    tasks[ares::AMS_MAX_TASKS] = {};   ///< Background tasks (AMS-11).
         uint8_t    assertCount = 0;
         AssertDef  asserts[ares::AMS_MAX_ASSERTS] = {}; ///< Formal assertions (AMS-15).
+        char       hkAlias[16]    = {};  ///< PUS ST[3] service alias (default: "HK").
+        char       eventAlias[16] = {};  ///< PUS ST[5] service alias (default: "EVENT").
+        char       tcAlias[16]    = {};  ///< PUS ST[1] service alias (default: "TC").
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -545,6 +548,7 @@ private:
                                       BlockType& blockType,
                                       bool& handled);
     bool parsePusApidDirectiveLocked(const char* line);
+    bool parsePusServiceDirectiveLocked(const char* line);
     bool parseNonStateBlockLineLocked(const char* line,
                                       BlockType& blockType,
                                       bool& handled);

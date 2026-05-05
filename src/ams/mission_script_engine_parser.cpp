@@ -133,6 +133,9 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
     program_ = {};
     program_.apid   = ares::AMS_DEFAULT_APID;
     program_.nodeId = ares::DEFAULT_NODE_ID;
+    strncpy(program_.hkAlias,    "HK",    sizeof(program_.hkAlias)    - 1U);
+    strncpy(program_.eventAlias, "EVENT", sizeof(program_.eventAlias) - 1U);
+    strncpy(program_.tcAlias,    "TC",    sizeof(program_.tcAlias)    - 1U);
 
     parseCurrentTask_     = 0xFFU;
     parseCurrentTaskRule_ = 0xFFU;
@@ -348,6 +351,60 @@ bool MissionScriptEngine::parsePusApidDirectiveLocked(const char* line)
     return true;
 }
 
+// ── parsePusServiceDirectiveLocked ───────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pus.service directive and assign a custom alias.
+ *
+ * Syntax: @c "pus.service N as ALIAS"
+ *
+ * Supported service numbers: 1 (TC verification), 3 (HK), 5 (event).
+ * The reserved words TIME and LOG may not be used as aliases.
+ *
+ * @param[in] line  Script line starting with @c "pus.service ".
+ * @return @c true if the directive was parsed and the alias stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
+{
+    uint32_t svcNum = 0U;
+    char     alias[16] = {};
+    // cppcheck-suppress [cert-err34-c]
+    const int n = sscanf(line, "pus.service %" SCNu32 " as %15s", &svcNum, alias);
+    if (n != 2 || alias[0] == '\0')
+    {
+        setErrorLocked("invalid pus.service syntax (expected: pus.service N as ALIAS)");
+        return false;
+    }
+    if (svcNum != 1U && svcNum != 3U && svcNum != 5U)
+    {
+        setErrorLocked("pus.service: unsupported service number (valid: 1, 3, 5)");
+        return false;
+    }
+    if (strcmp(alias, "TIME") == 0 || strcmp(alias, "LOG") == 0)
+    {
+        setErrorLocked("pus.service: alias conflicts with reserved keyword");
+        return false;
+    }
+    switch (svcNum)
+    {
+    case 1U:
+        strncpy(program_.tcAlias, alias, sizeof(program_.tcAlias) - 1U);
+        program_.tcAlias[sizeof(program_.tcAlias) - 1U] = '\0';
+        break;
+    case 3U:
+        strncpy(program_.hkAlias, alias, sizeof(program_.hkAlias) - 1U);
+        program_.hkAlias[sizeof(program_.hkAlias) - 1U] = '\0';
+        break;
+    case 5U:
+        strncpy(program_.eventAlias, alias, sizeof(program_.eventAlias) - 1U);
+        program_.eventAlias[sizeof(program_.eventAlias) - 1U] = '\0';
+        break;
+    default: break;
+    }
+    return true;
+}
+
 bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
                                                        uint8_t&    currentState,
                                                        BlockType&  blockType,
@@ -360,7 +417,7 @@ bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
         return true;
     }
     if (startsWith(line, "include ")) { return parseIncludeLineLocked(line); }
-    if (startsWith(line, "pus.service ")) { return true; }
+    if (startsWith(line, "pus.service ")) { return parsePusServiceDirectiveLocked(line); }
     if (startsWith(line, "pus.apid")) { return parsePusApidDirectiveLocked(line); }
     if (startsWith(line, "state "))
     {
@@ -444,7 +501,11 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
     }
     if (handled) { return true; }
 
-    if (startsWith(line, "EVENT.")) { return parseEventLineLocked(line, st); }
+    {
+        char evtPrefix[20] = {};
+        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+        if (startsWith(line, evtPrefix)) { return parseEventLineLocked(line, st); }
+    }
 
     setErrorLocked("unsupported statement");
     return false;
@@ -456,16 +517,20 @@ bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
                                                             bool&       matched)
 {
     matched = false;
-    if (startsWith(line, "HK.report"))
     {
-        if (!st.hasHkEvery)
+        char hkReport[24] = {};
+        snprintf(hkReport, sizeof(hkReport), "%s.report", program_.hkAlias);
+        if (startsWith(line, hkReport))
         {
-            setErrorLocked("HK.report requires every block");
-            return false;
+            if (!st.hasHkEvery)
+            {
+                setErrorLocked("HK.report requires every block");
+                return false;
+            }
+            blockType = BlockType::HK;
+            matched   = true;
+            return true;
         }
-        blockType = BlockType::HK;
-        matched   = true;
-        return true;
     }
     if (startsWith(line, "LOG.report"))
     {
@@ -534,14 +599,18 @@ bool MissionScriptEngine::parseStateBlockContentLocked(const char* line,
     if (blockType == BlockType::CONDITIONS) { return parseConditionScopedLineLocked(line, st); }
     if (blockType == BlockType::ON_ERROR)
     {
-        if (startsWith(line, "EVENT.")) { return parseOnErrorEventLineLocked(line, st); }
+        char evtPrefix[20] = {};
+        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+        if (startsWith(line, evtPrefix)) { return parseOnErrorEventLineLocked(line, st); }
         if (startsWith(line, "transition to ")) { return parseOnErrorTransitionLineLocked(line, st); }
         setErrorLocked("only EVENT.* or 'transition to' allowed inside on_error");
         return false;
     }
     if (blockType == BlockType::ON_ENTER)
     {
-        if (startsWith(line, "EVENT.")) { return parseEventLineLocked(line, st); }
+        char evtPrefix[20] = {};
+        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+        if (startsWith(line, evtPrefix)) { return parseEventLineLocked(line, st); }
         if (startsWith(line, "set ")) { return parseSetActionLineLocked(line, st); }
         setErrorLocked("only EVENT.* and set are allowed inside on_enter");
         return false;
@@ -798,7 +867,13 @@ bool MissionScriptEngine::parseEventLineLocked(const char* line, StateDef& st)
 {
     char verb[8]  = {};
     char text[ares::AMS_MAX_EVENT_TEXT] = {};
-    const int n = sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text);
+    const char* dotPos = strchr(line, '.');
+    if (dotPos == nullptr)
+    {
+        setErrorLocked("invalid EVENT syntax");
+        return false;
+    }
+    const int n = sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text);
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax");
@@ -1329,7 +1404,9 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
         char d5[8]  = {};
         // cppcheck-suppress [cert-err34-c]
         const int nd = sscanf(condStr, "%19s %2s %19s %7s %7s", d1, d2, d3, d4, d5);
-        if (nd >= 3 && strcmp(d1, "TC.command") == 0 && strcmp(d2, "==") == 0)
+        char tcCmdToken[24] = {};
+        snprintf(tcCmdToken, sizeof(tcCmdToken), "%s.command", program_.tcAlias);
+        if (nd >= 3 && strcmp(d1, tcCmdToken) == 0 && strcmp(d2, "==") == 0)
         {
             return parseTcDebounceCondLocked(allowTc, d3, d4, d5, nd, out);
         }
@@ -1641,8 +1718,13 @@ bool MissionScriptEngine::parseOnErrorEventLineLocked(const char* line,
 
     char verb[8] = {};
     char text[ares::AMS_MAX_EVENT_TEXT] = {};
-
-    const int n = sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text);
+    const char* dotPos = strchr(line, '.');
+    if (dotPos == nullptr)
+    {
+        setErrorLocked("invalid EVENT syntax in on_error");
+        return false;
+    }
+    const int n = sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text);
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax in on_error");

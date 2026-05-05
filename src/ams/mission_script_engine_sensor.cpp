@@ -338,13 +338,17 @@ bool MissionScriptEngine::parseCondExprLocked(const char* lhs,
         return false;
     }
 
-    if (strcmp(lhs, "TC.command") == 0)
-    {
-        return parseTcCondExprLocked(op, rhs, allowTc, out);
-    }
     if (strcmp(lhs, "TIME.elapsed") == 0)
     {
         return parseTimeCondExprLocked(op, rhs, out);
+    }
+    {
+        char tcCmdToken[24] = {};
+        snprintf(tcCmdToken, sizeof(tcCmdToken), "%s.command", program_.tcAlias);
+        if (strcmp(lhs, tcCmdToken) == 0)
+        {
+            return parseTcCondExprLocked(op, rhs, allowTc, out);
+        }
     }
     return parseSensorCondExprLocked(lhs, op, rhs, out);
 }
