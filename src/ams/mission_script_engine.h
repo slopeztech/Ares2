@@ -238,6 +238,20 @@ public:
     bool listScripts(FileEntry* entries, uint8_t maxEntries,
                      uint8_t& count) const;
 
+    /**
+     * @brief Bridge from ST[20] parameter management to ST[12] monitoring
+     *        thresholds (APUS-16.3, APUS-12.1).
+     *
+     * When the ground sends SET_CONFIG_PARAM with a monitoring-threshold
+     * ConfigParamId, RadioDispatcher calls this to propagate the new value
+     * into the corresponding MonitoringSlot at runtime.
+     *
+     * @param[in] id     Config parameter identifier (monitoring params only).
+     * @param[in] value  New threshold value (in the same unit as the payload field).
+     * @return true if @p id mapped to a monitoring slot and was updated.
+     */
+    bool configureMonitorFromParam(ares::proto::ConfigParamId id, float value);
+
 private:
     enum class BlockType : uint8_t
     {
@@ -817,6 +831,34 @@ private:
      * @return Populated StatusBits struct (all reserved bits cleared).
      */
     ares::proto::StatusBits buildStatusBitsLocked() const;
+    /**
+     * @brief Return the satellite count from the first GPS driver that has a
+     *        valid fix.  Returns 0 if no GPS driver is configured or has a fix.
+     * @pre  Caller holds mutex_.
+     */
+    uint8_t readGpsSatsLocked() const;
+
+    /**
+     * @brief Evaluate all enabled monitoring slots against @p tm (APUS-12.4).
+     *
+     * Implements the APUS-12 state machine: after @c consecutiveRequired
+     * consecutive violations, transitions ENABLED → ALARM and sends an
+     * APUS-8 EVENT frame.  Recovers ALARM → ENABLED when within limits
+     * (APUS-12.2).  Disabled slots are skipped without CPU overhead (APUS-12.5).
+     *
+     * @pre  Caller holds mutex_.
+     * @param[in] tm     The TelemetryPayload just built (raw values, before delta).
+     * @param[in] nowMs  Current millis() for the event timestamp.
+     */
+    void evaluateMonitoringLocked(const ares::proto::TelemetryPayload& tm,
+                                  uint32_t nowMs);
+
+    /**
+     * @brief Extract the value of @p id from @p tm.
+     * @return The corresponding field value, or 0.0f for unknown IDs.
+     */
+    static float extractMonitorParam(ares::proto::MonitorParamId id,
+                                     const ares::proto::TelemetryPayload& tm);
     bool formatHkFieldValueLocked(const HkField& f,
                                   char*          out,
                                   uint32_t       outSize) const;
@@ -908,6 +950,70 @@ private:
     // Max age (ms) before a new read attempt is made.  Updated on both success
     // and failure so all fields in one report share a single attempt (no 8x timeout).
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
+
+    // ── Vertical velocity tracking (APUS-6) ───────────────────────────────────
+    // Computed from consecutive baro altitude samples in every HK frame.
+    float    prevAltM_       = 0.0f;  ///< Altitude at the previous HK send (m AGL).
+    uint32_t prevAltMs_      = 0U;    ///< Timestamp of the previous HK send.
+    bool     hasPrevAlt_     = false; ///< True after the first HK altitude sample.
+
+    // ── Telemetry delta-encoding state (APUS-3.3) ─────────────────────────────
+    // altitudeAglM and pressurePa are transmitted as deltas from the baseline
+    // value.  An absolute re-sync frame is sent at least every
+    // kDeltaResyncInterval HK frames, or whenever the delta would overflow the
+    // saturation limits.
+    static constexpr uint8_t  kDeltaResyncInterval = 10U; ///< Max frames between absolute re-syncs.
+    static constexpr float    kMaxDeltaAltM        = 10000.0f; ///< ±10 km saturation limit.
+    static constexpr float    kMaxDeltaPressPa     = 100000.0f; ///< ±100 kPa saturation limit.
+
+    uint16_t hkTxCount_      = 0U;    ///< Total HK frames transmitted (modulo counter for delta).
+    float    deltaBaseAlt_   = 0.0f;  ///< Altitude of the last absolute/re-sync frame (m AGL).
+    float    deltaBasePress_ = 0.0f;  ///< Pressure of the last absolute/re-sync frame (Pa).
+    bool     deltaBaseValid_ = false; ///< True once the first absolute frame has been sent.
+
+    // ── ST[12] on-board parameter monitoring (APUS-12) ───────────────────────
+    /**
+     * Compile-time monitoring definition for one parameter (APUS-12.1).
+     * Defines the parameter to monitor, its limit bounds, and the consecutive-
+     * violation count required before transitioning to ALARM (APUS-12.2).
+     */
+    struct MonitoringDefinition
+    {
+        ares::proto::MonitorParamId parameterId;   ///< Field of TelemetryPayload to check.
+        float   lowLimit;                          ///< Below this → violation.
+        float   highLimit;                         ///< Above this → violation.
+        uint8_t consecutiveRequired;               ///< N violations before ALARM (APUS-12.2).
+        bool    enabled;                           ///< false = DISABLED (APUS-12.5).
+    };
+
+    /**
+     * Runtime state for one monitoring slot: definition + FSM state + counter.
+     */
+    struct MonitoringSlot
+    {
+        MonitoringDefinition         def;            ///< Immutable definition (modifiable via API).
+        ares::proto::MonitoringState state;          ///< Current FSM state (DISABLED/ENABLED/ALARM).
+        uint8_t                      consecutiveHit; ///< Current consecutive violation count.
+    };
+
+    static constexpr uint8_t kMaxMonitorSlots = 4U;
+
+    /// Default monitoring table (APUS-12.1: declared at compile time).
+    /// Ground can override limits via SET_CONFIG_PARAM (APUS-16).
+    MonitoringSlot monitorSlots_[kMaxMonitorSlots] = {
+        // Slot 0: Altitude AGL — alarm if above 3000 m or below −100 m for 3 samples.
+        { { ares::proto::MonitorParamId::ALTITUDE_AGL_M, -100.0f, 3000.0f, 3U, true },
+          ares::proto::MonitoringState::MON_ENABLED, 0U },
+        // Slot 1: Accel magnitude — alarm if above 150 m/s² for 3 samples.
+        { { ares::proto::MonitorParamId::ACCEL_MAG, 0.0f, 150.0f, 3U, true },
+          ares::proto::MonitoringState::MON_ENABLED, 0U },
+        // Slot 2: Temperature — alarm if above 85 °C or below −40 °C for 5 samples.
+        { { ares::proto::MonitorParamId::TEMPERATURE_C, -40.0f, 85.0f, 5U, true },
+          ares::proto::MonitoringState::MON_ENABLED, 0U },
+        // Slot 3: Vertical velocity — disabled by default (noisy on ground).
+        { { ares::proto::MonitorParamId::VERTICAL_VEL_MS, -300.0f, 300.0f, 2U, false },
+          ares::proto::MonitoringState::MON_DISABLED, 0U },
+    };
 
     char scriptBuffer_[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
 

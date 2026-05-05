@@ -161,11 +161,22 @@ void RadioDispatcher::processBuffer(uint32_t nowMs)
 void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs)
 {
     // Discard frames not addressed to us or broadcast (APUS-10.4, APUS-14.2).
+    // APUS-14.3: if the unroutable frame is a COMMAND we can infer the source
+    // is NODE_GROUND (point-to-point link) and must send a routing-failure NACK.
     if (frame.node != proto::NODE_ROCKET &&
         frame.node != proto::NODE_BROADCAST)
     {
-        LOG_D(TAG, "discard: node=0x%02X not for rocket",
-              static_cast<unsigned>(frame.node));  // APUS-14.2
+        LOG_D(TAG, "discard: node=0x%02X not for rocket (type=0x%02X seq=%u)",
+              static_cast<unsigned>(frame.node),
+              static_cast<unsigned>(static_cast<uint8_t>(frame.type)),
+              static_cast<unsigned>(frame.seq));  // APUS-14.2
+        if (frame.type == proto::MsgType::COMMAND)
+        {
+            // Source is NODE_GROUND (only expected COMMAND sender on this link).
+            sendAckNack(frame.seq, proto::NODE_GROUND,
+                        proto::FailureCode::ROUTING_FAIL,
+                        frame.node);  // failureData = destination that was refused
+        }
         return;
     }
 
@@ -220,9 +231,14 @@ void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs)
 
     case proto::MsgType::NONE:
     default:
-        // decode() already rejects unknown types; this branch is defensive.
-        LOG_W(TAG, "RX unknown TYPE=0x%02X — discarded",  // APUS-5.1
-              static_cast<unsigned>(static_cast<uint8_t>(frame.type)));
+        // decode() already rejects unknown types; this branch is purely defensive.
+        // APUS-14.3: send NACK so the sender knows the packet was not handled.
+        LOG_W(TAG, "RX unknown TYPE=0x%02X seq=%u \u2014 NACK sent (APUS-5.1)",
+              static_cast<unsigned>(static_cast<uint8_t>(frame.type)),
+              static_cast<unsigned>(frame.seq));
+        sendAckNack(frame.seq, proto::NODE_GROUND,
+                    proto::FailureCode::UNKNOWN_TYPE,
+                    static_cast<uint8_t>(frame.type));
         break;
     }
 }
@@ -238,6 +254,13 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
     {
         LOG_D(TAG, "COMMAND seq=%u duplicate — discarded",
               static_cast<unsigned>(frame.seq));
+        return;
+    }
+
+    // ── APUS-15: fragmented transfer ───────────────────────────────────────
+    if ((frame.flags & proto::FLAG_FRAGMENT) != 0U)
+    {
+        handleFragmentedCommand(frame, nowMs);
         return;
     }
 
@@ -527,27 +550,148 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame,
     }
 
     case proto::CommandId::REQUEST_CONFIG:
-        // No CONFIG frame type in APUS \u2014 response is ACK only.
-        // The ground station derives config from the STATUS telemetry.
-        LOG_D(TAG, "REQUEST_CONFIG: acknowledged (no dedicated config frame)");
+    {
+        // Build and transmit a TELEMETRY frame whose payload encodes the
+        // full parameter table (APUS-16: report parameter values).
+        // Layout: paramCount(1) + [paramId(1)+value_le32(4)] × N  (≤ 6 entries)
+        uint8_t payload[1U + kConfigParamCount * 5U] = {};
+        payload[0] = kConfigParamCount;
+        uint8_t offset = 1U;
+        for (uint8_t i = 0U; i < kConfigParamCount; ++i)
+        {
+            payload[offset] = static_cast<uint8_t>(configParams_[i].id);
+            offset++;
+            uint32_t raw = 0U;
+            (void)memcpy(&raw, &configParams_[i].value, sizeof(raw));
+            payload[offset]     = static_cast<uint8_t>( raw        & 0xFFU);
+            payload[offset + 1] = static_cast<uint8_t>((raw >>  8) & 0xFFU);
+            payload[offset + 2] = static_cast<uint8_t>((raw >> 16) & 0xFFU);
+            payload[offset + 3] = static_cast<uint8_t>((raw >> 24) & 0xFFU);
+            offset += 4U;
+        }
+        proto::Frame cfg = {};
+        cfg.ver   = proto::PROTOCOL_VERSION;
+        cfg.flags = 0U;
+        cfg.node  = proto::NODE_ROCKET;
+        cfg.type  = proto::MsgType::TELEMETRY;
+        cfg.seq   = txSeq_++;
+        cfg.len   = offset;
+        (void)memcpy(cfg.payload, payload, offset);
+        uint8_t wire[proto::MAX_FRAME_LEN] = {};
+        const uint16_t wLen = proto::encode(cfg, wire, sizeof(wire));
+        if (wLen > 0U)
+        {
+            (void)radio_.send(wire, wLen);
+            LOG_D(TAG, "REQUEST_CONFIG: config report sent (%u params)", kConfigParamCount);
+        }
         return proto::FailureCode::NONE;
+    }
 
     case proto::CommandId::VERIFY_CONFIG:
-        // Config integrity check not yet implemented.
-        // Return NONE \u2014 engine running implies config is valid.
-        LOG_D(TAG, "VERIFY_CONFIG: acknowledged (config assumed valid)");
+    {
+        // Validate all parameters are within their declared bounds (APUS-16.2).
+        for (uint8_t i = 0U; i < kConfigParamCount; ++i)
+        {
+            if (configParams_[i].value < configParams_[i].minVal ||
+                configParams_[i].value > configParams_[i].maxVal)
+            {
+                LOG_W(TAG, "VERIFY_CONFIG: param id=0x%02X value=%.2f out of [%.2f, %.2f]",
+                      static_cast<unsigned>(configParams_[i].id),
+                      static_cast<double>(configParams_[i].value),
+                      static_cast<double>(configParams_[i].minVal),
+                      static_cast<double>(configParams_[i].maxVal));
+                return proto::FailureCode::INVALID_PARAM;
+            }
+        }
+        LOG_D(TAG, "VERIFY_CONFIG: all %u params valid", kConfigParamCount);
         return proto::FailureCode::NONE;
+    }
 
     case proto::CommandId::SET_CONFIG_PARAM:
-        // Parameter set infrastructure not yet defined.
-        LOG_W(TAG, "SET_CONFIG_PARAM: not implemented");
-        return proto::FailureCode::EXECUTION_ERROR;
+    {
+        // Payload layout: CommandHeader(2) + paramId(1) + value_le32(4) = 7 bytes.
+        if (frame.len < 7U)
+        {
+            LOG_W(TAG, "SET_CONFIG_PARAM: payload too short (%u bytes)",
+                  static_cast<unsigned>(frame.len));
+            return proto::FailureCode::INVALID_PARAM;
+        }
+        const auto paramId = static_cast<proto::ConfigParamId>(frame.payload[2U]);
+        uint32_t rawVal = 0U;
+        (void)memcpy(&rawVal, &frame.payload[3U], sizeof(rawVal));
+        float value = 0.0f;
+        (void)memcpy(&value, &rawVal, sizeof(value));
+        return applyConfigParam(paramId, value, nowMs);
+    }
 
     default:
         LOG_W(TAG, "commandId=0x%02X unhandled",
               static_cast<unsigned>(commandId));
         return proto::FailureCode::UNKNOWN_COMMAND;
     }
+}
+
+// ── ST[20] parameter management helpers ──────────────────────────────────────
+
+RadioDispatcher::ConfigEntry*
+RadioDispatcher::findConfigParam(proto::ConfigParamId id)
+{
+    for (uint8_t i = 0U; i < kConfigParamCount; ++i)
+    {
+        if (configParams_[i].id == id)
+        {
+            return &configParams_[i];
+        }
+    }
+    return nullptr;
+}
+
+proto::FailureCode RadioDispatcher::applyConfigParam(proto::ConfigParamId id,
+                                                      float value,
+                                                      uint32_t nowMs)
+{
+    ConfigEntry* entry = findConfigParam(id);
+    if (entry == nullptr)
+    {
+        LOG_W(TAG, "SET_CONFIG_PARAM: unknown paramId=0x%02X",
+              static_cast<unsigned>(static_cast<uint8_t>(id)));
+        return proto::FailureCode::INVALID_PARAM;
+    }
+    if (!entry->writable)
+    {
+        LOG_W(TAG, "SET_CONFIG_PARAM: paramId=0x%02X is read-only (APUS-16.1)",
+              static_cast<unsigned>(static_cast<uint8_t>(id)));
+        return proto::FailureCode::PRECONDITION_FAIL;
+    }
+    if (value < entry->minVal || value > entry->maxVal)
+    {
+        LOG_W(TAG, "SET_CONFIG_PARAM: paramId=0x%02X value=%.2f out of [%.2f, %.2f]",
+              static_cast<unsigned>(static_cast<uint8_t>(id)),
+              static_cast<double>(value),
+              static_cast<double>(entry->minVal),
+              static_cast<double>(entry->maxVal));
+        return proto::FailureCode::INVALID_PARAM;
+    }
+    entry->value = value;
+
+    // Apply side-effects to running subsystems.
+    if (id == proto::ConfigParamId::TELEM_INTERVAL_MS)
+    {
+        const auto intervalMs = static_cast<uint32_t>(value);
+        if (!engine_.setTelemInterval(intervalMs))
+        {
+            LOG_W(TAG, "SET_CONFIG_PARAM TELEM_INTERVAL: setTelemInterval failed");
+            return proto::FailureCode::EXECUTION_ERROR;
+        }
+    }
+    // Propagate monitoring-threshold changes into the ST[12] slots (APUS-12.1, APUS-16).
+    (void)engine_.configureMonitorFromParam(id, value);
+
+    LOG_I(TAG, "SET_CONFIG_PARAM: paramId=0x%02X set to %.3f",
+          static_cast<unsigned>(static_cast<uint8_t>(id)),
+          static_cast<double>(value));
+    (void)nowMs;
+    return proto::FailureCode::NONE;
 }
 
 // ── enqueueRetry ──────────────────────────────────────────────────────────────
@@ -824,6 +968,178 @@ void RadioDispatcher::drainCmdQueue(uint32_t nowMs)
               static_cast<unsigned>(cmd.frame.seq),
               static_cast<unsigned>(cmd.priority),
               static_cast<unsigned>(static_cast<uint8_t>(result)));
+    }
+}
+
+// ── handleFragmentedCommand ───────────────────────────────────────────────────
+
+/**
+ * @brief Reassemble a multi-segment (fragmented) COMMAND transfer (APUS-15).
+ *
+ * Fragment payload layout (6-byte header):
+ *   transferId    uint16_t  LE  bytes 0-1
+ *   segmentNum    uint16_t  LE  bytes 2-3   (0-based)
+ *   totalSegments uint16_t  LE  bytes 4-5
+ *   data          uint8_t[] bytes 6..payloadLen-1
+ *
+ * When all segments have been received the assembled payload is queued via
+ * enqueueCmd() using the last segment's frame as the carrier.
+ */
+void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame,
+                                              uint32_t            nowMs)
+{
+    // Minimum: 6-byte frag header
+    if (frame.len < 6U)
+    {
+        LOG_W(TAG, "FRAG: frame too short (%u bytes) — NACK", static_cast<unsigned>(frame.len));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
+        return;
+    }
+
+    // Decode frag header (little-endian).
+    uint16_t transferId = 0U;
+    uint16_t segmentNum = 0U;
+    uint16_t totalSegs  = 0U;
+    (void)memcpy(&transferId, &frame.payload[0U], sizeof(uint16_t));
+    (void)memcpy(&segmentNum, &frame.payload[2U], sizeof(uint16_t));
+    (void)memcpy(&totalSegs,  &frame.payload[4U], sizeof(uint16_t));
+
+    const uint8_t  segDataLen = static_cast<uint8_t>(frame.len - 6U);
+
+    // ── Validate segment counts ───────────────────────────────────────────
+    if (totalSegs == 0U || totalSegs > kMaxFragSegments)
+    {
+        LOG_W(TAG, "FRAG: totalSegs=%u out of range — NACK", static_cast<unsigned>(totalSegs));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
+        return;
+    }
+    if (segmentNum >= totalSegs)
+    {
+        LOG_W(TAG, "FRAG: segNum=%u >= total=%u — NACK",
+              static_cast<unsigned>(segmentNum), static_cast<unsigned>(totalSegs));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::INVALID_PARAM, 0U);
+        return;
+    }
+
+    // ── Session management (APUS-15.3 — single concurrent session) ───────
+    const bool timedOut = fragSession_.active &&
+                          ((nowMs - fragSession_.lastActivityMs) >= kFragTimeoutMs);
+
+    if (fragSession_.active && timedOut)
+    {
+        LOG_W(TAG, "FRAG: session 0x%04X timed out — discarding",
+              static_cast<unsigned>(fragSession_.transferId));
+        fragSession_ = FragReceiveSession{};
+    }
+
+    if (!fragSession_.active)
+    {
+        // Start a new session.
+        fragSession_ = FragReceiveSession{};
+        fragSession_.active        = true;
+        fragSession_.transferId    = transferId;
+        fragSession_.totalSegments = totalSegs;
+        fragSession_.lastActivityMs = nowMs;
+        LOG_D(TAG, "FRAG: new session id=0x%04X total=%u",
+              static_cast<unsigned>(transferId), static_cast<unsigned>(totalSegs));
+    }
+    else if (fragSession_.transferId != transferId ||
+             fragSession_.totalSegments != totalSegs)
+    {
+        // Different transfer while one is in progress: NACK (only one supported).
+        LOG_W(TAG, "FRAG: session collision id=0x%04X (active=0x%04X) — NACK QUEUE_FULL",
+              static_cast<unsigned>(transferId),
+              static_cast<unsigned>(fragSession_.transferId));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::QUEUE_FULL, 0U);
+        return;
+    }
+
+    // ── Idempotent duplicate segment (APUS-15.2) ─────────────────────────
+    if (fragSession_.received[segmentNum])
+    {
+        LOG_D(TAG, "FRAG: duplicate seg=%u id=0x%04X — re-ACK",
+              static_cast<unsigned>(segmentNum), static_cast<unsigned>(transferId));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::NONE, 0U);
+        return;
+    }
+
+    // ── Store segment data ────────────────────────────────────────────────
+    const uint16_t offset = static_cast<uint16_t>(
+        static_cast<uint16_t>(segmentNum) * kFragSegDataSize);
+
+    if (segDataLen > 0U)
+    {
+        if ((static_cast<uint32_t>(offset) + static_cast<uint32_t>(segDataLen)) <=
+             sizeof(fragSession_.data))
+        {
+            (void)memcpy(&fragSession_.data[offset], &frame.payload[6U], segDataLen);
+            fragSession_.dataLen = static_cast<uint16_t>(fragSession_.dataLen + segDataLen);
+        }
+        else
+        {
+            LOG_W(TAG, "FRAG: data overflow seg=%u — NACK",
+                  static_cast<unsigned>(segmentNum));
+            sendAckNack(frame.seq, frame.node, proto::FailureCode::EXECUTION_ERROR, 0U);
+            return;
+        }
+    }
+
+    fragSession_.received[segmentNum] = true;
+    fragSession_.lastActivityMs       = nowMs;
+
+    // ACK this segment.
+    sendAckNack(frame.seq, frame.node, proto::FailureCode::NONE, 0U);
+
+    // ── Check if all segments have arrived ───────────────────────────────
+    bool allReceived = true;
+    for (uint8_t i = 0U; i < fragSession_.totalSegments; ++i)
+    {
+        if (!fragSession_.received[i])
+        {
+            allReceived = false;
+            break;
+        }
+    }
+
+    if (!allReceived)
+    {
+        LOG_D(TAG, "FRAG: seg=%u/%u stored, waiting for more (id=0x%04X)",
+              static_cast<unsigned>(segmentNum),
+              static_cast<unsigned>(totalSegs),
+              static_cast<unsigned>(transferId));
+        return;
+    }
+
+    // ── All segments present — assemble and queue ─────────────────────────
+    LOG_I(TAG, "FRAG: transfer 0x%04X complete (%u bytes) — enqueueing",
+          static_cast<unsigned>(transferId),
+          static_cast<unsigned>(fragSession_.dataLen));
+
+    // Build a synthetic frame with the reassembled payload.
+    proto::Frame assembled = frame;   // copy meta (seq, node, flags, type)
+    assembled.flags = static_cast<uint8_t>(assembled.flags &
+                      ~static_cast<uint8_t>(proto::FLAG_FRAGMENT));
+
+    const uint8_t copyLen = (fragSession_.dataLen <= proto::MAX_PAYLOAD_LEN)
+                             ? static_cast<uint8_t>(fragSession_.dataLen)
+                             : static_cast<uint8_t>(proto::MAX_PAYLOAD_LEN);
+    (void)memcpy(assembled.payload, fragSession_.data, copyLen);
+    assembled.len = copyLen;
+
+    fragSession_ = FragReceiveSession{};   // clear session
+
+    // SEQ tracking and queue insertion for the assembled command.
+    lastRxSeq_ = frame.seq;
+    seenFirst_ = true;
+
+    if (!enqueueCmd(assembled))
+    {
+        if ((assembled.flags & proto::FLAG_ACK_REQ) != 0U)
+        {
+            sendAckNack(assembled.seq, assembled.node,
+                        proto::FailureCode::QUEUE_FULL,
+                        assembled.payload[1U]);
+        }
     }
 }
 

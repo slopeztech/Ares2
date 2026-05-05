@@ -189,7 +189,8 @@ enum class FailureCode : uint8_t
     EXECUTION_ERROR   = 0x05,
     QUEUE_FULL        = 0x06,
     INVALID_PARAM     = 0x07,
-    LAST              = INVALID_PARAM,
+    ROUTING_FAIL      = 0x08,  ///< Packet could not be routed to any handler (APUS-14.3).
+    LAST              = ROUTING_FAIL,
 };
 
 /**
@@ -202,7 +203,8 @@ struct StatusBits
     uint8_t gpsValid   : 1;   ///< Bit 2: GPS fix valid.
     uint8_t pyroAFired : 1;   ///< Bit 3: pyro channel A fired.
     uint8_t pyroBFired : 1;   ///< Bit 4: pyro channel B fired.
-    uint8_t reserved   : 3;   ///< Bits 5–7: reserved, must be zero.
+    uint8_t deltaFrame : 1;   ///< Bit 5: altitudeAglM and pressurePa are delta-encoded (APUS-3.3).
+    uint8_t reserved   : 2;   ///< Bits 6–7: reserved, must be zero.
 };
 static_assert(sizeof(StatusBits) == 1, "APUS-3.6: StatusBits must be 1 byte");
 
@@ -305,6 +307,44 @@ bool decodeFrag(const Frame& frame, FragHeader& frag);
  * @return true if @p seq equals @p lastSeq.
  */
 bool isDuplicate(uint8_t seq, uint8_t lastSeq);
+
+// ── ST[20] parameter management (APUS-16) ────────────────────────────────────
+
+/**
+ * On-board parameter identifiers for SET_CONFIG_PARAM / REQUEST_CONFIG.
+ * Mapped to fields configurable at runtime (APUS-16.3: constexpr table).
+ */
+enum class ConfigParamId : uint8_t
+{
+    FIRST                = 0x01,
+    TELEM_INTERVAL_MS    = 0x01,  ///< Telemetry period in ms (uint32 via float).
+    MONITOR_ALT_HIGH_M   = 0x02,  ///< Altitude alarm high threshold (m).
+    MONITOR_ALT_LOW_M    = 0x03,  ///< Altitude alarm low threshold (m).
+    MONITOR_ACCEL_HIGH   = 0x04,  ///< Accel magnitude alarm threshold (m/s²).
+    MONITOR_TEMP_HIGH_C  = 0x05,  ///< Temperature alarm high threshold (°C).
+    MONITOR_TEMP_LOW_C   = 0x06,  ///< Temperature alarm low threshold (°C).
+    LAST                 = 0x06,
+};
+
+// ── ST[12] on-board monitoring (APUS-12) ─────────────────────────────────────
+
+/** Monitored parameter identifiers — maps to TelemetryPayload fields. */
+enum class MonitorParamId : uint8_t
+{
+    ALTITUDE_AGL_M  = 0x01,
+    VERTICAL_VEL_MS = 0x02,
+    ACCEL_MAG       = 0x03,
+    PRESSURE_PA     = 0x04,
+    TEMPERATURE_C   = 0x05,
+};
+
+/** APUS-12 monitoring state machine states. */
+enum class MonitoringState : uint8_t
+{
+    MON_DISABLED = 0U,
+    MON_ENABLED  = 1U,
+    MON_ALARM    = 2U,
+};
 
 } // namespace proto
 } // namespace ares

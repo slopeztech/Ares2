@@ -133,6 +133,30 @@ private:
     PendingCmd cmdQueue_[kCmdQueueDepth] = {};
     uint8_t    cmdQueueCount_ = 0U;       ///< Number of active entries in cmdQueue_.
 
+    // ── ST[20] runtime config parameter table (APUS-16) ─────────────────────
+    /**
+     * One entry in the on-board parameter registry (APUS-16.3: no dynamic
+     * registration; table is fully defined at compile time with defaults).
+     */
+    struct ConfigEntry
+    {
+        proto::ConfigParamId id;        ///< Parameter identifier.
+        float                value;     ///< Current value.
+        float                minVal;    ///< Lower bound (inclusive).
+        float                maxVal;    ///< Upper bound (inclusive).
+        bool                 writable;  ///< false = read-only (APUS-16.1).
+    };
+    static constexpr uint8_t kConfigParamCount = 6U;
+    ConfigEntry configParams_[kConfigParamCount] = {
+        // id                                 value     min       max       writable
+        { proto::ConfigParamId::TELEM_INTERVAL_MS,  2000.0f,  100.0f, 60000.0f, true  },
+        { proto::ConfigParamId::MONITOR_ALT_HIGH_M,  3000.0f,    0.0f, 15000.0f, true  },
+        { proto::ConfigParamId::MONITOR_ALT_LOW_M,     -5.0f, -500.0f,  1000.0f, true  },
+        { proto::ConfigParamId::MONITOR_ACCEL_HIGH,   150.0f,    0.0f,  1000.0f, true  },
+        { proto::ConfigParamId::MONITOR_TEMP_HIGH_C,   85.0f,  -40.0f,   150.0f, true  },
+        { proto::ConfigParamId::MONITOR_TEMP_LOW_C,   -40.0f, -100.0f,    50.0f, true  },
+    };
+
     // ── Internal helpers ─────────────────────────────────────
 
     /**
@@ -259,6 +283,56 @@ private:
      * @param[in] nowMs  Forwarded to executeCommand().
      */
     void drainCmdQueue(uint32_t nowMs);
+
+    // ── ST[20] parameter management helpers (APUS-16) ────────────────────────
+
+    /**
+     * @brief Find the config entry for @p id, or nullptr if not found.
+     * O(kConfigParamCount) — small linear search is acceptable for N=6.
+     */
+    ConfigEntry* findConfigParam(proto::ConfigParamId id);
+
+    /**
+     * @brief Validate and store a new parameter value, then apply it.
+     * @return FailureCode::NONE on success, INVALID_PARAM / EXECUTION_ERROR otherwise.
+     */
+    proto::FailureCode applyConfigParam(proto::ConfigParamId id, float value,
+                                        uint32_t nowMs);
+
+    // ── ST[13] fragmented transfer receive session (APUS-15) ─────────────────
+
+    /**
+     * @brief Handle a COMMAND frame carrying the FLAG_FRAGMENT bit.
+     *
+     * Reassembles multi-segment transfers.  Once all segments are present the
+     * assembled payload is passed to enqueueCmd() as a synthetic frame.
+     */
+    void handleFragmentedCommand(const proto::Frame& frame, uint32_t nowMs);
+
+    /// Maximum number of fragments in a single reassembly session.
+    static constexpr uint8_t  kMaxFragSegments  = 16U;
+    /// Session inactivity timeout (ms) — stale session is discarded (APUS-15.4).
+    static constexpr uint32_t kFragTimeoutMs    = 30000U;
+    /// Per-segment payload bytes (MAX_PAYLOAD_LEN − 6-byte FragHeader).
+    static constexpr uint16_t kFragSegDataSize  =
+        static_cast<uint16_t>(proto::MAX_PAYLOAD_LEN) - 6U;   // 194 bytes
+
+    /**
+     * @brief Fragmented-transfer reassembly state for one active transfer.
+     *
+     * Only one concurrent reassembly session is supported (APUS-15.3).
+     */
+    struct FragReceiveSession
+    {
+        uint16_t transferId;                                  ///< Transfer identifier from sender
+        uint16_t totalSegments;                               ///< Expected segment count
+        uint32_t lastActivityMs;                              ///< Timestamp of last segment receipt
+        bool     active;                                      ///< True while session is open
+        bool     received[kMaxFragSegments];                  ///< Per-segment receipt flags
+        uint8_t  data[kMaxFragSegments * kFragSegDataSize];   ///< Reassembly buffer (3104 bytes)
+        uint16_t dataLen;                                     ///< Bytes written so far
+    };
+    FragReceiveSession fragSession_ = {};
 
 public:
     /**

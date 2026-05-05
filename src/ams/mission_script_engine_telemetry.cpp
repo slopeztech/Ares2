@@ -73,6 +73,62 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
         applyHkFieldToPayloadLocked(st.hkFields[i], tm);
     }
 
+    // ── GPS satellite count (APUS-6, gap #10) ──────────────────────────────
+    tm.gpsSats = readGpsSatsLocked();
+
+    // ── Vertical velocity (APUS-6, gap #9) ────────────────────────────────
+    // Derived from consecutive barometric altitude samples.  Suppressed on
+    // the first sample to avoid a spurious spike from a zero baseline.
+    if (hasPrevAlt_ && (nowMs != prevAltMs_))
+    {
+        const float dtS      = static_cast<float>(nowMs - prevAltMs_) * 0.001f;
+        const float dAlt     = tm.altitudeAglM - prevAltM_;
+        float       velMs    = dAlt / dtS;
+        if (velMs >  500.0f) { velMs =  500.0f; }  // Saturate ± 500 m/s
+        if (velMs < -500.0f) { velMs = -500.0f; }
+        tm.verticalVelMs = velMs;
+    }
+    prevAltM_   = tm.altitudeAglM;
+    prevAltMs_  = nowMs;
+    hasPrevAlt_ = true;
+
+    // ── ST[12] monitoring evaluation (APUS-12.4) ──────────────────────────────
+    // Evaluate against the raw (pre-delta) values so limits are in real units.
+    evaluateMonitoringLocked(tm, nowMs);
+
+    // ── Delta encoding (APUS-3.3, gap #12) ────────────────────────────────
+    // Every kDeltaResyncInterval frames (or on first frame) transmit absolute
+    // values and update the baseline.  All other frames transmit deltas with
+    // StatusBits.deltaFrame = 1.  Force re-sync on saturation overflow.
+    const bool forceResync = !deltaBaseValid_ ||
+                             ((hkTxCount_ % kDeltaResyncInterval) == 0U);
+    if (!forceResync)
+    {
+        const float dAlt   = tm.altitudeAglM - deltaBaseAlt_;
+        const float dPress = tm.pressurePa   - deltaBasePress_;
+        const bool  overflow = (dAlt   >  kMaxDeltaAltM)  || (dAlt   < -kMaxDeltaAltM) ||
+                               (dPress >  kMaxDeltaPressPa)|| (dPress < -kMaxDeltaPressPa);
+        if (!overflow)
+        {
+            tm.altitudeAglM          = dAlt;
+            tm.pressurePa            = dPress;
+            tm.statusBits.deltaFrame = 1U;
+        }
+        else
+        {
+            // Overflow: fall through to absolute; reset baseline below.
+            LOG_D(TAG, "HK delta overflow dAlt=%.1f dP=%.1f \u2014 forced resync",
+                  static_cast<double>(dAlt), static_cast<double>(dPress));
+        }
+    }
+    if (forceResync || tm.statusBits.deltaFrame == 0U)
+    {
+        deltaBaseAlt_   = tm.altitudeAglM;
+        deltaBasePress_ = tm.pressurePa;
+        deltaBaseValid_ = true;
+    }
+    hkTxCount_++;
+
     Frame frame = {};
     frame.ver   = PROTOCOL_VERSION;
     frame.flags = 0;
@@ -88,7 +144,8 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
     }
     else
     {
-        LOG_D(TAG, "HK frame sent seq=%u len=%u", frame.seq, frame.len);
+        LOG_D(TAG, "HK frame sent seq=%u delta=%u len=%u",
+              frame.seq, static_cast<unsigned>(tm.statusBits.deltaFrame), frame.len);
     }
 }
 
@@ -120,6 +177,54 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
         applyHkFieldToPayloadLocked(slot.fields[i], tm);
     }
 
+    // ── GPS satellite count (APUS-6, gap #10) ──────────────────────────────
+    tm.gpsSats = readGpsSatsLocked();
+
+    // ── Vertical velocity (APUS-6, gap #9) ────────────────────────────────
+    if (hasPrevAlt_ && (nowMs != prevAltMs_))
+    {
+        const float dtS      = static_cast<float>(nowMs - prevAltMs_) * 0.001f;
+        const float dAlt     = tm.altitudeAglM - prevAltM_;
+        float       velMs    = dAlt / dtS;
+        if (velMs >  500.0f) { velMs =  500.0f; }
+        if (velMs < -500.0f) { velMs = -500.0f; }
+        tm.verticalVelMs = velMs;
+    }
+    prevAltM_   = tm.altitudeAglM;
+    prevAltMs_  = nowMs;
+    hasPrevAlt_ = true;
+    // ── ST[12] monitoring evaluation (APUS-12.4) ──────────────────────────
+    // Evaluate against the raw (pre-delta) values so limits are in real units.
+    evaluateMonitoringLocked(tm, nowMs);
+    // ── Delta encoding (APUS-3.3, gap #12) ────────────────────────────────
+    const bool forceResync = !deltaBaseValid_ ||
+                             ((hkTxCount_ % kDeltaResyncInterval) == 0U);
+    if (!forceResync)
+    {
+        const float dAlt   = tm.altitudeAglM - deltaBaseAlt_;
+        const float dPress = tm.pressurePa   - deltaBasePress_;
+        const bool  overflow = (dAlt   >  kMaxDeltaAltM)  || (dAlt   < -kMaxDeltaAltM) ||
+                               (dPress >  kMaxDeltaPressPa)|| (dPress < -kMaxDeltaPressPa);
+        if (!overflow)
+        {
+            tm.altitudeAglM          = dAlt;
+            tm.pressurePa            = dPress;
+            tm.statusBits.deltaFrame = 1U;
+        }
+        else
+        {
+            LOG_D(TAG, "HK slot delta overflow dAlt=%.1f dP=%.1f \u2014 forced resync",
+                  static_cast<double>(dAlt), static_cast<double>(dPress));
+        }
+    }
+    if (forceResync || tm.statusBits.deltaFrame == 0U)
+    {
+        deltaBaseAlt_   = tm.altitudeAglM;
+        deltaBasePress_ = tm.pressurePa;
+        deltaBaseValid_ = true;
+    }
+    hkTxCount_++;
+
     Frame frame = {};
     frame.ver   = PROTOCOL_VERSION;
     frame.flags = 0;
@@ -135,7 +240,8 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
     }
     else
     {
-        LOG_D(TAG, "HK slot frame sent seq=%u len=%u", frame.seq, frame.len);
+        LOG_D(TAG, "HK slot frame sent seq=%u delta=%u len=%u",
+              frame.seq, static_cast<unsigned>(tm.statusBits.deltaFrame), frame.len);
     }
 }
 
@@ -197,6 +303,32 @@ ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
     if (verb == EventVerb::INFO)  { return ares::proto::EventId::PHASE_CHANGE;   }
     if (verb == EventVerb::WARN)  { return ares::proto::EventId::SENSOR_FAILURE; }
     return ares::proto::EventId::FPL_VIOLATION;
+}
+
+// ── readGpsSatsLocked ────────────────────────────────────────────────────────
+
+/**
+ * @brief Return the satellite count from the first GPS driver that has a fix.
+ *
+ * Iterates registered GPS drivers in registration order and returns the
+ * @c GpsReading::satellites of the first driver whose @c read() succeeds.
+ * Returns 0 if no GPS driver is registered or none has a valid fix (APUS-6).
+ *
+ * @pre  Caller holds the engine mutex.
+ * @return Number of satellites in use, or 0 if unavailable.
+ */
+uint8_t MissionScriptEngine::readGpsSatsLocked() const
+{
+    for (uint8_t i = 0U; i < gpsCount_; ++i)
+    {
+        if (gpsDrivers_[i].iface == nullptr) { continue; }
+        GpsReading r = {};
+        if (gpsDrivers_[i].iface->read(r) == GpsStatus::OK)
+        {
+            return r.satellites;
+        }
+    }
+    return 0U;
 }
 
 // ── applyHkFieldToPayloadLocked ──────────────────────────────────────────────
@@ -621,6 +753,143 @@ void MissionScriptEngine::sendEventLocked(EventVerb         verb,
     else
     {
         LOG_D(TAG, "EVENT frame sent seq=%u len=%u", frame.seq, frame.len);
+    }
+}
+
+// ── ST[12] on-board monitoring ────────────────────────────────────────────────
+
+/*static*/ float MissionScriptEngine::extractMonitorParam(
+    ares::proto::MonitorParamId          id,
+    const ares::proto::TelemetryPayload& tm)
+{
+    switch (id)
+    {
+    case ares::proto::MonitorParamId::ALTITUDE_AGL_M:  return tm.altitudeAglM;
+    case ares::proto::MonitorParamId::VERTICAL_VEL_MS: return tm.verticalVelMs;
+    case ares::proto::MonitorParamId::ACCEL_MAG:       return tm.accelMag;
+    case ares::proto::MonitorParamId::PRESSURE_PA:     return tm.pressurePa;
+    case ares::proto::MonitorParamId::TEMPERATURE_C:   return tm.temperatureC;
+    default:                                           return 0.0f;
+    }
+}
+
+/**
+ * @brief Evaluate all enabled monitoring slots against the current TM payload.
+ *
+ * Implements the APUS-12 state machine:
+ *   ENABLED → consecutiveHit increments on violation; resets on normal.
+ *   When consecutiveHit >= def.consecutiveRequired → ALARM + EVENT frame.
+ *   ALARM   → self-heals to ENABLED when value returns within limits.
+ *
+ * Disabled slots are skipped without touching any other state (APUS-12.5).
+ *
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::evaluateMonitoringLocked(
+    const ares::proto::TelemetryPayload& tm,
+    uint32_t                             nowMs)
+{
+    for (uint8_t i = 0U; i < kMaxMonitorSlots; ++i)
+    {
+        MonitoringSlot& slot = monitorSlots_[i];
+
+        // APUS-12.5: skip disabled slots entirely.
+        if (!slot.def.enabled ||
+            slot.state == ares::proto::MonitoringState::MON_DISABLED)
+        {
+            continue;
+        }
+
+        const float value = extractMonitorParam(slot.def.parameterId, tm);
+        const bool  inViolation = (value < slot.def.lowLimit) ||
+                                  (value > slot.def.highLimit);
+
+        if (inViolation)
+        {
+            // Increment consecutive counter — saturate at consecutiveRequired
+            // to avoid rollover (CERT-4: no silent wrap).
+            if (slot.consecutiveHit < slot.def.consecutiveRequired)
+            {
+                slot.consecutiveHit++;
+            }
+            // Transition ENABLED → ALARM after N consecutive violations (APUS-12.2).
+            if (slot.state == ares::proto::MonitoringState::MON_ENABLED &&
+                slot.consecutiveHit >= slot.def.consecutiveRequired)
+            {
+                slot.state = ares::proto::MonitoringState::MON_ALARM;
+                LOG_W(TAG,
+                      "MON ALARM slot=%u paramId=0x%02X value=%.2f "
+                      "[%.2f..%.2f] consec=%u",
+                      static_cast<unsigned>(i),
+                      static_cast<unsigned>(
+                          static_cast<uint8_t>(slot.def.parameterId)),
+                      static_cast<double>(value),
+                      static_cast<double>(slot.def.lowLimit),
+                      static_cast<double>(slot.def.highLimit),
+                      static_cast<unsigned>(slot.consecutiveHit));
+
+                // APUS-8: emit FPL_VIOLATION event for limit breaches (APUS-12).
+                sendEventLocked(EventVerb::WARN,
+                                ares::proto::EventId::FPL_VIOLATION,
+                                "MON:ALARM",
+                                nowMs);
+            }
+        }
+        else
+        {
+            // Value within limits: reset counter.
+            slot.consecutiveHit = 0U;
+            // Self-heal ALARM → ENABLED when limits are satisfied again.
+            if (slot.state == ares::proto::MonitoringState::MON_ALARM)
+            {
+                slot.state = ares::proto::MonitoringState::MON_ENABLED;
+                LOG_I(TAG,
+                      "MON RECOVERED slot=%u paramId=0x%02X value=%.2f",
+                      static_cast<unsigned>(i),
+                      static_cast<unsigned>(
+                          static_cast<uint8_t>(slot.def.parameterId)),
+                      static_cast<double>(value));
+            }
+        }
+    }
+}
+
+/**
+ * @brief Map a ST[20] ConfigParamId threshold to the appropriate
+ *        MonitoringSlot and update its limit (APUS-12.1, APUS-16 bridge).
+ *
+ * @param[in] id     Config parameter identifier (monitoring params only).
+ * @param[in] value  New threshold value.
+ * @return true if the parameter was recognised and applied.
+ */
+bool MissionScriptEngine::configureMonitorFromParam(ares::proto::ConfigParamId id,
+                                                    float                      value)
+{
+    // Slot 0 = Altitude, Slot 1 = Accel, Slot 2 = Temperature.
+    switch (id)
+    {
+    case ares::proto::ConfigParamId::MONITOR_ALT_HIGH_M:
+        monitorSlots_[0].def.highLimit = value;
+        monitorSlots_[0].consecutiveHit = 0U;  // reset on definition change
+        return true;
+    case ares::proto::ConfigParamId::MONITOR_ALT_LOW_M:
+        monitorSlots_[0].def.lowLimit = value;
+        monitorSlots_[0].consecutiveHit = 0U;
+        return true;
+    case ares::proto::ConfigParamId::MONITOR_ACCEL_HIGH:
+        monitorSlots_[1].def.highLimit = value;
+        monitorSlots_[1].consecutiveHit = 0U;
+        return true;
+    case ares::proto::ConfigParamId::MONITOR_TEMP_HIGH_C:
+        monitorSlots_[2].def.highLimit = value;
+        monitorSlots_[2].consecutiveHit = 0U;
+        return true;
+    case ares::proto::ConfigParamId::MONITOR_TEMP_LOW_C:
+        monitorSlots_[2].def.lowLimit = value;
+        monitorSlots_[2].consecutiveHit = 0U;
+        return true;
+    default:
+        return false;
     }
 }
 

@@ -177,6 +177,27 @@ void MissionScriptEngine::deactivateLocked()
     memset(taskLastTickMs_, 0U, sizeof(taskLastTickMs_));
     parseCurrentTask_     = 0xFFU;
     parseCurrentTaskRule_ = 0xFFU;
+
+    // Reset telemetry-derived state so a fresh activation starts clean.
+    hasPrevAlt_     = false;
+    prevAltM_       = 0.0f;
+    prevAltMs_      = 0U;
+    deltaBaseValid_ = false;
+    deltaBaseAlt_   = 0.0f;
+    deltaBasePress_ = 0.0f;
+    hkTxCount_      = 0U;
+
+    // Reset ST[12] monitoring state (APUS-12) — counters and FSM states only;
+    // definitions (limits) are preserved across deactivations.
+    for (uint8_t i = 0U; i < kMaxMonitorSlots; ++i)
+    {
+        monitorSlots_[i].consecutiveHit = 0U;
+        if (monitorSlots_[i].state == ares::proto::MonitoringState::MON_ALARM)
+        {
+            monitorSlots_[i].state = ares::proto::MonitoringState::MON_ENABLED;
+        }
+    }
+
     clearResumePointLocked();
 }
 

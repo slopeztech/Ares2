@@ -8,6 +8,7 @@
  */
 
 #include "ares_radio_protocol.h"
+#include "debug/ares_log.h"
 
 #include <cstring>
 
@@ -15,6 +16,8 @@ namespace ares
 {
 namespace proto
 {
+
+static constexpr const char* TAG_PROTO = "PROTO";
 
 // ── CRC-32 (APUS-1) ──────────────────────────────────────
 // Ethernet polynomial 0xEDB88320 (reflected).
@@ -168,35 +171,68 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
         return false;
     }
 
-    // Check protocol version
-    if (buf[4] != PROTOCOL_VERSION) { return false; }
+    // Check protocol version (APUS-14.2: log every routing decision)
+    if (buf[4] != PROTOCOL_VERSION)
+    {
+        LOG_D(TAG_PROTO, "decode reject: version=0x%02X expected=0x%02X",
+              static_cast<unsigned>(buf[4]),
+              static_cast<unsigned>(PROTOCOL_VERSION));
+        return false;
+    }
 
     // Reject reserved flag bits (APUS-4.2)
-    if ((buf[5] & FLAGS_RESERVED) != 0U) { return false; }
+    if ((buf[5] & FLAGS_RESERVED) != 0U)
+    {
+        LOG_D(TAG_PROTO, "decode reject: reserved flags set 0x%02X",
+              static_cast<unsigned>(buf[5] & FLAGS_RESERVED));
+        return false;
+    }
 
     // Validate NODE against the APID table (APUS-10.1, APUS-10.2)
     const uint8_t inNode = buf[6];
     if (!isKnownNode(inNode))
     {
+        LOG_D(TAG_PROTO, "decode reject: unknown node=0x%02X",
+              static_cast<unsigned>(inNode));
         return false;
     }
 
     const uint8_t payloadLen = buf[9];
-    if (payloadLen > MAX_PAYLOAD_LEN) { return false; }
+    if (payloadLen > MAX_PAYLOAD_LEN)
+    {
+        LOG_D(TAG_PROTO, "decode reject: payloadLen=%u > MAX=%u",
+              static_cast<unsigned>(payloadLen),
+              static_cast<unsigned>(MAX_PAYLOAD_LEN));
+        return false;
+    }
 
     const uint8_t rawType = buf[7];
     if (!isKnownMsgType(rawType))
     {
+        LOG_D(TAG_PROTO, "decode reject: unknown type=0x%02X",
+              static_cast<unsigned>(rawType));
         return false;
     }
 
-    if (!meetsMinPayloadLen(rawType, payloadLen)) { return false; }
+    if (!meetsMinPayloadLen(rawType, payloadLen))
+    {
+        LOG_D(TAG_PROTO, "decode reject: type=0x%02X payloadLen=%u below minimum",
+              static_cast<unsigned>(rawType),
+              static_cast<unsigned>(payloadLen));
+        return false;
+    }
 
     const uint16_t totalLen =
         static_cast<uint16_t>(HEADER_LEN) + payloadLen + CRC_LEN;
-    if (bufLen < totalLen) { return false; }
+    if (bufLen < totalLen) { return false; }  // incomplete — caller retries
 
-    if (!crcMatches(buf, payloadLen)) { return false; }
+    if (!crcMatches(buf, payloadLen))
+    {
+        LOG_D(TAG_PROTO, "decode reject: CRC mismatch seq=0x%02X type=0x%02X",
+              static_cast<unsigned>(buf[8]),
+              static_cast<unsigned>(rawType));
+        return false;
+    }
 
     // Populate frame (APUS-3.5: static struct, no heap)
     populateFrameFromBuffer(buf, rawType, payloadLen, frame);
