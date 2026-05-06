@@ -347,8 +347,8 @@ void ApiServer::handleStorageHealth(WiFiClient& client)
         err["health_status"] = static_cast<uint32_t>(healthSt);
         memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
         const uint32_t errLen = serializeJson(err, g_jsonBuf, sizeof(g_jsonBuf));
-        sendJson(client, 503, g_jsonBuf, errLen);
-        LOG_W(TAG, "GET /api/storage/health 503: info=%u health=%u",
+        sendJson(client, 500, g_jsonBuf, errLen);  // REST-2.3: 503 not in allowed set
+        LOG_W(TAG, "GET /api/storage/health 500: info=%u health=%u",
               static_cast<uint32_t>(infoSt),
               static_cast<uint32_t>(healthSt));
         return;
