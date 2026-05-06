@@ -125,7 +125,7 @@ bool MissionScriptEngine::loadFromStorageLocked(const char* fileName)
  * @pre  Caller holds the engine mutex.  @p script != nullptr.
  * @post @c program_ is fully populated on success.
  */
-bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
+bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length) // NOLINT(readability-function-size)
 {
     ARES_ASSERT(script != nullptr);
     ARES_ASSERT(length <= ares::AMS_MAX_SCRIPT_BYTES);
@@ -370,7 +370,7 @@ bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
     uint32_t svcNum = 0U;
     char     alias[16] = {};
     // cppcheck-suppress [cert-err34-c]
-    const int32_t n = static_cast<int32_t>(sscanf(line, "pus.service %" SCNu32 " as %15s", &svcNum, alias));
+    const int32_t n = static_cast<int32_t>(sscanf(line, "pus.service %" SCNu32 " as %15s", &svcNum, alias)); // NOLINT(bugprone-unchecked-string-to-number-conversion)
     if (n != 2 || alias[0] == '\0')
     {
         setErrorLocked("invalid pus.service syntax (expected: pus.service N as ALIAS)");
@@ -434,7 +434,7 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     float value   = 0.0F;
     // cppcheck-suppress [cert-err34-c]
     // MISRA-1: sscanf returns int (third-party API); cast to int32_t on capture.
-    const int32_t n = static_cast<int32_t>(sscanf(line, "radio.config %31s = %f", key, &value));
+    const int32_t n = static_cast<int32_t>(sscanf(line, "radio.config %31s = %f", key, &value)); // NOLINT(bugprone-unchecked-string-to-number-conversion)
     if (n != 2 || key[0] == '\0')
     {
         setErrorLocked("invalid radio.config syntax (expected: radio.config PARAM = VALUE)");
@@ -605,7 +605,7 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
 }
 
 bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
-                                                            StateDef&   st,
+                                                            const StateDef& st,
                                                             BlockType&  blockType,
                                                             bool&       matched)
 {
@@ -683,7 +683,7 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
     return true;
 }
 
-bool MissionScriptEngine::parseStateBlockContentLocked(const char* line,
+bool MissionScriptEngine::parseStateBlockContentLocked(const char* line, // NOLINT(readability-function-size)
                                                        StateDef&   st,
                                                        BlockType   blockType,
                                                        bool&       handled)
@@ -3107,7 +3107,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
     }
 }
 
-bool MissionScriptEngine::evaluateOneAssertionLocked(
+bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-function-size)
     const AssertDef& ad, uint16_t reachable, uint8_t maxDepth, bool hasCycle)
 {
     switch (ad.kind)

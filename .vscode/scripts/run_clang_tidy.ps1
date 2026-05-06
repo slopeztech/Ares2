@@ -194,6 +194,64 @@ foreach ($file in $files) {
 
     $lines = $fileOutput | ForEach-Object { $_.ToString() }
 
+    # ── Filter out diagnostic lines from external paths (e.g. .platformio) ──
+    # clang-tidy only analyses src/ files, but compiler errors/notes from
+    # framework headers (included transitively) can bleed into the output.
+    # Drop any diagnostic line whose resolved path lies outside the project
+    # root, plus the trailing code-snippet and caret lines that follow it.
+    #
+    # clang-tidy mixes path separators: `C:/foo/bar.h` and `C:\foo\bar.h`
+    # both appear, so we normalise before comparing.
+    $projectRootNorm = $projectRoot.Replace('/', '\').TrimEnd('\')
+    $filteredLines   = [System.Collections.Generic.List[string]]::new()
+    $skipSnippet     = 0   # number of code-snippet/caret lines still to drop
+
+    foreach ($line in $lines) {
+        # Drop pending snippet/caret lines from a previously filtered diagnostic.
+        if ($skipSnippet -gt 0) {
+            # Snippet lines look like "  42 | code..." or "     |    ^~~~"
+            if ($line -match '^\s*\d*\s*\|') {
+                $skipSnippet--
+                continue
+            }
+            # If the next line is not a snippet, stop skipping.
+            $skipSnippet = 0
+        }
+
+        # Does this line start with an absolute Windows path followed by :line:col: ?
+        # Matches both forward-slash (C:/...) and back-slash (C:\...) variants.
+        if ($line -match '^([A-Za-z]:[/\\][^:]+):\d+:\d+:') {
+            $linePath = $matches[1] -replace '/', '\'
+            if (-not $linePath.StartsWith($projectRootNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                # External path — skip this line and the up to 2 snippet lines that follow.
+                $skipSnippet = 2
+                continue
+            }
+        }
+
+        $filteredLines.Add($line)
+    }
+    $lines = $filteredLines.ToArray()
+
+    # ── Strip clang-frontend noise lines ─────────────────────────────────────
+    # These are informational lines emitted by clang's compiler frontend, not
+    # by clang-tidy checks.  They refer to framework/system header issues that
+    # are unavoidable in a cross-compilation context and carry no actionable
+    # information for our source code review.
+    #   - "N warnings and N errors generated."
+    #   - "Error while processing <file>."
+    #   - "Suppressed N warnings (...)."
+    #   - "Use -header-filter=..."
+    #   - "Found compiler error(s)."
+    $lines = $lines | Where-Object {
+        $_ -notmatch '^\d+ warnings? and \d+ errors? generated\.' -and
+        $_ -notmatch '^\d+ warnings? generated\.' -and
+        $_ -notmatch '^Error while processing ' -and
+        $_ -notmatch '^Suppressed \d+ warnings?' -and
+        $_ -notmatch '^Use -header-filter=' -and
+        $_ -notmatch '^Found compiler error'
+    }
+
     # Count diagnostics for the summary line.
     # Exclude clang-diagnostic-error lines that come from compiler-flag noise
     # (e.g. leftover xtensa/GCC flags that clang still reports as warnings).
@@ -202,7 +260,9 @@ foreach ($file in $files) {
         if ($line -match ': warning:' -and $line -notmatch '\[clang-diagnostic-') { $warningCount++ }
     }
 
-    if ($lines.Count -gt 0) {
+    # Only emit the file section if there are actual user-code diagnostics.
+    $userLines = @($lines | Where-Object { $_ -match ':\s*(warning|error|note):' })
+    if ($userLines.Count -gt 0) {
         $allOutput.Add('')
         $allOutput.Add("=== $relPath ===")
         $allOutput.AddRange([string[]]$lines)

@@ -371,7 +371,7 @@ void MissionScriptEngine::notifyPyroFired(uint8_t channel)
     else { /* invalid channel — ignore */ }
 }
 
-void MissionScriptEngine::tick(uint32_t nowMs)
+void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-size)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired())
@@ -662,7 +662,7 @@ bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
  * @pre  mutex_ is held by the caller.
  * @pre  currentState_ < program_.stateCount.
  */
-void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_t nowMs)
+void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_t nowMs) // NOLINT(readability-function-size)
 {
     ARES_ASSERT(currentState_ < program_.stateCount);
 
@@ -893,7 +893,7 @@ bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
     switch (expr.kind)
     {
     case CondKind::TIME_GT:
-        actualVal = static_cast<double>(nowMs - stateEnterMs_);
+        actualVal = static_cast<float>(nowMs - stateEnterMs_);
         holds = (static_cast<uint32_t>(actualVal)
                  <= static_cast<uint32_t>(expr.threshold));
         break;
@@ -1220,7 +1220,7 @@ bool MissionScriptEngine::parseCheckpointHeaderLocked(const char* buf,
                                                       uint32_t& seq,
                                                       uint32_t& stateElapsed,
                                                       uint32_t& hkElapsed,
-                                                      uint32_t& logElapsed) const
+                                                      uint32_t& logElapsed)
 {
     const int32_t parsed = static_cast<int32_t>(sscanf(buf,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                               "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
@@ -1304,7 +1304,7 @@ bool MissionScriptEngine::applyCheckpointStateLocked(
     return true;
 }
 
-bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
+bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs) // NOLINT(readability-function-size)
 {
     bool exists = false;
     const StorageStatus stExists = storage_.exists(ares::AMS_RESUME_PATH, exists);

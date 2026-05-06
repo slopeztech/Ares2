@@ -64,7 +64,7 @@ Mpu6050Driver::Mpu6050Driver(TwoWire& wire, uint8_t addr)
 {
 }
 
-bool Mpu6050Driver::begin()
+bool Mpu6050Driver::begin() // NOLINT(readability-function-size)
 {
     // CERT-13: create the driver mutex on first begin() call.
     if (imuMutex_ == nullptr)

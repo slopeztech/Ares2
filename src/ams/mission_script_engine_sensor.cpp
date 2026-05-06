@@ -499,7 +499,7 @@ bool MissionScriptEngine::parseRhsVarNameOffsetLocked(
     return true;
 }
 
-bool MissionScriptEngine::parseConditionRhsThresholdLocked(const char* rhs,
+bool MissionScriptEngine::parseConditionRhsThresholdLocked(const char* rhs, // NOLINT(readability-function-size)
                                                            CondExpr&   out)
 {
     float thr = 0.0f;

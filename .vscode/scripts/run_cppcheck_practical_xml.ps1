@@ -33,7 +33,9 @@ $cppArgs = @(
 
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Host 'Cppcheck practical XML started...'
-& 'C:/Program Files/Cppcheck/cppcheck.exe' @cppArgs 2>&1 | Out-File -Encoding utf8 $runFile
+& 'C:/Program Files/Cppcheck/cppcheck.exe' @cppArgs 2>&1 |
+    ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } |
+    Out-File -Encoding utf8 $runFile
 
 $code = $LASTEXITCODE
 if (Test-Path $runFile)

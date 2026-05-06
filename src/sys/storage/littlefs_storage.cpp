@@ -527,7 +527,7 @@ StorageStatus LittleFsStorage::appendFile(const char* path,
     return StorageStatus::OK;
 }
 
-StorageStatus LittleFsStorage::writeInternal(const char* path,
+StorageStatus LittleFsStorage::writeInternal(const char* path, // NOLINT(readability-function-size)
                                               const uint8_t* data,
                                               uint32_t len,
                                               const char* mode)

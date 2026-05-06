@@ -32,11 +32,23 @@ $cppArgs = @(
     '--suppress=misra-c2012-12.3:src/drivers/baro/bmp280_driver.cpp',
     '--suppress=misra-c2012-12.3:src/drivers/gps/bn220_driver.cpp',
     '--suppress=misra-c2012-12.3:src/drivers/radio/dxlr03_driver.cpp',
+    # MISRA-C 12.3 false positives on C++ constructor member-initializer-list commas.
+    '--suppress=misra-c2012-12.3:src/comms/radio_dispatcher.cpp',
+    '--suppress=misra-c2012-12.3:src/drivers/imu/adxl375_driver.cpp',
+    '--suppress=misra-c2012-12.3:src/drivers/imu/adxl375_spi_driver.cpp',
+    '--suppress=misra-c2012-12.3:src/drivers/imu/mpu6050_driver.cpp',
+    # MISRA-C 5.6 false positives on C++ using-declarations (not typedef reuse).
+    '--suppress=misra-c2012-5.6:src/ams/mission_script_engine.cpp',
+    '--suppress=misra-c2012-5.6:src/ams/mission_script_engine_telemetry.cpp',
+    '--suppress=misra-c2012-5.6:src/ams/mission_script_engine_parser.cpp',
+    '--suppress=misra-c2012-5.6:src/ams/mission_script_engine_utils.cpp',
     '--std=c++17',
     '--error-exitcode=1'
 )
 
-& 'C:/Program Files/Cppcheck/cppcheck.exe' @cppArgs 2>&1 | Out-File -Encoding utf8 $runFile
+& 'C:/Program Files/Cppcheck/cppcheck.exe' @cppArgs 2>&1 |
+    ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } |
+    Out-File -Encoding utf8 $runFile
 
 $code = $LASTEXITCODE
 if (Test-Path $runFile)

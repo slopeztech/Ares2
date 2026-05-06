@@ -689,7 +689,7 @@ private:
                                      StateDef& st,
                                      BlockType& blockType,
                                      bool& handled);
-    bool parseStateReportDirectivesLocked(const char* line, StateDef& st,
+    bool parseStateReportDirectivesLocked(const char* line, const StateDef& st,
                                           BlockType& blockType, bool& matched);
     bool parseStateBlockContentLocked(const char* line,
                                       StateDef& st,
@@ -935,7 +935,7 @@ private:
                                      uint32_t running, uint32_t status, uint32_t seq,
                                      uint32_t stateElapsed, uint32_t hkElapsed,
                                      uint32_t logElapsed);
-    bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed) const;
+    static bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed);
     void restoreCheckpointVarsLocked(const char* cursor);
     void clearResumePointLocked();
 

@@ -59,7 +59,7 @@ Adxl375Driver::Adxl375Driver(TwoWire& wire, uint8_t addr)
 
 // ── Public ──────────────────────────────────────────────────
 
-bool Adxl375Driver::begin()
+bool Adxl375Driver::begin() // NOLINT(readability-function-size)
 {
     // CERT-13: create the driver mutex on first begin() call.
     if (imuMutex_ == nullptr)

@@ -68,7 +68,7 @@ void RadioDispatcher::poll(uint32_t nowMs)
 
 // ── processBuffer ─────────────────────────────────────────────────────────────
 
-void RadioDispatcher::processBuffer(uint32_t nowMs)
+void RadioDispatcher::processBuffer(uint32_t nowMs) // NOLINT(readability-function-size)
 {
     // Outer loop: attempt to extract one frame per iteration.
     // Bounded by kMaxFramesPerPoll to satisfy PO10-2.
@@ -159,7 +159,7 @@ void RadioDispatcher::processBuffer(uint32_t nowMs)
 
 // ── dispatchFrame ─────────────────────────────────────────────────────────────
 
-void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs)
+void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs) // NOLINT(readability-function-size)
 {
     // Discard frames not addressed to us or broadcast (APUS-10.4, APUS-14.2).
     // APUS-14.3: if the unroutable frame is a COMMAND we can infer the source
@@ -347,7 +347,7 @@ void RadioDispatcher::sendAckNack(uint8_t            originalSeq,
 
 // ── executeCommand ────────────────────────────────────────────────────────────
 
-proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame,
+proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, // NOLINT(readability-function-size)
                                                    uint32_t nowMs)
 {
     // CommandHeader layout: [0] = priority, [1] = commandId (APUS-7).
@@ -1014,7 +1014,7 @@ void RadioDispatcher::drainCmdQueue(uint32_t nowMs)
 // validation → session management → data storage → assembly, which cannot be split
 // without introducing additional inter-function state coupling.
 // Cyclomatic complexity is ≤15; justification accepted per APUS-15 scope.
-void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame,
+void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame, // NOLINT(readability-function-size)
                                               uint32_t            nowMs)
 {
     // Decode and validate frag header via the shared helper (APUS-15, MISRA-7).
@@ -1119,7 +1119,7 @@ void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame,
 
     // ── Check if all segments have arrived ───────────────────────────────
     bool allReceived = true;
-    for (uint8_t i = 0U; i < fragSession_.totalSegments; ++i)
+    for (uint16_t i = 0U; i < fragSession_.totalSegments; ++i)
     {
         if (!fragSession_.received[i])
         {

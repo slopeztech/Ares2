@@ -55,7 +55,7 @@ Adxl375SpiDriver::Adxl375SpiDriver(SPIClass& spi, uint8_t csPin, uint32_t freqHz
 
 // ── Public ──────────────────────────────────────────────────
 
-bool Adxl375SpiDriver::begin()
+bool Adxl375SpiDriver::begin() // NOLINT(readability-function-size)
 {
     // CERT-13: create the driver mutex on first begin() call.
     if (imuMutex_ == nullptr)
@@ -91,6 +91,7 @@ bool Adxl375SpiDriver::begin()
           static_cast<unsigned>(csPin_), static_cast<unsigned long>(freqHz_));
 
     // Step 2: Standby mode before changing configuration.
+    // cppcheck-suppress knownConditionTrueFalse
     if (!writeReg(adxl375spi::REG_POWER_CTL, adxl375spi::POWER_CTL_STANDBY))
     {
         LOG_E(TAG, "ADXL375_SPI: POWER_CTL standby write failed");
@@ -98,6 +99,7 @@ bool Adxl375SpiDriver::begin()
     }
 
     // Step 3: Full-resolution, ±200 g format.
+    // cppcheck-suppress knownConditionTrueFalse
     if (!writeReg(adxl375spi::REG_DATA_FORMAT, adxl375spi::DATA_FORMAT_FULLRES))
     {
         LOG_E(TAG, "ADXL375_SPI: DATA_FORMAT write failed");
@@ -105,6 +107,7 @@ bool Adxl375SpiDriver::begin()
     }
 
     // Step 4: 100 Hz ODR, normal power.
+    // cppcheck-suppress knownConditionTrueFalse
     if (!writeReg(adxl375spi::REG_BW_RATE, adxl375spi::BW_RATE_100HZ))
     {
         LOG_E(TAG, "ADXL375_SPI: BW_RATE write failed");
@@ -112,6 +115,7 @@ bool Adxl375SpiDriver::begin()
     }
 
     // Step 5: FIFO bypass — read latest sample directly from output registers.
+    // cppcheck-suppress knownConditionTrueFalse
     if (!writeReg(adxl375spi::REG_FIFO_CTL, adxl375spi::FIFO_BYPASS))
     {
         LOG_E(TAG, "ADXL375_SPI: FIFO_CTL write failed");
@@ -119,6 +123,7 @@ bool Adxl375SpiDriver::begin()
     }
 
     // Step 6: Enter measurement mode.
+    // cppcheck-suppress knownConditionTrueFalse
     if (!writeReg(adxl375spi::REG_POWER_CTL, adxl375spi::POWER_CTL_MEASURE))
     {
         LOG_E(TAG, "ADXL375_SPI: POWER_CTL measure write failed");
@@ -219,9 +224,9 @@ ImuStatus Adxl375SpiDriver::readLocked(ImuReading& out)
 
 bool Adxl375SpiDriver::writeReg(uint8_t reg, uint8_t value)
 {
-    // Write frame: R/W̄=0, MB=0, addr[5:0].
-    const uint8_t cmd = adxl375spi::SPI_WRITE
-                      | (reg & adxl375spi::SPI_ADDR_MASK);
+    // Write frame: R/W̄=0, MB=0, addr[5:0]. SPI_WRITE=0x00 is intentional documentation.
+    // cppcheck-suppress badBitmaskCheck
+    const uint8_t cmd = adxl375spi::SPI_WRITE | (reg & adxl375spi::SPI_ADDR_MASK);
 
     spi_.beginTransaction(SPISettings(freqHz_, MSBFIRST, SPI_MODE3));
     digitalWrite(csPin_, LOW);

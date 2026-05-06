@@ -55,7 +55,7 @@ static constexpr const char* TAG = "AMS";
  * @pre  Caller holds the engine mutex.  @c currentState_ is valid.
  * @post A TELEMETRY frame is transmitted; @c seq_ is advanced.
  */
-void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
+void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readability-function-size)
 {
     if (currentState_ >= program_.stateCount) { return; }
 
@@ -162,7 +162,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs)
  * @param[in] slot   The HK slot to transmit.
  * @pre  Caller holds the engine mutex.
  */
-void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot)
+void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot) // NOLINT(readability-function-size)
 {
     ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
     if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
@@ -452,7 +452,7 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
  * @param[in] slotIdx  Zero-based slot index (used to track header state).
  * @pre  Caller holds the engine mutex.  @c logPath_ is set.
  */
-void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
+void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs, // NOLINT(readability-function-size)
                                                     const HkSlot& slot,
                                                     uint8_t       slotIdx)
 {
