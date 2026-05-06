@@ -195,19 +195,20 @@ enum class FailureCode : uint8_t
 };
 
 /**
- * Compact system status bitfield (APUS-3.2).
+ * Compact system status byte constants (APUS-3.2).
+ * Explicit mask constants replace bit-fields for MISRA-13.3 compliance.
  */
-struct StatusBits
-{
-    uint8_t armed      : 1;   ///< Bit 0: flight mode armed.
-    uint8_t fcsActive  : 1;   ///< Bit 1: flight control system active.
-    uint8_t gpsValid   : 1;   ///< Bit 2: GPS fix valid.
-    uint8_t pyroAFired : 1;   ///< Bit 3: pyro channel A fired.
-    uint8_t pyroBFired : 1;   ///< Bit 4: pyro channel B fired.
-    uint8_t deltaFrame : 1;   ///< Bit 5: altitudeAglM and pressurePa are delta-encoded (APUS-3.3).
-    uint8_t reserved   : 2;   ///< Bits 6–7: reserved, must be zero.
-};
-static_assert(sizeof(StatusBits) == 1, "APUS-3.6: StatusBits must be 1 byte");
+static constexpr uint8_t STATUS_ARMED        = 0x01U;  ///< Bit 0: flight mode armed.
+static constexpr uint8_t STATUS_FCS_ACTIVE   = 0x02U;  ///< Bit 1: flight control system active.
+static constexpr uint8_t STATUS_GPS_VALID    = 0x04U;  ///< Bit 2: GPS fix valid.
+static constexpr uint8_t STATUS_PYRO_A_FIRED = 0x08U;  ///< Bit 3: pyro channel A fired.
+static constexpr uint8_t STATUS_PYRO_B_FIRED = 0x10U;  ///< Bit 4: pyro channel B fired.
+static constexpr uint8_t STATUS_DELTA_FRAME  = 0x20U;  ///< Bit 5: delta-encoded frame (APUS-3.3).
+static constexpr uint8_t STATUS_RESERVED     = 0xC0U;  ///< Bits 6–7: reserved, must be zero.
+
+/// Status byte type alias (APUS-3.2).
+using StatusBits = uint8_t;
+static_assert(sizeof(StatusBits) == 1U, "APUS-3.6: StatusBits must be 1 byte");
 
 /**
  * Housekeeping telemetry payload for ST[3] HK reports (APUS-6).

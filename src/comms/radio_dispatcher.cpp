@@ -588,9 +588,9 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
             uint32_t raw = 0U;
             (void)memcpy(&raw, &configParams_[i].value, sizeof(raw));
             payload[offset]     = static_cast<uint8_t>( raw        & 0xFFU);
-            payload[offset + 1] = static_cast<uint8_t>((raw >>  8) & 0xFFU);
-            payload[offset + 2] = static_cast<uint8_t>((raw >> 16) & 0xFFU);
-            payload[offset + 3] = static_cast<uint8_t>((raw >> 24) & 0xFFU);
+            payload[offset + 1] = static_cast<uint8_t>((raw >>  8U) & 0xFFU);
+            payload[offset + 2] = static_cast<uint8_t>((raw >> 16U) & 0xFFU);
+            payload[offset + 3] = static_cast<uint8_t>((raw >> 24U) & 0xFFU);
             offset += 4U;
         }
         proto::Frame cfg = {};

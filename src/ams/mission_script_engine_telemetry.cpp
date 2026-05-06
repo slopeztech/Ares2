@@ -37,6 +37,12 @@ using ares::proto::MsgType;
 using ares::proto::PROTOCOL_VERSION;
 using ares::proto::TelemetryPayload;
 using ares::proto::StatusBits;
+using ares::proto::STATUS_ARMED;
+using ares::proto::STATUS_FCS_ACTIVE;
+using ares::proto::STATUS_GPS_VALID;
+using ares::proto::STATUS_PYRO_A_FIRED;
+using ares::proto::STATUS_PYRO_B_FIRED;
+using ares::proto::STATUS_DELTA_FRAME;
 
 using detail::formatScaledFloat;
 
@@ -112,7 +118,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readabili
         {
             tm.altitudeAglM          = dAlt;
             tm.pressurePa            = dPress;
-            tm.statusBits.deltaFrame = 1U;
+            tm.statusBits           |= STATUS_DELTA_FRAME;
         }
         else
         {
@@ -121,7 +127,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readabili
                   static_cast<double>(dAlt), static_cast<double>(dPress));
         }
     }
-    if (forceResync || tm.statusBits.deltaFrame == 0U)
+    if (forceResync || (tm.statusBits & STATUS_DELTA_FRAME) == 0U)
     {
         deltaBaseAlt_   = tm.altitudeAglM;
         deltaBasePress_ = tm.pressurePa;
@@ -145,7 +151,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readabili
     else
     {
         LOG_D(TAG, "HK frame sent seq=%u delta=%u len=%u",
-              frame.seq, static_cast<unsigned>(tm.statusBits.deltaFrame), frame.len);
+              frame.seq, static_cast<unsigned>((tm.statusBits & STATUS_DELTA_FRAME) != 0U), frame.len);
     }
 }
 
@@ -209,7 +215,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
         {
             tm.altitudeAglM          = dAlt;
             tm.pressurePa            = dPress;
-            tm.statusBits.deltaFrame = 1U;
+            tm.statusBits           |= STATUS_DELTA_FRAME;
         }
         else
         {
@@ -217,7 +223,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
                   static_cast<double>(dAlt), static_cast<double>(dPress));
         }
     }
-    if (forceResync || tm.statusBits.deltaFrame == 0U)
+    if (forceResync || (tm.statusBits & STATUS_DELTA_FRAME) == 0U)
     {
         deltaBaseAlt_   = tm.altitudeAglM;
         deltaBasePress_ = tm.pressurePa;
@@ -241,7 +247,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
     else
     {
         LOG_D(TAG, "HK slot frame sent seq=%u delta=%u len=%u",
-              frame.seq, static_cast<unsigned>(tm.statusBits.deltaFrame), frame.len);
+              frame.seq, static_cast<unsigned>((tm.statusBits & STATUS_DELTA_FRAME) != 0U), frame.len);
     }
 }
 
@@ -266,24 +272,23 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
  */
 ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
 {
-    StatusBits bits = {};
-    bits.armed    = (status_ == EngineStatus::RUNNING) ? 1U : 0U;
-    bits.fcsActive = executionEnabled_ ? 1U : 0U;
+    StatusBits bits = 0U;
+    if (status_ == EngineStatus::RUNNING) { bits |= STATUS_ARMED; }
+    if (executionEnabled_)               { bits |= STATUS_FCS_ACTIVE; }
 
     // gpsValid: true if any registered GPS driver has a current fix.
-    bits.gpsValid = 0U;
     for (uint8_t i = 0U; i < gpsCount_; ++i)
     {
         if ((gpsDrivers_[i].iface != nullptr) && gpsDrivers_[i].iface->hasFix())
         {
-            bits.gpsValid = 1U;
+            bits |= STATUS_GPS_VALID;
             break;
         }
     }
 
-    bits.pyroAFired = pyroAFired_ ? 1U : 0U;
-    bits.pyroBFired = pyroBFired_ ? 1U : 0U;
-    bits.reserved   = 0U;
+    if (pyroAFired_) { bits |= STATUS_PYRO_A_FIRED; }
+    if (pyroBFired_) { bits |= STATUS_PYRO_B_FIRED; }
+    // STATUS_RESERVED bits remain 0 (initialized to 0U).
     return bits;
 }
 

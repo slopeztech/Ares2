@@ -50,7 +50,7 @@ namespace log
 {
 
 /// Log severity levels (RFC 5424 subset).
-enum Level : uint8_t
+enum class Level : uint8_t
 {
     NONE  = 0,   ///< All output suppressed.
     ERROR = 1,   ///< Unrecoverable failure — system may abort.
@@ -92,7 +92,7 @@ void     emitV(char levelChar, const char* tag, const char* fmt, va_list args);
 inline void LOG_E(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 1
-    if (ares::log::getLevel() >= ares::log::ERROR)
+    if (ares::log::getLevel() >= ares::log::Level::ERROR)
     {
         va_list args;
         va_start(args, fmt);
@@ -108,7 +108,7 @@ inline void LOG_E(const char* tag, const char* fmt, ...)
 inline void LOG_W(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 2
-    if (ares::log::getLevel() >= ares::log::WARN)
+    if (ares::log::getLevel() >= ares::log::Level::WARN)
     {
         va_list args;
         va_start(args, fmt);
@@ -124,7 +124,7 @@ inline void LOG_W(const char* tag, const char* fmt, ...)
 inline void LOG_I(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 3
-    if (ares::log::getLevel() >= ares::log::INFO)
+    if (ares::log::getLevel() >= ares::log::Level::INFO)
     {
         va_list args;
         va_start(args, fmt);
@@ -140,7 +140,7 @@ inline void LOG_I(const char* tag, const char* fmt, ...)
 inline void LOG_D(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 4
-    if (ares::log::getLevel() >= ares::log::DEBUG)
+    if (ares::log::getLevel() >= ares::log::Level::DEBUG)
     {
         va_list args;
         va_start(args, fmt);

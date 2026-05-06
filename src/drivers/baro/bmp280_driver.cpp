@@ -122,13 +122,13 @@ BaroStatus Bmp280Driver::read(BaroReading& out)
 
     // 20-bit raw values packed as [MSB:8 | LSB:8 | XLSB:4+pad:4].
     // Burst layout: press[0..2], temp[3..5] (datasheet Table 29).
-    int32_t rawPress = (static_cast<int32_t>(buf[0]) << 12)
-                     | (static_cast<int32_t>(buf[1]) << 4)
-                     | (static_cast<int32_t>(buf[2]) >> 4);
+    int32_t rawPress = (static_cast<int32_t>(buf[0]) << 12U)
+                     | (static_cast<int32_t>(buf[1]) << 4U)
+                     | (static_cast<int32_t>(buf[2]) >> 4U);
 
-    int32_t rawTemp  = (static_cast<int32_t>(buf[3]) << 12)
-                     | (static_cast<int32_t>(buf[4]) << 4)
-                     | (static_cast<int32_t>(buf[5]) >> 4);
+    int32_t rawTemp  = (static_cast<int32_t>(buf[3]) << 12U)
+                     | (static_cast<int32_t>(buf[4]) << 4U)
+                     | (static_cast<int32_t>(buf[5]) >> 4U);
 
     // Temperature must be compensated first: it computes tFine_,
     // which is then used as an input to the pressure formula.
@@ -180,7 +180,7 @@ bool Bmp280Driver::readCalibration()
     auto u16 = [&](uint8_t i) -> uint16_t
     {
         return static_cast<uint16_t>(buf[i])
-             | (static_cast<uint16_t>(buf[i + 1]) << 8);
+             | (static_cast<uint16_t>(buf[i + 1]) << 8U);
     };
 
     auto s16 = [&](uint8_t i) -> int16_t

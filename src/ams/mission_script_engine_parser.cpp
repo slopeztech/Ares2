@@ -1626,10 +1626,12 @@ bool MissionScriptEngine::parseTransitionHoldClauseLocked(char* bodyBuf,
     holdMs = 0U;
     char* forPtr = nullptr;
     char* search = bodyBuf;
-    while ((search = strstr(search, " for ")) != nullptr)
+    for (char* found = strstr(search, " for ");
+         found != nullptr;
+         found = strstr(search, " for "))
     {
-        forPtr = search;
-        search += 5;
+        forPtr = found;
+        search = found + 5;
     }
     if (forPtr == nullptr)
     {
