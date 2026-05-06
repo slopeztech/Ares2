@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  mission_script_engine_telemetry.cpp
  * @brief AMS engine — PUS frame generation, CSV logging, and frame dispatch.
  *
@@ -467,18 +467,18 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
     if (!logSlotHeaderWritten_[slotIdx])
     {
         char hLine[256] = {};
-        const int hLen = snprintf(hLine, sizeof(hLine), "t_ms,state,slot");
+        const int32_t hLen = static_cast<int32_t>(snprintf(hLine, sizeof(hLine), "t_ms,state,slot"));
         if (hLen > 0)
         {
             uint32_t hPos = static_cast<uint32_t>(hLen);
             for (uint8_t i = 0; i < slot.fieldCount && hPos < sizeof(hLine) - 2U; i++)
             {
-                const int n = snprintf(&hLine[hPos], sizeof(hLine) - hPos,
-                                       ",%s", slot.fields[i].label);
+                const int32_t n = static_cast<int32_t>(snprintf(&hLine[hPos], sizeof(hLine) - hPos,
+                                       ",%s", slot.fields[i].label));
                 if (n <= 0) { break; }
                 hPos += static_cast<uint32_t>(n);
             }
-            const int nl = snprintf(&hLine[hPos], sizeof(hLine) - hPos, "\n");
+            const int32_t nl = static_cast<int32_t>(snprintf(&hLine[hPos], sizeof(hLine) - hPos, "\n"));
             if (nl > 0)
             {
                 const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
@@ -491,8 +491,8 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
 
     // Build data row: t_ms, state_name, slot_index, field values.
     char line[256] = {};
-    int head = snprintf(line, sizeof(line), "%" PRIu32 ",%s,%u",
-                        nowMs, st.name, static_cast<uint32_t>(slotIdx));
+    int32_t head = static_cast<int32_t>(snprintf(line, sizeof(line), "%" PRIu32 ",%s,%u",
+                        nowMs, st.name, static_cast<uint32_t>(slotIdx)));
     if (head <= 0) { return; }
 
     uint32_t pos = static_cast<uint32_t>(head);
@@ -500,14 +500,14 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
     {
         char value[32] = {};
         const bool hasValue = formatHkFieldValueLocked(slot.fields[i], value, sizeof(value));
-        const int n = hasValue
+        const int32_t n = static_cast<int32_t>(hasValue
                     ? snprintf(&line[pos], sizeof(line) - pos, ",%s", value)
-                    : snprintf(&line[pos], sizeof(line) - pos, ",");
+                    : snprintf(&line[pos], sizeof(line) - pos, ","));
         if (n <= 0) { break; }
         pos += static_cast<uint32_t>(n);
     }
 
-    const int tail = snprintf(&line[pos], sizeof(line) - pos, "\n");
+    const int32_t tail = static_cast<int32_t>(snprintf(&line[pos], sizeof(line) - pos, "\n"));
     if (tail <= 0) { return; }
     const uint32_t totalLen = pos + static_cast<uint32_t>(tail);
 
@@ -529,7 +529,7 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
     }
 
     char line[256] = {};
-    const int hLen = snprintf(line, sizeof(line), "t_ms,state");
+    const int32_t hLen = static_cast<int32_t>(snprintf(line, sizeof(line), "t_ms,state"));
     if (hLen <= 0)
     {
         return false;
@@ -538,13 +538,13 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
     uint32_t hPos = static_cast<uint32_t>(hLen);
     for (uint8_t i = 0; i < st.logFieldCount; i++)
     {
-        const int n = snprintf(&line[hPos], sizeof(line) - hPos, ",%s", st.logFields[i].label);
+        const int32_t n = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, ",%s", st.logFields[i].label));
         if (n <= 0) { break; }
         hPos += static_cast<uint32_t>(n);
         if (hPos >= sizeof(line) - 2U) { break; }
     }
 
-    const int nl = snprintf(&line[hPos], sizeof(line) - hPos, "\n");
+    const int32_t nl = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, "\n"));
     if (nl <= 0)
     {
         return false;
@@ -562,7 +562,7 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
                                                 uint32_t        outSize,
                                                 uint32_t&       outLen) const
 {
-    int headLen = snprintf(outLine, outSize, "%" PRIu32 ",%s", nowMs, st.name);
+    int32_t headLen = static_cast<int32_t>(snprintf(outLine, outSize, "%" PRIu32 ",%s", nowMs, st.name));
     if (headLen <= 0)
     {
         return false;
@@ -573,9 +573,9 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
     {
         char value[32] = {};
         const bool hasValue = formatHkFieldValueLocked(st.logFields[i], value, sizeof(value));
-        const int n = hasValue
+        const int32_t n = static_cast<int32_t>(hasValue
                     ? snprintf(&outLine[pos], outSize - pos, ",%s", value)
-                    : snprintf(&outLine[pos], outSize - pos, ",");
+                    : snprintf(&outLine[pos], outSize - pos, ","));
         if (n <= 0)
         {
             return false;
@@ -587,7 +587,7 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
         }
     }
 
-    const int tail = snprintf(&outLine[pos], outSize - pos, "\n");
+    const int32_t tail = static_cast<int32_t>(snprintf(&outLine[pos], outSize - pos, "\n"));
     if (tail <= 0)
     {
         return false;
@@ -628,9 +628,9 @@ bool MissionScriptEngine::ensureLogFileLocked(const char* fileName)
         safeName[i] = (alphaNum || c == '_' || c == '-') ? c : '_';
     }
 
-    const int written = snprintf(logPath_, sizeof(logPath_),
+    const int32_t written = static_cast<int32_t>(snprintf(logPath_, sizeof(logPath_),
                                  "%s/mission_%s.csv",
-                                 ares::LOG_DIR, safeName);
+                                 ares::LOG_DIR, safeName));
     if (written <= 0 || static_cast<uint32_t>(written) >= sizeof(logPath_))
     {
         return false;
@@ -896,7 +896,7 @@ bool MissionScriptEngine::configureMonitorFromParam(ares::proto::ConfigParamId i
 // ── getScriptRadioConfig ─────────────────────────────────────────────────────
 
 /**
- * @brief Return the script-declared override for @p id, if any (AMS-4.13).
+ * @brief Return the script-declared override for @p id, if any (AMS-4.15).
  *
  * @param[in]  id     Parameter identifier.
  * @param[out] value  Populated with the script value when @c true is returned.
@@ -907,9 +907,12 @@ bool MissionScriptEngine::configureMonitorFromParam(ares::proto::ConfigParamId i
 bool MissionScriptEngine::getScriptRadioConfig(ares::proto::ConfigParamId id,
                                                float&                     value) const
 {
+    // ARES-MISRA-DEV-005: sequential guard chain — bounds check, slot-set check,
+    // then value assignment; three returns are guards, not branch exits (AMS-4.15).
     using Id = ares::proto::ConfigParamId;
-    const uint8_t idx = static_cast<uint8_t>(id) -
-                        static_cast<uint8_t>(Id::FIRST);
+    // ARES-MISRA-DEV-002: outer cast suppresses integral promotion from uint8_t subtraction.
+    const uint8_t idx = static_cast<uint8_t>(
+        static_cast<uint8_t>(id) - static_cast<uint8_t>(Id::FIRST));
     if (idx >= Program::kRadioConfigCount)
     {
         return false;

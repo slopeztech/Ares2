@@ -254,7 +254,7 @@ public:
 
     /**
      * @brief Query whether the loaded script declares a @c radio.config override
-     *        for @p id (AMS-4.13).
+     *        for @p id (AMS-4.15).
      *
      * Called by RadioDispatcher after a successful @c arm() to apply
      * script-declared default parameter values into the config table.
@@ -612,7 +612,7 @@ private:
         char       eventAlias[16] = {};  ///< PUS ST[5] service alias (default: "EVENT").
         char       tcAlias[16]    = {};  ///< PUS ST[1] service alias (default: "TC").
 
-        // ── AMS-4.13: script-declared radio config overrides ─────────────────
+        // ── AMS-4.15: script-declared radio config overrides ─────────────────
         /**
          * One @c radio.config override declared in the script metadata section.
          *
@@ -626,11 +626,13 @@ private:
             float                      value; ///< Script-declared default value.
             bool                       set;   ///< true when this slot has been populated.
         };
-        /// Indexed by (ConfigParamId - ConfigParamId::FIRST), size == 6.
+        // ARES-MISRA-DEV-002: outer static_cast<uint8_t> suppresses integral promotion
+        // from uint8_t arithmetic; result is [0,6] and always fits in uint8_t.
         static constexpr uint8_t kRadioConfigCount =
-            static_cast<uint8_t>(ares::proto::ConfigParamId::LAST) -
-            static_cast<uint8_t>(ares::proto::ConfigParamId::FIRST) + 1U;
-        RadioConfigParam radioConfig[kRadioConfigCount] = {};
+            static_cast<uint8_t>(
+                static_cast<uint8_t>(ares::proto::ConfigParamId::LAST) -
+                static_cast<uint8_t>(ares::proto::ConfigParamId::FIRST) + 1U);
+        RadioConfigParam radioConfig[kRadioConfigCount] = {};  ///< Script radio.config overrides (AMS-4.15), indexed by (ConfigParamId - FIRST).
     };
 
     bool loadFromStorageLocked(const char* fileName);
@@ -649,7 +651,7 @@ private:
                                       bool& handled);
     bool parsePusApidDirectiveLocked(const char* line);
     bool parsePusServiceDirectiveLocked(const char* line);
-    bool parseRadioConfigLineLocked(const char* line);  ///< AMS-4.13: radio.config PARAM = VALUE.
+    bool parseRadioConfigLineLocked(const char* line);  ///< AMS-4.15: radio.config PARAM = VALUE.
     bool parseNonStateBlockLineLocked(const char* line,
                                       BlockType& blockType,
                                       bool& handled);
@@ -700,7 +702,7 @@ private:
                                CondExpr& out);
     bool parseFallingRisingCondLocked(const char* tok1, const char* tok2, CondExpr& out);
     bool parseTcDebounceCondLocked(bool allowTc, const char* d3, const char* d4,
-                                    const char* d5, int nd, CondExpr& out);
+                                    const char* d5, int32_t nd, CondExpr& out);
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
     bool parseVarLineLocked(const char* line);
@@ -904,7 +906,7 @@ private:
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
     bool saveResumePointLocked(uint32_t nowMs, bool force);
-    bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int& outWritten) const;
+    bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
     bool tryRestoreResumePointLocked(uint32_t nowMs);
     bool applyCheckpointStateLocked(uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
                                      uint32_t running, uint32_t status, uint32_t seq,

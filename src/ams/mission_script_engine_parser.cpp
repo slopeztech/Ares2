@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  mission_script_engine_parser.cpp
  * @brief AMS engine — script loading, parsing, and state-graph resolution.
  *
@@ -370,7 +370,7 @@ bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
     uint32_t svcNum = 0U;
     char     alias[16] = {};
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "pus.service %" SCNu32 " as %15s", &svcNum, alias);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "pus.service %" SCNu32 " as %15s", &svcNum, alias));
     if (n != 2 || alias[0] == '\0')
     {
         setErrorLocked("invalid pus.service syntax (expected: pus.service N as ALIAS)");
@@ -409,7 +409,7 @@ bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
 
 /**
  * @brief Parse a @c radio.config directive and store the override into
- *        @c program_.radioConfig (AMS-4.13).
+ *        @c program_.radioConfig (AMS-4.15).
  *
  * Syntax: @c "radio.config PARAM_NAME = VALUE"
  *
@@ -433,7 +433,8 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     char  key[32] = {};
     float value   = 0.0F;
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "radio.config %31s = %f", key, &value);
+    // MISRA-1: sscanf returns int (third-party API); cast to int32_t on capture.
+    const int32_t n = static_cast<int32_t>(sscanf(line, "radio.config %31s = %f", key, &value));
     if (n != 2 || key[0] == '\0')
     {
         setErrorLocked("invalid radio.config syntax (expected: radio.config PARAM = VALUE)");
@@ -451,16 +452,17 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
         float       maxVal;  ///< Inclusive upper bound.
     };
 
-    // MISRA-7: bounds must match RadioDispatcher::configParams_ defaults.
+    // MISRA-7: named constants from config.h — single authoritative source shared
+    // with RadioDispatcher::configParams_[] (DRY, AMS-4.15).
     static const ParamSpec kSpecs[] = {
         { "telem_interval",    Id::TELEM_INTERVAL_MS,
           static_cast<float>(ares::TELEMETRY_INTERVAL_MIN),
           static_cast<float>(ares::TELEMETRY_INTERVAL_MAX) },
-        { "monitor.alt.high",  Id::MONITOR_ALT_HIGH_M,    0.0F,  15000.0F },
-        { "monitor.alt.low",   Id::MONITOR_ALT_LOW_M,  -500.0F,   1000.0F },
-        { "monitor.accel.max", Id::MONITOR_ACCEL_HIGH,    0.0F,   1000.0F },
-        { "monitor.temp.high", Id::MONITOR_TEMP_HIGH_C, -40.0F,    150.0F },
-        { "monitor.temp.low",  Id::MONITOR_TEMP_LOW_C, -100.0F,     50.0F },
+        { "monitor.alt.high",  Id::MONITOR_ALT_HIGH_M,  0.0f,  ares::MONITOR_ALT_HIGH_MAX_M  },
+        { "monitor.alt.low",   Id::MONITOR_ALT_LOW_M,   ares::MONITOR_ALT_LOW_MIN_M,  ares::MONITOR_ALT_LOW_MAX_M  },
+        { "monitor.accel.max", Id::MONITOR_ACCEL_HIGH,  0.0f,  ares::MONITOR_ACCEL_HIGH_MAX  },
+        { "monitor.temp.high", Id::MONITOR_TEMP_HIGH_C, ares::MONITOR_TEMP_HIGH_MIN_C, ares::MONITOR_TEMP_HIGH_MAX_C },
+        { "monitor.temp.low",  Id::MONITOR_TEMP_LOW_C,  ares::MONITOR_TEMP_LOW_MIN_C,  ares::MONITOR_TEMP_LOW_MAX_C  },
     };
 
     const ParamSpec* found = nullptr;
@@ -484,8 +486,9 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     }
 
     // Store override — index = (id - FIRST).
-    const uint8_t idx = static_cast<uint8_t>(found->id) -
-                        static_cast<uint8_t>(Id::FIRST);
+    // ARES-MISRA-DEV-002: outer cast suppresses integral promotion from uint8_t subtraction.
+    const uint8_t idx = static_cast<uint8_t>(
+        static_cast<uint8_t>(found->id) - static_cast<uint8_t>(Id::FIRST));
     program_.radioConfig[idx].id    = found->id;
     program_.radioConfig[idx].value = value;
     program_.radioConfig[idx].set   = true;
@@ -838,7 +841,7 @@ bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
     char model[16] = {};
     char alias[16] = {};
     // cppcheck-suppress [cert-err34-c]
-    const int parsed = sscanf(line, "include %15s as %15s", model, alias);
+    const int32_t parsed = static_cast<int32_t>(sscanf(line, "include %15s as %15s", model, alias));
     if (parsed != 2 || model[0] == '\0' || alias[0] == '\0')
     {
         setErrorLocked("invalid include syntax (expected: include <MODEL> as <ALIAS>)");
@@ -923,7 +926,7 @@ bool MissionScriptEngine::parseStateLineLocked(const char* line,
     }
 
     char stateName[ares::AMS_MAX_STATE_NAME] = {};
-    const int n = sscanf(line, "state %15[^:]:", stateName);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "state %15[^:]:", stateName));
     if (n != 1)
     {
         setErrorLocked("invalid state syntax");
@@ -962,7 +965,7 @@ bool MissionScriptEngine::parseEventLineLocked(const char* line, StateDef& st)
         setErrorLocked("invalid EVENT syntax");
         return false;
     }
-    const int n = sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text);
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax");
@@ -1198,23 +1201,23 @@ bool MissionScriptEngine::parsePrioritiesValuesLocked(const char* line,
                                                       uint32_t&   budget,
                                                       const StateDef& st)
 {
-    int n = 0;
-    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    int32_t n = 0;
+    n = static_cast<int32_t>(sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                    "priorities event=%" SCNu32 " hk=%" SCNu32
                    " log=%" SCNu32 " budget=%" SCNu32,
-                   &event, &hk, &log, &budget);
+                   &event, &hk, &log, &budget));
     if (n == 4) { return true; }
 
-    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    n = static_cast<int32_t>(sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                "priorities event=%" SCNu32 " hk=%" SCNu32
                " log=%" SCNu32,
-               &event, &hk, &log);
+               &event, &hk, &log));
     if (n == 3) { budget = st.actionBudget; return true; }
 
-    n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    n = static_cast<int32_t>(sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                "priorities hk=%" SCNu32 " log=%" SCNu32
                " budget=%" SCNu32,
-               &hk, &log, &budget);
+               &hk, &log, &budget));
     if (n == 3) { event = st.eventPriority; return true; }
 
     n = sscanf(line,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
@@ -1248,7 +1251,7 @@ bool MissionScriptEngine::parseFieldLineLocked(const char* line,
 
     char key[20]  = {};
     char expr[32] = {};
-    const int n = sscanf(line, "%19[^:]: %31s", key, expr);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "%19[^:]: %31s", key, expr));
     if (n != 2)
     {
         char msg[48] = {};
@@ -1407,7 +1410,7 @@ bool MissionScriptEngine::parseFallingRisingCondLocked(
 }
 
 bool MissionScriptEngine::parseTcDebounceCondLocked(
-    bool allowTc, const char* d3, const char* d4, const char* d5, int nd, CondExpr& out)
+    bool allowTc, const char* d3, const char* d4, const char* d5, int32_t nd, CondExpr& out)
 {
     if (!allowTc)
     {
@@ -1471,14 +1474,14 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
     char tok4[20] = {};
 
     // 4-token form: ALIAS.field delta OP VALUE
-    const int n4 = sscanf(condStr, "%19s %19s %3s %19s", tok1, tok2, tok3, tok4);
+    const int32_t n4 = static_cast<int32_t>(sscanf(condStr, "%19s %19s %3s %19s", tok1, tok2, tok3, tok4));
     if (n4 == 4 && strcmp(tok2, "delta") == 0)
     {
         return parseDeltaCondLocked(tok1, tok3, tok4, out);
     }
 
     // 2-token form: ALIAS.field falling | rising
-    const int n2 = sscanf(condStr, "%19s %19s", tok1, tok2);
+    const int32_t n2 = static_cast<int32_t>(sscanf(condStr, "%19s %19s", tok1, tok2));
     if (n2 == 2 && (strcmp(tok2, "falling") == 0 || strcmp(tok2, "rising") == 0))
     {
         return parseFallingRisingCondLocked(tok1, tok2, out);
@@ -1492,7 +1495,7 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
         char d4[8]  = {};
         char d5[8]  = {};
         // cppcheck-suppress [cert-err34-c]
-        const int nd = sscanf(condStr, "%19s %2s %19s %7s %7s", d1, d2, d3, d4, d5);
+        const int32_t nd = static_cast<int32_t>(sscanf(condStr, "%19s %2s %19s %7s %7s", d1, d2, d3, d4, d5));
         char tcCmdToken[24] = {};
         snprintf(tcCmdToken, sizeof(tcCmdToken), "%s.command", program_.tcAlias);
         if (nd >= 3 && strcmp(d1, tcCmdToken) == 0 && strcmp(d2, "==") == 0)
@@ -1505,7 +1508,7 @@ bool MissionScriptEngine::parseOneConditionLocked(const char* condStr,
     char lhs[20] = {};
     char op[3]   = {};
     char rhs[20] = {};
-    const int n3 = sscanf(condStr, "%19s %2s %19s", lhs, op, rhs);
+    const int32_t n3 = static_cast<int32_t>(sscanf(condStr, "%19s %2s %19s", lhs, op, rhs));
     if (n3 == 3)
     {
         return parseCondExprLocked(lhs, op, rhs, allowTc, out);
@@ -1587,7 +1590,7 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
     }
 
     char target[ares::AMS_MAX_STATE_NAME] = {};
-    const int nTarget = sscanf(line, "transition to %15s", target);
+    const int32_t nTarget = static_cast<int32_t>(sscanf(line, "transition to %15s", target));
     if (nTarget != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid transition syntax: missing target state");
@@ -1771,7 +1774,7 @@ bool MissionScriptEngine::parseConditionScopedLineLocked(const char* line,
     char op[3]   = {};
     char rhs[20] = {};
 
-    const int n = sscanf(line, "%19s %2s %19s", lhs, op, rhs);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "%19s %2s %19s", lhs, op, rhs));
     if (n != 3)
     {
         setErrorLocked("invalid condition syntax");
@@ -1813,7 +1816,7 @@ bool MissionScriptEngine::parseOnErrorEventLineLocked(const char* line,
         setErrorLocked("invalid EVENT syntax in on_error");
         return false;
     }
-    const int n = sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text);
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax in on_error");
@@ -1940,7 +1943,7 @@ bool MissionScriptEngine::parseVarLineLocked(const char* line)
     char valBuf[24]                   = {};
 
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "var %15s = %23s", name, valBuf);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "var %15s = %23s", name, valBuf));
     if (n != 2 || name[0] == '\0')
     {
         setErrorLocked("invalid var syntax (expected: var NAME = VALUE)");
@@ -2017,7 +2020,7 @@ bool MissionScriptEngine::parseConstLineLocked(const char* line)
     char valBuf[24]                   = {};
 
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "const %15s = %23s", name, valBuf);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "const %15s = %23s", name, valBuf));
     if (n != 2 || name[0] == '\0')
     {
         setErrorLocked("invalid const syntax (expected: const NAME = VALUE)");
@@ -2152,7 +2155,7 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
     char rhsBuf[64] = {};
 
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "set %15s = %63[^\n]", varName, rhsBuf);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "set %15s = %63[^\n]", varName, rhsBuf));
     if (n != 2 || varName[0] == '\0' || rhsBuf[0] == '\0')
     {
         setErrorLocked("invalid set syntax (expected: set VARNAME = ALIAS.field)");
@@ -2205,7 +2208,7 @@ bool MissionScriptEngine::parseCalibrateSetActionLocked(const char* rhsBuf,
 {
     char sensorExpr[32] = {};
     char nBuf[8] = {};
-    const int nc = sscanf(rhsBuf, "CALIBRATE(%31[^,], %7[^)])", sensorExpr, nBuf);
+    const int32_t nc = static_cast<int32_t>(sscanf(rhsBuf, "CALIBRATE(%31[^,], %7[^)])", sensorExpr, nBuf));
     if (nc != 2)
     {
         setErrorLocked("invalid CALIBRATE syntax: expected CALIBRATE(ALIAS.field, N)");
@@ -2264,9 +2267,9 @@ bool MissionScriptEngine::parseMinMaxSetActionLocked(const char* rhsBuf,
     const bool isMax = (rhsBuf[0] == 'm' && rhsBuf[1] == 'a');
     char arg1[ares::AMS_VAR_NAME_LEN] = {};
     char arg2[32] = {};
-    const int nm = sscanf(rhsBuf,
+    const int32_t nm = static_cast<int32_t>(sscanf(rhsBuf,
                           isMax ? "max(%15[^,], %31[^)])" : "min(%15[^,], %31[^)])",
-                          arg1, arg2);
+                          arg1, arg2));
     if (nm != 2 || arg1[0] == '\0' || arg2[0] == '\0')
     {
         setErrorLocked("invalid max/min syntax: expected max(VARNAME, ALIAS.field)");
@@ -2317,7 +2320,7 @@ bool MissionScriptEngine::parseDeltaSetActionLocked(const char* rhsBuf,
 {
     char exprBuf[32] = {};
     char kwBuf[8] = {};
-    const int nd = sscanf(rhsBuf, "%31s %7s", exprBuf, kwBuf);
+    const int32_t nd = static_cast<int32_t>(sscanf(rhsBuf, "%31s %7s", exprBuf, kwBuf));
     if (nd != 2 || strcmp(kwBuf, "delta") != 0)
     {
         return false;
@@ -2463,7 +2466,7 @@ bool MissionScriptEngine::parseFallbackTransitionLineLocked(const char* line,
     // "fallback transition to TARGET after Nms"
     // Extract target state name.
     // cppcheck-suppress [cert-err34-c]
-    const int nt = sscanf(line, "fallback transition to %15s", target);
+    const int32_t nt = static_cast<int32_t>(sscanf(line, "fallback transition to %15s", target));
     if (nt != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid fallback transition syntax: missing target state");
@@ -2562,7 +2565,7 @@ bool MissionScriptEngine::parseOnErrorTransitionLineLocked(const char* line,
 
     char target[ares::AMS_MAX_STATE_NAME] = {};
     // cppcheck-suppress [cert-err34-c]
-    const int n = sscanf(line, "transition to %15s", target);
+    const int32_t n = static_cast<int32_t>(sscanf(line, "transition to %15s", target));
     if (n != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid on_error transition syntax: missing target state");
@@ -2680,7 +2683,7 @@ bool MissionScriptEngine::parseTaskLineLocked(const char* line)
     {
         char name[ares::AMS_MAX_STATE_NAME] = {};
         // cppcheck-suppress [cert-err34-c]
-        const int n = sscanf(line, "task %15[^:]:", name);
+        const int32_t n = static_cast<int32_t>(sscanf(line, "task %15[^:]:", name));
         if (n != 1 || name[0] == '\0')
         {
             setErrorLocked("invalid task syntax (expected: task NAME:)");
@@ -2794,7 +2797,7 @@ bool MissionScriptEngine::parseTaskIfBodyLocked(const char* line, TaskDef& td)
         char verb[8] = {};
         char text[ares::AMS_MAX_EVENT_TEXT] = {};
         // cppcheck-suppress [cert-err34-c]
-        const int n = sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text);
+        const int32_t n = static_cast<int32_t>(sscanf(line, "EVENT.%7[^ ] \"%63[^\"]\"", verb, text));
         if (n != 2)
         {
             setErrorLocked("task: invalid EVENT syntax (expected: EVENT.verb \"text\")");
@@ -2894,7 +2897,7 @@ bool MissionScriptEngine::parseAssertLineLocked(const char* line)
     {
         char name[ares::AMS_MAX_STATE_NAME] = {};
         // cppcheck-suppress [cert-err34-c]
-        const int n = sscanf(line, "reachable %15s", name);
+        const int32_t n = static_cast<int32_t>(sscanf(line, "reachable %15s", name));
         if (n != 1 || name[0] == '\0')
         {
             setErrorLocked("assert: invalid 'reachable' syntax (expected: reachable STATE)");
@@ -2920,7 +2923,7 @@ bool MissionScriptEngine::parseAssertLineLocked(const char* line)
     {
         uint32_t limit = 0;
         // cppcheck-suppress [cert-err34-c]
-        const int nr = sscanf(line, "max_transition_depth < %u", &limit);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        const int32_t nr = static_cast<int32_t>(sscanf(line, "max_transition_depth < %u", &limit));  // NOLINT(bugprone-unchecked-string-to-number-conversion)
         if (nr != 1 || limit == 0U || limit > 255U)
         {
             setErrorLocked("assert: invalid 'max_transition_depth' (expected: max_transition_depth < N, 1<=N<=255)");

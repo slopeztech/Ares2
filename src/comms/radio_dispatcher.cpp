@@ -15,6 +15,7 @@
  */
 
 #include "comms/radio_dispatcher.h"
+#include "ares_assert.h"
 #include "debug/ares_log.h"
 
 #include <cstring>
@@ -388,16 +389,25 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame,
         }
         // Apply script-declared radio.config overrides before first telemetry tick.
         // Ground can still override these values later via SET_CONFIG_PARAM (APUS-16.1).
-        // MISRA-8: loop over all config param IDs via compile-time sentinel (AMS-4.13).
+        // MISRA-8: loop over all config param IDs via compile-time sentinel (AMS-4.15).
         for (uint8_t pidRaw = static_cast<uint8_t>(proto::ConfigParamId::FIRST);
              pidRaw <= static_cast<uint8_t>(proto::ConfigParamId::LAST);
              ++pidRaw)
         {
-            const auto pid = static_cast<proto::ConfigParamId>(pidRaw);
-            float      override = 0.0F;
+            // MISRA-14.3: validate range before integer→enum cast.
+            ARES_ASSERT(pidRaw >= static_cast<uint8_t>(proto::ConfigParamId::FIRST));
+            ARES_ASSERT(pidRaw <= static_cast<uint8_t>(proto::ConfigParamId::LAST));
+            const proto::ConfigParamId pid = static_cast<proto::ConfigParamId>(pidRaw);
+            float override = 0.0f;
             if (engine_.getScriptRadioConfig(pid, override))
             {
-                (void)applyConfigParam(pid, override, nowMs);
+                const proto::FailureCode fc = applyConfigParam(pid, override, nowMs);
+                if (fc != proto::FailureCode::NONE)
+                {
+                    LOG_W(TAG, "ARM_FLIGHT: script radio.config override failed for pid=0x%02X (fc=0x%02X)",
+                          static_cast<unsigned>(pidRaw),
+                          static_cast<unsigned>(static_cast<uint8_t>(fc)));
+                }
             }
         }
         LOG_I(TAG, "ARM_FLIGHT: engine armed via radio TC");

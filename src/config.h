@@ -150,6 +150,18 @@ constexpr uint32_t    TELEMETRY_INTERVAL_MAX = 60000;   ///< Max telemetry inter
 constexpr uint8_t     NODE_ID_MIN            = 1;       ///< Min telemetry node ID.
 constexpr uint8_t     NODE_ID_MAX            = 253;     ///< Max telemetry node ID.
 
+// ── Monitoring parameter bounds (APUS-16.2, AMS-4.15) ────────────────────
+// Used by both configParams_[] (radio_dispatcher.h) and kSpecs[] (parser).
+// MISRA-7: named constants replace magic float literals in both sites.
+constexpr float MONITOR_ALT_HIGH_MAX_M   = 15000.0f;  ///< Max altitude high-alarm threshold (m).
+constexpr float MONITOR_ALT_LOW_MIN_M    =  -500.0f;  ///< Min altitude low-alarm threshold (m).
+constexpr float MONITOR_ALT_LOW_MAX_M    =  1000.0f;  ///< Max altitude low-alarm threshold (m).
+constexpr float MONITOR_ACCEL_HIGH_MAX   =  1000.0f;  ///< Max accel high-alarm threshold (m/s²).
+constexpr float MONITOR_TEMP_HIGH_MIN_C  =   -40.0f;  ///< Min temperature high-alarm threshold (°C).
+constexpr float MONITOR_TEMP_HIGH_MAX_C  =   150.0f;  ///< Max temperature high-alarm threshold (°C).
+constexpr float MONITOR_TEMP_LOW_MIN_C   =  -100.0f;  ///< Min temperature low-alarm threshold (°C).
+constexpr float MONITOR_TEMP_LOW_MAX_C   =    50.0f;  ///< Max temperature low-alarm threshold (°C).
+
 // ── RTOS Tasks ──────────────────────────────────────────────
 // Stack sizes are in bytes.  API task needs extra headroom for
 // ArduinoJson serialisation buffers and LittleFS I/O.

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  dxlr03_driver.cpp
  * @brief DX-LR03-433T30D driver implementation.
  *
@@ -118,7 +118,7 @@ RadioStatus DxLr03Driver::receive(uint8_t* buf, uint16_t bufSize,
     // Read whatever is available in the UART RX FIFO (non-blocking)
     while (serial_.available() > 0 && received < bufSize)
     {
-        const int rxByte = serial_.read();
+        const int32_t rxByte = static_cast<int32_t>(serial_.read());
         if (rxByte < 0) { break; }   // should not happen, but guard
         buf[received] = static_cast<uint8_t>(rxByte);
         ++received;

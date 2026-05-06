@@ -997,3 +997,65 @@ on the C++ stack — no heap.
 More than `AMS_MAX_ASSERTS` directives in one `assert:` block is a parse error.  
 Only one `assert:` block per script is allowed.
 
+---
+
+## AMS-4.15 Radio Configuration
+
+### AMS-4.15.1 Purpose
+
+The `radio.config` directive overrides compile-time default values for APUS
+configuration parameters (ST[20]) from the script metadata section.
+Overrides are applied by `RadioDispatcher` immediately after a successful
+`ARM_FLIGHT` command, before the first telemetry tick.
+Ground can still override any value afterwards via `SET_CONFIG_PARAM` (APUS-16.1).
+
+### AMS-4.15.2 Syntax
+
+```
+radio.config PARAM_NAME = VALUE
+```
+
+One directive per line.  Must appear in the top-level metadata section
+(before any `state[…]` block).  All tokens are case-sensitive.
+
+### AMS-4.15.3 Parameter table
+
+| PARAM_NAME         | APUS ConfigParamId    | Unit  | Valid range (inclusive) |
+|--------------------|-----------------------|-------|-------------------------|
+| `telem_interval`   | `TELEM_INTERVAL_MS`   | ms    | 100 – 60 000            |
+| `monitor.alt.high` | `MONITOR_ALT_HIGH_M`  | m     | 0 – 15 000              |
+| `monitor.alt.low`  | `MONITOR_ALT_LOW_M`   | m     | −500 – 1 000            |
+| `monitor.accel.max`| `MONITOR_ACCEL_HIGH`  | m/s²  | 0 – 1 000               |
+| `monitor.temp.high`| `MONITOR_TEMP_HIGH_C` | °C    | −40 – 150               |
+| `monitor.temp.low` | `MONITOR_TEMP_LOW_C`  | °C    | −100 – 50               |
+
+### AMS-4.15.4 Validation
+
+Bounds are checked at **parse time** against the same named constants
+(`MONITOR_*` in `config.h`) used by `RadioDispatcher::applyConfigParam()`
+at runtime.  A value outside the allowed range is a parse error and causes
+the script load to fail.
+
+### AMS-4.15.5 Priority model
+
+1. Compile-time defaults in `RadioDispatcher::configParams_[]` (lowest priority).
+2. `radio.config` script overrides — applied at `ARM_FLIGHT`.
+3. Ground `SET_CONFIG_PARAM` telecommands — applied on receipt (highest priority).
+
+### AMS-4.15.6 Limits
+
+| Parameter          | Value |
+|--------------------|-------|
+| Max directives     | 6 (one per `ConfigParamId`) |
+| Duplicate handling | Last declaration wins       |
+
+### AMS-4.15.7 Error conditions
+
+| Condition                         | Engine response                       |
+|-----------------------------------|---------------------------------------|
+| Unknown `PARAM_NAME`              | Parse error; script rejected          |
+| Value outside allowed range       | Parse error; script rejected          |
+| Missing `=` or missing value      | Parse error; script rejected          |
+| `radio.config` in a state block   | Parse error; script rejected          |
+| More than 6 directives            | Last one per param wins; no error     |
+

@@ -81,18 +81,18 @@ inline bool formatScaledFloat(float    value,
     const uint32_t whole = static_cast<uint32_t>(scal / scale);
     const uint32_t frac  = static_cast<uint32_t>(scal % scale);
 
-    int written = 0;
+    int32_t written = 0;
     if (decimals == 0U)
     {
-        written = snprintf(out, outSize,
-                           "%s%" PRIu32, neg ? "-" : "", whole);
+        written = static_cast<int32_t>(snprintf(out, outSize,
+                           "%s%" PRIu32, neg ? "-" : "", whole));
     }
     else
     {
-        written = snprintf(out, outSize,
+        written = static_cast<int32_t>(snprintf(out, outSize,
                            "%s%" PRIu32 ".%0*" PRIu32,
                            neg ? "-" : "", whole,
-                           static_cast<int>(decimals), frac);
+                           static_cast<int>(decimals), frac));
     }
     return (written > 0) && (static_cast<uint32_t>(written) < outSize);
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  storage_handler.cpp
  * @brief GET/DELETE /api/logs endpoint implementations (REST-12).
  *
@@ -80,8 +80,8 @@ static bool isValidLogFilename(const char* name)
  */
 static bool buildLogPath(const char* filename, char* out, uint32_t outSize)
 {
-    const int written = snprintf(out, outSize, "%s/%s",
-                                  ares::LOG_DIR, filename);
+    const int32_t written = static_cast<int32_t>(snprintf(out, outSize, "%s/%s",
+                                  ares::LOG_DIR, filename));
     return (written > 0
             && static_cast<uint32_t>(written) < outSize);
 }

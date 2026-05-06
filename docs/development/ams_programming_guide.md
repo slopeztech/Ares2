@@ -946,7 +946,7 @@ state LANDED:
 
 ---
 
-## 15. Radio Configuration (AMS-4.13)
+## 15. Radio Configuration (AMS-4.15)
 
 The `radio.config` directive lets a script override the compile-time default values of
 radio and monitoring parameters **at arm time**, before the first telemetry tick.

@@ -148,13 +148,13 @@ private:
     };
     static constexpr uint8_t kConfigParamCount = 6U;
     ConfigEntry configParams_[kConfigParamCount] = {
-        // id                                 value     min       max       writable
-        { proto::ConfigParamId::TELEM_INTERVAL_MS,  2000.0f,  100.0f, 60000.0f, true  },
-        { proto::ConfigParamId::MONITOR_ALT_HIGH_M,  3000.0f,    0.0f, 15000.0f, true  },
-        { proto::ConfigParamId::MONITOR_ALT_LOW_M,     -5.0f, -500.0f,  1000.0f, true  },
-        { proto::ConfigParamId::MONITOR_ACCEL_HIGH,   150.0f,    0.0f,  1000.0f, true  },
-        { proto::ConfigParamId::MONITOR_TEMP_HIGH_C,   85.0f,  -40.0f,   150.0f, true  },
-        { proto::ConfigParamId::MONITOR_TEMP_LOW_C,   -40.0f, -100.0f,    50.0f, true  },
+        // id                                  value    min                                                max                                                writable
+        { proto::ConfigParamId::TELEM_INTERVAL_MS,  2000.0f,  static_cast<float>(TELEMETRY_INTERVAL_MIN), static_cast<float>(TELEMETRY_INTERVAL_MAX), true  },
+        { proto::ConfigParamId::MONITOR_ALT_HIGH_M,  3000.0f,  0.0f,                                      MONITOR_ALT_HIGH_MAX_M,                     true  },
+        { proto::ConfigParamId::MONITOR_ALT_LOW_M,     -5.0f,  MONITOR_ALT_LOW_MIN_M,                     MONITOR_ALT_LOW_MAX_M,                      true  },
+        { proto::ConfigParamId::MONITOR_ACCEL_HIGH,   150.0f,  0.0f,                                      MONITOR_ACCEL_HIGH_MAX,                     true  },
+        { proto::ConfigParamId::MONITOR_TEMP_HIGH_C,   85.0f,  MONITOR_TEMP_HIGH_MIN_C,                   MONITOR_TEMP_HIGH_MAX_C,                    true  },
+        { proto::ConfigParamId::MONITOR_TEMP_LOW_C,   -40.0f,  MONITOR_TEMP_LOW_MIN_C,                    MONITOR_TEMP_LOW_MAX_C,                     true  },
     };
 
     // ── Internal helpers ─────────────────────────────────────

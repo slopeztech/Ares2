@@ -86,16 +86,16 @@ bool MissionScriptEngine::buildMissionPath(const char* fileName,
     const uint32_t len = static_cast<uint32_t>(strlen(fileName));
     const bool hasExt = (len >= 4U) && (strcmp(&fileName[len - 4U], ".ams") == 0);
 
-    int written = 0;
+    int32_t written = 0;
     if (hasExt)
     {
-        written = snprintf(outPath, outSize,
-                           "%s/%s", ares::MISSION_DIR, fileName);
+        written = static_cast<int32_t>(snprintf(outPath, outSize,
+                           "%s/%s", ares::MISSION_DIR, fileName));
     }
     else
     {
-        written = snprintf(outPath, outSize,
-                           "%s/%s.ams", ares::MISSION_DIR, fileName);
+        written = static_cast<int32_t>(snprintf(outPath, outSize,
+                           "%s/%s.ams", ares::MISSION_DIR, fileName));
     }
 
     return (written > 0) && (static_cast<uint32_t>(written) < outSize);

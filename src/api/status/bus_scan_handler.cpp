@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  bus_scan_handler.cpp
  * @brief POST /api/scans/i2c and POST /api/scans/uart endpoints.
  *
@@ -130,7 +130,7 @@ static void appendUartPort(JsonArray& ports,
         return;
     }
 
-    const int32_t available = serial->available();
+    const int32_t available = static_cast<int32_t>(serial->available());
     const bool hasData = (available > 0);
 
     item["available"] = true;
@@ -139,14 +139,14 @@ static void appendUartPort(JsonArray& ports,
 
     if (hasData)
     {
-        const int32_t peekByte = serial->peek();
+        const int32_t peekByte = static_cast<int32_t>(serial->peek());
         char firstByteHex[5] = {};
         if (peekByte >= 0)
         {
-            const int written = snprintf(firstByteHex,
+            const int32_t written = static_cast<int32_t>(snprintf(firstByteHex,
                                          sizeof(firstByteHex),
                                          "%02X",
-                                         static_cast<uint8_t>(peekByte));
+                                         static_cast<uint8_t>(peekByte)));
             if (written > 0)
             {
                 item["peekHex"] = firstByteHex;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  flight_handler.cpp
  * @brief POST /api/mode, /api/arm, /api/abort endpoint implementations.
  *
@@ -28,9 +28,9 @@ static constexpr const char* TAG = "API.FLT";
  * @param[out] out      Target mode if the transition is valid.
  * @return 0 on success; 400 for unknown mode; 409 for invalid transition.
  */
-static int validateModeTransition(const char*            target,
-                                  ares::OperatingMode    current,
-                                  ares::OperatingMode&   out)
+static int32_t validateModeTransition(const char*            target,
+                                      ares::OperatingMode    current,
+                                      ares::OperatingMode&   out)
 {
     if (strcmp(target, "idle") == 0)
     {
@@ -101,7 +101,7 @@ void ApiServer::handleMode(WiFiClient& client,
 
     // REST-6.1: mode transition matrix
     ares::OperatingMode next = current;
-    const int rc = validateModeTransition(target, current, next);
+    const int32_t rc = validateModeTransition(target, current, next);
     if (rc == 409)
     {
         sendError(client, 409, "invalid mode transition");

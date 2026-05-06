@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  littlefs_storage.cpp
  * @brief Thread-safe LittleFS storage implementation.
  */
@@ -184,7 +184,7 @@ static bool buildSiblingPath(const char* basePath,
                              char* outPath,
                              uint32_t outSize)
 {
-    const int written = snprintf(outPath, outSize, "%s%s", basePath, suffix);
+    const int32_t written = static_cast<int32_t>(snprintf(outPath, outSize, "%s%s", basePath, suffix));
     return (written > 0 && static_cast<uint32_t>(written) < outSize);
 }
 

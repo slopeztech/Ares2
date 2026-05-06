@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  mission_script_engine.cpp
  * @brief AMS engine — lifecycle, public API, and runtime state machine.
  *
@@ -1102,13 +1102,13 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
 bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
                                                       char*    record,
                                                       size_t   recSize,
-                                                      int&     outWritten) const
+                                                      int32_t& outWritten) const
 {
     const uint32_t stateElapsed = nowMs - stateEnterMs_;
     const uint32_t hkElapsed    = nowMs - lastHkMs_;
     const uint32_t logElapsed   = nowMs - lastLogMs_;
 
-    int written = snprintf(record, recSize,
+    int32_t written = static_cast<int32_t>(snprintf(record, recSize,
                            "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
                            "|%" PRIu32 "|%" PRIu32 "|%" PRIu32
                            "|%" PRIu32 "|%" PRIu32 "|%" PRIu32,
@@ -1119,7 +1119,7 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
                            running_ ? 1U : 0U,
                            static_cast<uint32_t>(status_),
                            static_cast<uint32_t>(seq_),
-                           stateElapsed, hkElapsed, logElapsed);
+                           stateElapsed, hkElapsed, logElapsed));
     if (written <= 0 || static_cast<size_t>(written) >= recSize)
     {
         return false;
@@ -1127,8 +1127,8 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
 
     if (program_.varCount > 0U)
     {
-        int w2 = snprintf(record + written, recSize - static_cast<size_t>(written),
-                          "|%" PRIu32, static_cast<uint32_t>(program_.varCount));
+        int32_t w2 = static_cast<int32_t>(snprintf(record + written, recSize - static_cast<size_t>(written),
+                          "|%" PRIu32, static_cast<uint32_t>(program_.varCount)));
         if (w2 > 0) { written += w2; }
 
         for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)
@@ -1137,10 +1137,10 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
             char floatBuf[24] = {};
             (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
                            static_cast<double>(v.value));
-            const int w3 = snprintf(record + written,
+            const int32_t w3 = static_cast<int32_t>(snprintf(record + written,
                                     recSize - static_cast<size_t>(written),
                                     "|%s=%s=%u",
-                                    v.name, floatBuf, v.valid ? 1U : 0U);
+                                    v.name, floatBuf, v.valid ? 1U : 0U));
             if (w3 > 0 &&
                 (static_cast<size_t>(written) + static_cast<size_t>(w3)) < recSize)
             {
@@ -1174,7 +1174,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
     //   |varCount|name1=value1=valid1|...|nameN=valueN=validN
     char record[400] = {};
-    int written = 0;
+    int32_t written = 0;
     if (!buildCheckpointRecordLocked(nowMs, record, sizeof(record), written))
     {
         return false;
@@ -1222,21 +1222,21 @@ bool MissionScriptEngine::parseCheckpointHeaderLocked(const char* buf,
                                                       uint32_t& hkElapsed,
                                                       uint32_t& logElapsed) const
 {
-    const int parsed = sscanf(buf,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    const int32_t parsed = static_cast<int32_t>(sscanf(buf,  // NOLINT(bugprone-unchecked-string-to-number-conversion)
                               "%" SCNu32 "|%32[^|]|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32
                               "|%" SCNu32 "|%" SCNu32 "|%" SCNu32,
                               &version, fileName,
                               &stateIdx, &execEnabled, &running,
                               &status, &seq,
-                              &stateElapsed, &hkElapsed, &logElapsed);
+                              &stateElapsed, &hkElapsed, &logElapsed));
     return parsed == 10;
 }
 
 void MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
 {
     uint32_t vcStored = 0U;
-    int vc = sscanf(cursor, "%" SCNu32, &vcStored);  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    int32_t vc = static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &vcStored));  // NOLINT(bugprone-unchecked-string-to-number-conversion)
     if (vc != 1 || vcStored == 0U) { return; }
 
     while (*cursor != '\0' && *cursor != '|') { cursor++; }
@@ -1248,8 +1248,8 @@ void MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
         char vValStr[24] = {};
         uint32_t vValid  = 0U;
         // cppcheck-suppress [cert-err34-c]
-        const int vp = sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
-                              vName, vValStr, &vValid);
+        const int32_t vp = static_cast<int32_t>(sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+                              vName, vValStr, &vValid));
         if (vp == 3)
         {
             VarEntry* v = findVarLocked(vName);

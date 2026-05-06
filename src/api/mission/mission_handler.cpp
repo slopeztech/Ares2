@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file  mission_handler.cpp
  * @brief AMS mission endpoints.
  *
@@ -59,8 +59,8 @@ static bool isValidMissionFilename(const char* name)
 
 static bool buildMissionPath(const char* filename, char* out, uint32_t outSize)
 {
-    const int written = snprintf(out, outSize, "%s/%s",
-                                 ares::MISSION_DIR, filename);
+    const int32_t written = static_cast<int32_t>(snprintf(out, outSize, "%s/%s",
+                                 ares::MISSION_DIR, filename));
     return (written > 0 && static_cast<uint32_t>(written) < outSize);
 }
 
