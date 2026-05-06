@@ -6,6 +6,7 @@
 .tools
 .venv
 ams_examples
+ares_code_lint/
 evidence
 compile_commands.json
 scripts/downloads/
