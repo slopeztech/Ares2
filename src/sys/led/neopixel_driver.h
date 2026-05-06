@@ -35,9 +35,13 @@ public:
     NeopixelDriver(NeopixelDriver&&)                 = delete;
     NeopixelDriver& operator=(NeopixelDriver&&)      = delete;
 
+    /** Initialise the NeoPixel strip (must be called before set() or off()). @return true on success. */
     bool begin() override;
+    /** Set all pixels to @p color. @param[in] color RGB value to apply. */
     void set(const RgbColor& color) override;
+    /** Turn all pixels off. */
     void off() override;
+    /** Set global brightness scaling factor (0=off, 255=full). @param[in] brightness 0–255 scale. */
     void setBrightness(uint8_t brightness) override;
 
 private:

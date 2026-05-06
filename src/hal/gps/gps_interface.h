@@ -101,6 +101,7 @@ public:
     /**
      * Return the driver model identifier (e.g. "BN220", "BN880").
     * Used by the AMS engine to validate 'include <MODEL> as GPS'.
+     * @return Null-terminated model name string (static storage).
      */
     virtual const char* driverModel() const = 0;
 };

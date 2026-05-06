@@ -35,6 +35,7 @@ static bool silentExists(const char* path)
     return stat(posixPath, &st) == 0;
 }
 
+/** Tallies gathered during the LittleFS mount-time recovery pass. */
 struct RecoveryCounters
 {
     uint32_t scanned = 0;

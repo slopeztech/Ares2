@@ -76,6 +76,7 @@ public:
     /**
      * Return the driver model identifier (e.g. "MPU6050", "ICM42688").
     * Used by the AMS engine to validate 'include <MODEL> as IMU'.
+     * @return Null-terminated model name string (static storage).
      */
     virtual const char* driverModel() const = 0;
 };

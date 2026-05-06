@@ -24,6 +24,7 @@ static constexpr uint8_t I2C_ADDR_FIRST = 0x03;
 static constexpr uint8_t I2C_ADDR_LAST = 0x77;
 static constexpr uint8_t I2C_MAX_REPORTED = 24;
 
+/** Result accumulator for a single I2C bus scan pass. */
 struct I2cScanResult
 {
     uint8_t addresses[I2C_MAX_REPORTED] = {};

@@ -444,6 +444,7 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     // Resolve token → ConfigParamId + bounds.
     using Id = ares::proto::ConfigParamId;
 
+    /** Maps an AMS keyword to its wire ConfigParamId and allowed value range. */
     struct ParamSpec
     {
         const char* token;   ///< AMS keyword.
@@ -3038,6 +3039,7 @@ void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) cons
 
 void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasCycle) const
 {
+    /** Iterative DFS stack frame for cycle detection and max-depth computation. */
     struct DfsFrame
     {
         uint8_t  state;

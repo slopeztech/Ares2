@@ -70,6 +70,7 @@ constexpr uint16_t MAX_FRAG_TOTAL   = 65535;  ///< Maximum number of fragments p
 
 // ── PUS service types (APUS-5) ─────────────────────────────
 // Maps ARES frame TYPE to ECSS-E-ST-70-41C service numbers.
+/** PUS service type carried in the frame header (APUS-5). */
 enum class MsgType : uint8_t
 {
     NONE      = 0x00,   ///< Uninitialised sentinel — must not be transmitted.

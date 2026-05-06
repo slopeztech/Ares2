@@ -267,6 +267,7 @@ public:
     bool getScriptRadioConfig(ares::proto::ConfigParamId id, float& value) const;
 
 private:
+    /** Parser state: identifies which top-level directive block is currently open. */
     enum class BlockType : uint8_t
     {
         NONE       = 0,
@@ -281,6 +282,7 @@ private:
     };
 
     // ── Peripheral kind ──────────────────────────────────────────────────────
+    /** Sensor peripheral category for alias resolution in AMS scripts. */
     enum class PeripheralKind : uint8_t
     {
         GPS  = 0,
@@ -290,6 +292,7 @@ private:
     };
 
     // ── Sensor field within a peripheral ─────────────────────────────────────
+    /** Physical measurement field within a peripheral alias (AMS-4.6). */
     enum class SensorField : uint8_t
     {
         LAT       = 0,  ///< GPS: latitude  (deg)
@@ -309,6 +312,7 @@ private:
     };
 
     // ── Unified condition kind ─────────────────────────────────────────────
+    /** Discriminant for a unified CondExpr — sensor comparison, TC match, or elapsed time. */
     enum class CondKind : uint8_t
     {
         NONE           = 0,
@@ -321,6 +325,7 @@ private:
     };
 
     // ── TC debounce mode (AMS-4.11) ────────────────────────────────────────
+    /** TC debounce policy for TC_EQ conditions (AMS-4.11). */
     enum class TcDebounceMode : uint8_t
     {
         ONESHOT  = 0U, ///< Fire on first TC match — one-shot, existing behavior (AMS-4.11.1).
@@ -329,6 +334,7 @@ private:
     };
 
     // ── Logical operator for compound transitions (AMS-4.6.2) ─────────────
+    /** Boolean combinator for multi-condition transitions (AMS-4.6.2). */
     enum class TransitionLogic : uint8_t
     {
         AND = 0,  ///< All sub-conditions must be true.
@@ -336,6 +342,10 @@ private:
     };
 
     // ── Unified condition expression ───────────────────────────────────────
+    /**
+     * A single parsed AMS condition (sensor comparison, TC match, or elapsed time).
+     * Used in transitions, task rules, and assert blocks.
+     */
     struct CondExpr
     {
         CondKind    kind      = CondKind::NONE;
@@ -422,6 +432,7 @@ private:
         bool          deltaValid     = false; ///< Whether deltaBaseline has been set.
     };
 
+    /** Severity level for AMS on_enter and task rule events (AMS-4.7). */
     enum class EventVerb : uint8_t
     {
         INFO  = 0,
@@ -502,6 +513,10 @@ private:
         CondExpr expr = {};
     };
 
+    /**
+     * A parsed state-machine transition: conditions, logic operator, target state,
+     * and optional persistence hold window (AMS-4.6).
+     */
     struct Transition
     {
         uint8_t         condCount      = 0;
@@ -526,6 +541,10 @@ private:
         uint8_t        retryCount  = 0U;    ///< Extra read attempts on failure (0 = no retry, max AMS_MAX_SENSOR_RETRY).
     };
 
+    /**
+     * A single parsed AMS state definition: name, on_enter event, scheduled
+     * reports, transitions, set actions, and fallback configuration.
+     */
     struct StateDef
     {
         char name[ares::AMS_MAX_STATE_NAME] = {};
@@ -592,6 +611,10 @@ private:
         SetAction setActions[ares::AMS_MAX_SET_ACTIONS] = {};
     };
 
+    /**
+     * Complete parsed AMS script: APID, node ID, state table, alias table,
+     * variables, constants, tasks, and formal assertions.
+     */
     struct Program
     {
         uint16_t   apid       = 0x01U;  ///< Active APID (APUS-10: rocket = 0x01).
@@ -987,8 +1010,8 @@ private:
     mutable ImuReading imuCachedReading_ = {};  ///< Last successful IMU burst.
     mutable uint32_t   imuCacheTsMs_     = 0;   ///< millis() when last attempt was made.
     mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
-    // Max age (ms) before a new read attempt is made.  Updated on both success
-    // and failure so all fields in one report share a single attempt (no 8x timeout).
+    /// Max age (ms) before a new IMU read attempt is made.  Updated on both success
+    /// and failure so all fields in one report share a single attempt (no 8x timeout).
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
 
     // ── Vertical velocity tracking (APUS-6) ───────────────────────────────────
@@ -1036,7 +1059,7 @@ private:
         uint8_t                      consecutiveHit; ///< Current consecutive violation count.
     };
 
-    static constexpr uint8_t kMaxMonitorSlots = 4U;
+    static constexpr uint8_t kMaxMonitorSlots = 4U;  ///< Maximum concurrent ST[12] monitoring slots (APUS-12.3).
 
     /// Default monitoring table (APUS-12.1: declared at compile time).
     /// Ground can override limits via SET_CONFIG_PARAM (APUS-16).

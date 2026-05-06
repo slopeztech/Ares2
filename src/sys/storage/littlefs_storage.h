@@ -35,6 +35,7 @@
 class LittleFsStorage : public StorageInterface
 {
 public:
+    /** Construct a LittleFS storage instance (filesystem mounted on begin()). */
     LittleFsStorage();
 
     // Non-copyable, non-movable (CERT-18.3)
@@ -43,9 +44,12 @@ public:
     LittleFsStorage(LittleFsStorage&&)                 = delete;
     LittleFsStorage& operator=(LittleFsStorage&&)      = delete;
 
+    /** Mount the LittleFS filesystem and initialise the mutex. @return true on success. */
     bool begin() override;
+    /** Unmount the filesystem and release resources. */
     void end() override;
 
+    /** @copydoc StorageInterface::exists */
     StorageStatus exists(const char* path, bool& result) override;
     StorageStatus readFile(const char* path, uint8_t* buf,
                            uint32_t bufSize,
@@ -56,11 +60,15 @@ public:
     StorageStatus appendFile(const char* path,
                              const uint8_t* data,
                              uint32_t len) override;
+    /** @copydoc StorageInterface::removeFile */
     StorageStatus removeFile(const char* path) override;
     StorageStatus renameFile(const char* oldPath,
                              const char* newPath) override;
+    /** @copydoc StorageInterface::fileSize */
     StorageStatus fileSize(const char* path, uint32_t& size) override;
+    /** @copydoc StorageInterface::info */
     StorageStatus info(StorageInfo& out) override;
+    /** @copydoc StorageInterface::health */
     StorageStatus health(StorageHealth& out) override;
     StorageStatus listFiles(const char* dir, FileEntry* entries,
                             uint8_t maxEntries,
