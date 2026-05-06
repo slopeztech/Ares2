@@ -734,7 +734,7 @@ private:
     bool ensureConstDoesNotConflictLocked(const char* name);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
     bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
-    bool ensureSetVariableExistsLocked(const char* varName) const;
+    bool ensureSetVariableExistsLocked(const char* varName);
     bool parseCalibrateSetActionLocked(const char* rhsBuf, SetAction& out);
     bool parseMinMaxSetActionLocked(const char* rhsBuf,
                                     const char* varName,

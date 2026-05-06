@@ -29,7 +29,7 @@ static constexpr const char* LITTLEFS_MOUNT = "/littlefs";
 static bool silentExists(const char* path)
 {
     // STORAGE_MAX_PATH=64 + "/littlefs" (9) + NUL = 74; use 80 for safety.
-    char posixPath[80] = {};
+    static char posixPath[80] = {};
     (void)snprintf(posixPath, sizeof(posixPath), "%s%s", LITTLEFS_MOUNT, path);
     struct stat st = {};
     return stat(posixPath, &st) == 0;

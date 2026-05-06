@@ -893,7 +893,7 @@ bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
     switch (expr.kind)
     {
     case CondKind::TIME_GT:
-        actualVal = static_cast<float>(nowMs - stateEnterMs_);
+        actualVal = static_cast<double>(nowMs - stateEnterMs_);
         holds = (static_cast<uint32_t>(actualVal)
                  <= static_cast<uint32_t>(expr.threshold));
         break;
@@ -1173,7 +1173,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     // v2 format:
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
     //   |varCount|name1=value1=valid1|...|nameN=valueN=validN
-    char record[400] = {};
+    static char record[400] = {};
     int32_t written = 0;
     if (!buildCheckpointRecordLocked(nowMs, record, sizeof(record), written))
     {
@@ -1313,7 +1313,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs)
         return false;
     }
 
-    char buf[400] = {};
+    static char buf[400] = {};
     uint32_t bytesRead = 0;
     const StorageStatus stRead = storage_.readFile(
         ares::AMS_RESUME_PATH,

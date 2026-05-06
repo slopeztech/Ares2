@@ -422,7 +422,7 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
         return;
     }
 
-    char line[256] = {};
+    static char line[256] = {};
     uint32_t len = 0U;
     if (!buildLogDataRowLocked(st, nowMs, line, sizeof(line), len))
     {
@@ -466,7 +466,7 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
     // Write per-slot header if this is the first row for this slot.
     if (!logSlotHeaderWritten_[slotIdx])
     {
-        char hLine[256] = {};
+        static char hLine[256] = {};
         const int32_t hLen = static_cast<int32_t>(snprintf(hLine, sizeof(hLine), "t_ms,state,slot"));
         if (hLen > 0)
         {
@@ -490,7 +490,7 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs,
     }
 
     // Build data row: t_ms, state_name, slot_index, field values.
-    char line[256] = {};
+    static char line[256] = {};
     int32_t head = static_cast<int32_t>(snprintf(line, sizeof(line), "%" PRIu32 ",%s,%u",
                         nowMs, st.name, static_cast<uint32_t>(slotIdx)));
     if (head <= 0) { return; }
@@ -528,7 +528,7 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
         return true;
     }
 
-    char line[256] = {};
+    static char line[256] = {};
     const int32_t hLen = static_cast<int32_t>(snprintf(line, sizeof(line), "t_ms,state"));
     if (hLen <= 0)
     {

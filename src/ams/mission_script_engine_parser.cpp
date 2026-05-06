@@ -457,8 +457,8 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     // with RadioDispatcher::configParams_[] (DRY, AMS-4.15).
     static const ParamSpec kSpecs[] = {
         { "telem_interval",    Id::TELEM_INTERVAL_MS,
-          static_cast<float>(ares::TELEMETRY_INTERVAL_MIN),
-          static_cast<float>(ares::TELEMETRY_INTERVAL_MAX) },
+          static_cast<double>(ares::TELEMETRY_INTERVAL_MIN),
+          static_cast<double>(ares::TELEMETRY_INTERVAL_MAX) },
         { "monitor.alt.high",  Id::MONITOR_ALT_HIGH_M,  0.0f,  ares::MONITOR_ALT_HIGH_MAX_M  },
         { "monitor.alt.low",   Id::MONITOR_ALT_LOW_M,   ares::MONITOR_ALT_LOW_MIN_M,  ares::MONITOR_ALT_LOW_MAX_M  },
         { "monitor.accel.max", Id::MONITOR_ACCEL_HIGH,  0.0f,  ares::MONITOR_ACCEL_HIGH_MAX  },
@@ -1267,7 +1267,7 @@ bool MissionScriptEngine::parseFieldLineLocked(const char* line,
                             aliasStr, sizeof(aliasStr),
                             fieldStr, sizeof(fieldStr)))
     {
-        char msg[96] = {};
+        static char msg[96] = {};
         snprintf(msg, sizeof(msg),
                  "invalid %s expression '%s' (expected ALIAS.field)",
                  ctxName, expr);
@@ -1287,7 +1287,7 @@ bool MissionScriptEngine::parseFieldLineLocked(const char* line,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg),
                  "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
         setErrorLocked(msg);
@@ -1350,7 +1350,7 @@ bool MissionScriptEngine::parseDeltaCondLocked(
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
         setErrorLocked(msg);
         return false;
@@ -1388,7 +1388,7 @@ bool MissionScriptEngine::parseFallingRisingCondLocked(
     const AliasEntry* ae = findAliasLocked(aliasStr);
     if (ae == nullptr)
     {
-        char msg[72] = {};
+        static char msg[72] = {};
         snprintf(msg, sizeof(msg), "unknown alias '%s' in falling/rising condition", aliasStr);
         setErrorLocked(msg);
         return false;
@@ -1396,7 +1396,7 @@ bool MissionScriptEngine::parseFallingRisingCondLocked(
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
         setErrorLocked(msg);
         return false;
@@ -2188,7 +2188,7 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
     return parseSimpleSensorSetActionLocked(rhsBuf, out);
 }
 
-bool MissionScriptEngine::ensureSetVariableExistsLocked(const char* varName) const
+bool MissionScriptEngine::ensureSetVariableExistsLocked(const char* varName)
 {
     for (uint8_t i = 0; i < program_.varCount; i++)
     {
@@ -2200,7 +2200,7 @@ bool MissionScriptEngine::ensureSetVariableExistsLocked(const char* varName) con
 
     char msg[64] = {};
     snprintf(msg, sizeof(msg), "set action: undefined variable '%s'", varName);
-    const_cast<MissionScriptEngine*>(this)->setErrorLocked(msg);
+    setErrorLocked(msg);
     return false;
 }
 
@@ -2245,7 +2245,7 @@ bool MissionScriptEngine::parseCalibrateSetActionLocked(const char* rhsBuf,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg),
                  "CALIBRATE: field '%s' not valid for alias '%s'",
                  fieldStr, aliasStr);
@@ -2302,7 +2302,7 @@ bool MissionScriptEngine::parseMinMaxSetActionLocked(const char* rhsBuf,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "max/min: field '%s' not valid for alias '%s'",
                  fieldStr, aliasStr);
         setErrorLocked(msg);
@@ -2346,7 +2346,7 @@ bool MissionScriptEngine::parseDeltaSetActionLocked(const char* rhsBuf,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "set delta: field '%s' not valid for alias '%s'",
                  fieldStr, aliasStr);
         setErrorLocked(msg);
@@ -2383,7 +2383,7 @@ bool MissionScriptEngine::parseSimpleSensorSetActionLocked(const char* rhsBuf,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "set action: field '%s' not valid for alias '%s'",
                  fieldStr, aliasStr);
         setErrorLocked(msg);
@@ -2968,7 +2968,7 @@ bool MissionScriptEngine::resolveTasksLocked()
             const uint8_t idx = findStateByNameLocked(td.activeStateNames[j]);
             if (idx >= program_.stateCount)
             {
-                char msg[80] = {};
+                static char msg[80] = {};
                 snprintf(msg, sizeof(msg),
                          "task '%s': unknown state '%s' in 'when in' filter",
                          td.name, td.activeStateNames[j]);
@@ -3117,14 +3117,14 @@ bool MissionScriptEngine::evaluateOneAssertionLocked(
         const uint8_t idx = findStateByNameLocked(ad.targetName);
         if (idx >= program_.stateCount)
         {
-            char msg[80] = {};
+            static char msg[80] = {};
             snprintf(msg, sizeof(msg), "assert reachable: unknown state '%s'", ad.targetName);
             setErrorLocked(msg);
             return false;
         }
         if (!(reachable & static_cast<uint16_t>(1U << idx)))
         {
-            char msg[80] = {};
+            static char msg[80] = {};
             snprintf(msg, sizeof(msg),
                      "assert reachable: '%s' is not reachable from initial state",
                      ad.targetName);
@@ -3145,7 +3145,7 @@ bool MissionScriptEngine::evaluateOneAssertionLocked(
             {
                 if (!(reachable & static_cast<uint16_t>(1U << s)))
                 {
-                    char msg[80] = {};
+                    static char msg[80] = {};
                     snprintf(msg, sizeof(msg),
                              "assert no_dead_states: '%s' is unreachable",
                              program_.states[s].name);
@@ -3163,7 +3163,7 @@ bool MissionScriptEngine::evaluateOneAssertionLocked(
     {
         if (hasCycle)
         {
-            char msg[96] = {};
+            static char msg[96] = {};
             snprintf(msg, sizeof(msg),
                      "assert max_transition_depth < %u: cycle detected (unbounded depth)",
                      static_cast<unsigned>(ad.numericArg));
@@ -3172,7 +3172,7 @@ bool MissionScriptEngine::evaluateOneAssertionLocked(
         }
         if (maxDepth >= static_cast<uint8_t>(ad.numericArg))
         {
-            char msg[96] = {};
+            static char msg[96] = {};
             snprintf(msg, sizeof(msg),
                      "assert max_transition_depth < %u: actual depth is %u",
                      static_cast<unsigned>(ad.numericArg),

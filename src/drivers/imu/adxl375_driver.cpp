@@ -6,6 +6,7 @@
 #include "drivers/imu/adxl375_driver.h"
 #include "config.h"
 #include "debug/ares_log.h"
+#include "rtos_guard.h"  // ScopedLock — CERT-18.1
 
 #include <cmath>
 #include <freertos/task.h>
@@ -159,14 +160,11 @@ bool Adxl375Driver::begin()
 
 ImuStatus Adxl375Driver::read(ImuReading& out)
 {
-    // CERT-13: serialise concurrent calls from AMS task and HTTP server task.
-    if (imuMutex_ == nullptr
-     || xSemaphoreTake(imuMutex_, pdMS_TO_TICKS(ares::IMU_LOCK_TIMEOUT_MS)) != pdTRUE)
-    {
-        return ImuStatus::NOT_READY;
-    }
+    // CERT-13/CERT-18.1: serialise concurrent calls using RAII guard.
+    if (imuMutex_ == nullptr) { return ImuStatus::NOT_READY; }
+    ScopedLock lk(imuMutex_, pdMS_TO_TICKS(ares::IMU_LOCK_TIMEOUT_MS));
+    if (!lk.acquired()) { return ImuStatus::NOT_READY; }
     const ImuStatus result = readLocked(out);
-    xSemaphoreGive(imuMutex_);
     return result;
 }
 

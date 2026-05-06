@@ -426,7 +426,7 @@ bool MissionScriptEngine::parseSensorCondExprLocked(const char* lhs,
     SensorField sf = SensorField::ALT;
     if (!parseSensorField(ae->kind, fieldStr, sf))
     {
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg),
                  "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
         setErrorLocked(msg);
