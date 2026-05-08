@@ -1557,6 +1557,13 @@ bool MissionScriptEngine::buildAndStoreTransitionLocked(
         return false;
     }
 
+    // Guard against exceeding the per-state transition table (AMS-4.6).
+    if (st.transitionCount >= ares::AMS_MAX_TRANSITIONS)
+    {
+        setErrorLocked("too many 'transition to' directives in state (AMS_MAX_TRANSITIONS exceeded)");
+        return false;
+    }
+
     Transition tr = {};
     tr.holdMs = holdMs;
     tr.logic  = logic;
@@ -1573,8 +1580,8 @@ bool MissionScriptEngine::buildAndStoreTransitionLocked(
     }
     tr.condCount = condCount;
 
-    st.hasTransition = true;
-    st.transition    = tr;
+    st.transitions[st.transitionCount] = tr;
+    st.transitionCount++;
     return true;
 }
 
@@ -1879,17 +1886,17 @@ bool MissionScriptEngine::resolveTransitionsLocked()
     {
         StateDef& st = program_.states[i];
 
-        // Regular transition target.
-        if (st.hasTransition)
+        // Regular transition targets (AMS-4.6): one resolve pass per slot.
+        for (uint8_t ti = 0U; ti < st.transitionCount; ti++)
         {
-            const uint8_t idx = findStateByNameLocked(st.transition.targetName);
+            const uint8_t idx = findStateByNameLocked(st.transitions[ti].targetName);
             if (idx >= program_.stateCount)
             {
                 setErrorLocked("unknown transition target state");
                 return false;
             }
-            st.transition.targetIndex    = idx;
-            st.transition.targetResolved = true;
+            st.transitions[ti].targetIndex    = idx;
+            st.transitions[ti].targetResolved = true;
         }
 
         // AMS-4.9.2: fallback transition target.
@@ -3024,9 +3031,13 @@ void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) cons
             }
         };
 
-        if (sd.hasTransition && sd.transition.targetResolved)
+        // Regular transitions (AMS-4.6): all slots feed the BFS.
+        for (uint8_t ti = 0U; ti < sd.transitionCount; ti++)
         {
-            visit(sd.transition.targetIndex);
+            if (sd.transitions[ti].targetResolved)
+            {
+                visit(sd.transitions[ti].targetIndex);
+            }
         }
         if (sd.hasFallback && sd.fallbackTargetResolved)
         {
@@ -3067,16 +3078,31 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
         bool pushed = false;
         const StateDef& sd = program_.states[f.state];
 
-        while (f.child < 3U && !pushed && !hasCycle)
+        // Successor slots: [0..transitionCount-1] = regular transitions,
+        //                    transitionCount         = fallback,
+        //                    transitionCount+1       = on_error.
+        const uint8_t totalSuccessors =
+            static_cast<uint8_t>(sd.transitionCount + 2U);
+
+        while (f.child < totalSuccessors && !pushed && !hasCycle)
         {
             uint8_t suc = ares::AMS_MAX_STATES;
-            if (f.child == 0U && sd.hasTransition && sd.transition.targetResolved)
+            if (f.child < sd.transitionCount)
             {
-                suc = sd.transition.targetIndex;
+                if (sd.transitions[f.child].targetResolved)
+                {
+                    suc = sd.transitions[f.child].targetIndex;
+                }
             }
-            else if (f.child == 1U && sd.hasFallback && sd.fallbackTargetResolved)
+            else if (f.child == sd.transitionCount
+                     && sd.hasFallback && sd.fallbackTargetResolved)
             {
                 suc = sd.fallbackTargetIdx;
+            }
+            else if (f.child == static_cast<uint8_t>(sd.transitionCount + 1U)
+                     && sd.hasOnErrorTransition && sd.onErrorTransitionResolved)
+            {
+                suc = sd.onErrorTransitionIdx;
             }
             else if (f.child == 2U && sd.hasOnErrorTransition &&
                      sd.onErrorTransitionResolved)

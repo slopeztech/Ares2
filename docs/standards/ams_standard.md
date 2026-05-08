@@ -261,6 +261,25 @@ Full extended syntax:
 transition to <STATE> when <COND> [or|and <COND> ...] [for <N>ms]
 ```
 
+A state may declare **up to `AMS_MAX_TRANSITIONS` (4) independent `transition to` directives**.
+All transitions are evaluated every tick in declaration order.  The first one whose
+conditions hold (and whose hold window has fully elapsed) fires; subsequent transitions
+are not evaluated that tick.
+
+```ams
+state ASCENT:
+  transition to SAFE     when TC.command == ABORT
+  transition to RECOVERY when TIME.elapsed > 180000
+  transition to APOGEE   when BARO.alt > 3000 for 500ms
+```
+
+Rules:
+- Transitions are evaluated in declaration order; **first match wins**.
+- If no transition fires, the state continues on the next tick.
+- Exceeding `AMS_MAX_TRANSITIONS` in one state is a **parse-time error**.
+- The `for Nms` hold window (AMS-4.6.1) is **per-transition** — each slot
+  maintains its own hold-window state independently.
+
 Where each `<COND>` may be one of:
 
 | Form | Meaning |
@@ -311,9 +330,9 @@ Semantics:
 - Minimum value: `1 ms`. Zero is rejected at parse time.
 
 Runtime state:
-- `transitionCondHolding_` — set when the compound first becomes true.
-- `transitionCondMetMs_` — timestamp of the first true sample.
-- Both fields are reset on every state entry and on `deactivate()`.
+- `transitionCondHolding_[ti]` — set when transition `ti`'s compound first becomes true.
+- `transitionCondMetMs_[ti]`   — timestamp of that first true sample.
+- Both arrays are reset on every state entry and on `deactivate()`.
 
 ### AMS-4.6.2 Delta / Trend Conditions
 

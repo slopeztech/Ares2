@@ -167,12 +167,17 @@ void MissionScriptEngine::deactivateLocked()
     pendingOnEnterEvent_ = false;
     pendingEventText_[0] = '\0';
     pendingEventTsMs_ = 0;
-    transitionCondHolding_ = false;
-    transitionCondMetMs_   = 0U;
-    for (uint8_t i = 0; i < ares::AMS_MAX_TRANSITION_CONDS; i++)
+    for (uint8_t ti = 0U; ti < ares::AMS_MAX_TRANSITIONS; ti++)
     {
-        transitionPrevVal_[i]   = 0.0f;
-        transitionPrevValid_[i] = false;
+        transitionCondHolding_[ti] = false;
+        transitionCondMetMs_[ti]   = 0U;
+    }
+    constexpr uint8_t kPrevSlots =
+        static_cast<uint8_t>(ares::AMS_MAX_TRANSITIONS * ares::AMS_MAX_TRANSITION_CONDS);
+    for (uint8_t pi = 0U; pi < kPrevSlots; pi++)
+    {
+        transitionPrevVal_[pi]   = 0.0f;
+        transitionPrevValid_[pi] = false;
     }
     memset(taskLastTickMs_, 0U, sizeof(taskLastTickMs_));
     parseCurrentTask_     = 0xFFU;
@@ -440,7 +445,7 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
                            || (state.hasLogEvery
                                && state.logEveryMs > 0U
                                && state.logFieldCount > 0U);
-    if (!state.hasTransition
+    if (state.transitionCount == 0U
         && !state.hasFallback
         && !pendingOnEnterEvent_
         && !hasActiveHk
@@ -479,47 +484,63 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
 {
     ARES_ASSERT(currentState_ < program_.stateCount);
 
-    if (!state.hasTransition || state.transition.condCount == 0U)
+    if (state.transitionCount == 0U)
     {
         return false;
     }
 
-    const Transition& tr = state.transition;
-    bool compound = (tr.logic == TransitionLogic::AND);
-    bool tcPendingMatch = false;
-
-    for (uint8_t i = 0; i < tr.condCount; i++)
+    // Evaluate each transition independently; the first one whose compound
+    // condition holds (and whose hold window has elapsed) fires.  Transitions
+    // are tested in declaration order so script authors control priority.
+    for (uint8_t ti = 0; ti < state.transitionCount; ti++)
     {
-        const bool condResult = evaluateOneTransitionConditionLocked(
-            tr.conds[i], state, i, nowMs, tcPendingMatch);
-        if (tr.logic == TransitionLogic::OR)
+        const Transition& tr = state.transitions[ti];
+        if (tr.condCount == 0U) { continue; }
+
+        // Compute the flat base index for this transition's prev-value slots.
+        const uint8_t prevBase =
+            static_cast<uint8_t>(ti * static_cast<uint8_t>(ares::AMS_MAX_TRANSITION_CONDS));
+
+        bool compound = (tr.logic == TransitionLogic::AND);
+        bool tcPendingMatch = false;
+
+        for (uint8_t i = 0; i < tr.condCount; i++)
         {
-            compound = compound || condResult;
+            const uint8_t flatIdx = static_cast<uint8_t>(prevBase + i);
+            const bool condResult = evaluateOneTransitionConditionLocked(
+                tr.conds[i], state, flatIdx, nowMs, tcPendingMatch);
+            if (tr.logic == TransitionLogic::OR)
+            {
+                compound = compound || condResult;
+            }
+            else
+            {
+                compound = compound && condResult;
+            }
         }
-        else
+
+        if (!compound)
         {
-            compound = compound && condResult;
+            transitionCondHolding_[ti] = false;  // compound fell false — reset this transition's hold window
+            continue;
         }
+
+        if (!applyTransitionHoldLocked(tr, ti, nowMs))
+        {
+            continue;  // still within hold window — keep evaluating on future ticks
+        }
+
+        if (tcPendingMatch)
+        {
+            consumeMatchedTransitionTcLocked(tr);
+            LOG_I(TAG, "TC condition matched in state=%s (transition %u)", state.name,
+                  static_cast<unsigned>(ti));
+        }
+
+        return fireResolvedTransitionLocked(state, tr, nowMs);
     }
 
-    if (!compound)
-    {
-        transitionCondHolding_ = false;  // compound fell false — reset hold window
-        return false;
-    }
-
-    if (!applyTransitionHoldLocked(tr, nowMs))
-    {
-        return false;
-    }
-
-    if (tcPendingMatch)
-    {
-        consumeMatchedTransitionTcLocked(tr);
-        LOG_I(TAG, "TC condition matched in state=%s", state.name);
-    }
-
-    return fireResolvedTransitionLocked(state, tr, nowMs);
+    return false;
 }
 
 bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& cond,
@@ -591,27 +612,30 @@ bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& c
 }
 
 bool MissionScriptEngine::applyTransitionHoldLocked(const Transition& tr,
+                                                    uint8_t           trIdx,
                                                     uint32_t          nowMs)
 {
+    ARES_ASSERT(trIdx < ares::AMS_MAX_TRANSITIONS);
+
     const bool isTcOnly = (tr.condCount == 1U && tr.conds[0].kind == CondKind::TC_EQ);
     if (tr.holdMs == 0U || isTcOnly)
     {
         return true;
     }
 
-    if (!transitionCondHolding_)
+    if (!transitionCondHolding_[trIdx])
     {
-        transitionCondHolding_ = true;
-        transitionCondMetMs_ = nowMs;
+        transitionCondHolding_[trIdx] = true;
+        transitionCondMetMs_[trIdx]   = nowMs;
         return false;
     }
 
-    if ((nowMs - transitionCondMetMs_) < tr.holdMs)
+    if ((nowMs - transitionCondMetMs_[trIdx]) < tr.holdMs)
     {
         return false;
     }
 
-    transitionCondHolding_ = false;
+    transitionCondHolding_[trIdx] = false;
     return true;
 }
 
@@ -1083,15 +1107,21 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     stateEnterMs_ = nowMs;
     lastHkMs_ = nowMs;
     lastLogMs_ = nowMs;
-    transitionCondHolding_ = false;  // reset hold window on every state entry (AMS-4.6.1)
-    transitionCondMetMs_   = 0U;
+    // AMS-4.6.1: reset all per-transition hold windows on every state entry.
+    for (uint8_t ti = 0; ti < ares::AMS_MAX_TRANSITIONS; ti++)
+    {
+        transitionCondHolding_[ti] = false;
+        transitionCondMetMs_[ti]   = 0U;
+    }
     // AMS-4.11.2: reset TC CONFIRM counters on state entry (clean slate per state).
     memset(tcConfirmCount_, 0U, sizeof(tcConfirmCount_));
-    // Reset delta prev-values so the first tick in the new state has no prior reading (AMS-4.6.2).
-    for (uint8_t i = 0; i < ares::AMS_MAX_TRANSITION_CONDS; i++)
+    // AMS-4.6.2: reset flat prev-value table so no delta baseline carries over between states.
+    constexpr uint8_t kPrevSlots =
+        static_cast<uint8_t>(ares::AMS_MAX_TRANSITIONS * ares::AMS_MAX_TRANSITION_CONDS);
+    for (uint8_t pi = 0U; pi < kPrevSlots; pi++)
     {
-        transitionPrevVal_[i]   = 0.0f;
-        transitionPrevValid_[i] = false;
+        transitionPrevVal_[pi]   = 0.0f;
+        transitionPrevValid_[pi] = false;
     }
 
     LOG_I(TAG, "state -> %s", program_.states[stateIndex].name);

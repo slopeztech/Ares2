@@ -578,8 +578,12 @@ private:
         uint8_t eventPriority = 4;  ///< PUS event reporting has highest default priority.
         uint8_t actionBudget  = 2;  ///< Max actions per tick (EVENT/HK/LOG arbitration).
 
-        bool hasTransition = false;
-        Transition transition = {};
+        // ── Regular transitions (AMS-4.6) ──────────────────────────────────
+        // Up to AMS_MAX_TRANSITIONS independent "transition to" directives per state.
+        // The first condition that evaluates true (respecting its own hold window)
+        // fires; subsequent transitions in the list are not evaluated that tick.
+        uint8_t    transitionCount = 0U;
+        Transition transitions[ares::AMS_MAX_TRANSITIONS] = {};
 
         // ── Guard conditions (AMS-4.7) ─────────────────────
         uint8_t   conditionCount = 0;
@@ -826,7 +830,7 @@ private:
                                               uint8_t         condIdx,
                                               uint32_t        nowMs,
                                               bool&           tcPendingMatch);
-    bool applyTransitionHoldLocked(const Transition& tr, uint32_t nowMs);
+    bool applyTransitionHoldLocked(const Transition& tr, uint8_t trIdx, uint32_t nowMs);
     void consumeMatchedTransitionTcLocked(const Transition& tr);
     bool fireResolvedTransitionLocked(const StateDef&   state,
                                       const Transition& tr,
@@ -988,14 +992,15 @@ private:
     char logPath_[ares::STORAGE_MAX_PATH] = {};
 
     // ── Transition hold (debounce) state (AMS-4.6.1) ─────────────────────────
-    bool     transitionCondHolding_ = false;  ///< true while condition is being timed.
-    uint32_t transitionCondMetMs_   = 0;      ///< millis() when condition first became true.
+    // One hold-window entry per transition slot [0..AMS_MAX_TRANSITIONS-1].
+    bool     transitionCondHolding_[ares::AMS_MAX_TRANSITIONS] = {};  ///< true while that transition's condition is being timed.
+    uint32_t transitionCondMetMs_[ares::AMS_MAX_TRANSITIONS]   = {};  ///< millis() when that transition's condition first became true.
 
     // ── Transition delta tracking (AMS-4.6.2) ────────────────────────────────
-    // Previous sensor readings indexed by condition slot [0..AMS_MAX_TRANSITION_CONDS-1].
+    // Flat 2D array indexed as [trIdx * AMS_MAX_TRANSITION_CONDS + condIdx].
     // Reset on every state entry so delta is always relative to the state-entry baseline.
-    float transitionPrevVal_[ares::AMS_MAX_TRANSITION_CONDS]   = {};
-    bool  transitionPrevValid_[ares::AMS_MAX_TRANSITION_CONDS] = {};
+    float transitionPrevVal_[ares::AMS_MAX_TRANSITIONS * ares::AMS_MAX_TRANSITION_CONDS]   = {};
+    bool  transitionPrevValid_[ares::AMS_MAX_TRANSITIONS * ares::AMS_MAX_TRANSITION_CONDS] = {};
 
     bool logHeaderWritten_ = false;
     bool logSlotHeaderWritten_[ares::AMS_MAX_HK_SLOTS] = {}; ///< Per-slot CSV header written flags (AMS-4.3.1).
