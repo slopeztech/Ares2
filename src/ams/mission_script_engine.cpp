@@ -31,7 +31,7 @@ namespace ams
 using detail::formatScaledFloat;
 
 static constexpr const char* TAG = "AMS";
-static constexpr uint8_t AMS_RESUME_VERSION = 2U;
+static constexpr uint8_t AMS_RESUME_VERSION = 3U;
 
 /**
  * @brief Clamp the per-tick action budget to the valid range [1, 3].
@@ -1186,6 +1186,50 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
         }
     }
 
+    // v3: per-slot HK/LOG elapsed timers (AMS-4.3.1).
+    // Format: |hkSlotCount|hkElap0|...|logSlotCount|logElap0|...
+    {
+        const StateDef& curSt = program_.states[currentState_];
+
+        const int32_t wHk = static_cast<int32_t>(snprintf(
+            record + written, recSize - static_cast<size_t>(written),
+            "|%" PRIu32, static_cast<uint32_t>(curSt.hkSlotCount)));
+        if (wHk > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wHk)) < recSize)
+        {
+            written += wHk;
+        }
+        for (uint8_t s = 0U; s < curSt.hkSlotCount && written > 0; s++)
+        {
+            const uint32_t slotElap = nowMs - lastHkSlotMs_[s];
+            const int32_t ws = static_cast<int32_t>(snprintf(
+                record + written, recSize - static_cast<size_t>(written),
+                "|%" PRIu32, slotElap));
+            if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
+            {
+                written += ws;
+            }
+        }
+
+        const int32_t wLog = static_cast<int32_t>(snprintf(
+            record + written, recSize - static_cast<size_t>(written),
+            "|%" PRIu32, static_cast<uint32_t>(curSt.logSlotCount)));
+        if (wLog > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wLog)) < recSize)
+        {
+            written += wLog;
+        }
+        for (uint8_t s = 0U; s < curSt.logSlotCount && written > 0; s++)
+        {
+            const uint32_t slotElap = nowMs - lastLogSlotMs_[s];
+            const int32_t ws = static_cast<int32_t>(snprintf(
+                record + written, recSize - static_cast<size_t>(written),
+                "|%" PRIu32, slotElap));
+            if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
+            {
+                written += ws;
+            }
+        }
+    }
+
     outWritten = written;
     return true;
 }
@@ -1207,10 +1251,11 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
         return false;
     }
 
-    // v2 format:
+    // v3 format:
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
-    //   |varCount|name1=value1=valid1|...|nameN=valueN=validN
-    static char record[400] = {};
+    //   [|varCount|name1=value1=valid1|...|nameN=valueN=validN]
+    //   |hkSlotCount|hkSlotElap0|...|logSlotCount|logSlotElap0|...
+    static char record[512] = {};
     int32_t written = 0;
     if (!buildCheckpointRecordLocked(nowMs, record, sizeof(record), written))
     {
@@ -1270,13 +1315,15 @@ bool MissionScriptEngine::parseCheckpointHeaderLocked(const char* buf,
     return parsed == 10;
 }
 
-void MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
+const char* MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
 {
     uint32_t vcStored = 0U;
     int32_t vc = static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &vcStored));  // NOLINT(bugprone-unchecked-string-to-number-conversion)
-    if (vc != 1 || vcStored == 0U) { return; }
 
+    // Always advance past the varCount token so the caller can locate the next section.
     while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+    if (vc != 1 || vcStored == 0U) { return cursor; }
 
     for (uint32_t vi = 0; vi < vcStored && *cursor != '\0'; vi++)
     {
@@ -1302,6 +1349,55 @@ void MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
         }
         while (*cursor != '\0' && *cursor != '|') { cursor++; }
     }
+    return cursor;
+}
+
+void MissionScriptEngine::restoreCheckpointSlotsLocked(const char* cursor, uint32_t nowMs)
+{
+    // cursor points to the first character of the hkSlotCount value.
+    uint32_t hkCount = 0U;
+    if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &hkCount)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    {
+        return;
+    }
+    const uint8_t hkSlots = static_cast<uint8_t>(
+        hkCount < ares::AMS_MAX_HK_SLOTS ? hkCount : ares::AMS_MAX_HK_SLOTS);
+
+    while (*cursor != '\0' && *cursor != '|') { cursor++; }  // advance past hkCount
+
+    for (uint8_t s = 0U; s < hkSlots && *cursor != '\0'; s++)
+    {
+        if (*cursor == '|') { cursor++; }
+        uint32_t elap = 0U;
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &elap)) == 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            lastHkSlotMs_[s] = nowMs - elap;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
+
+    // logSlotCount field.
+    if (*cursor == '|') { cursor++; }
+    uint32_t logCount = 0U;
+    if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &logCount)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    {
+        return;
+    }
+    const uint8_t logSlots = static_cast<uint8_t>(
+        logCount < ares::AMS_MAX_HK_SLOTS ? logCount : ares::AMS_MAX_HK_SLOTS);
+
+    while (*cursor != '\0' && *cursor != '|') { cursor++; }  // advance past logCount
+
+    for (uint8_t s = 0U; s < logSlots && *cursor != '\0'; s++)
+    {
+        if (*cursor == '|') { cursor++; }
+        uint32_t elap = 0U;
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &elap)) == 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            lastLogSlotMs_[s] = nowMs - elap;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
 }
 
 bool MissionScriptEngine::applyCheckpointStateLocked(
@@ -1314,6 +1410,14 @@ bool MissionScriptEngine::applyCheckpointStateLocked(
     lastHkMs_     = nowMs - hkElapsed;
     lastLogMs_    = nowMs - logElapsed;
     seq_          = static_cast<uint8_t>(seq & 0xFFU);
+
+    // AMS-4.3.1: initialize slot timers to nowMs as a conservative fallback.
+    // A v3 checkpoint will override these with precise values immediately after.
+    for (uint8_t s = 0U; s < ares::AMS_MAX_HK_SLOTS; s++)
+    {
+        lastHkSlotMs_[s]  = nowMs;
+        lastLogSlotMs_[s] = nowMs;
+    }
 
     running_          = (running != 0U);
     executionEnabled_ = (execEnabled != 0U);
@@ -1350,7 +1454,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs) // NOLINT(
         return false;
     }
 
-    static char buf[400] = {};
+    static char buf[512] = {};
     uint32_t bytesRead = 0;
     const StorageStatus stRead = storage_.readFile(
         ares::AMS_RESUME_PATH,
@@ -1379,9 +1483,9 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs) // NOLINT(
                                                     stateIdx, execEnabled, running,
                                                     status, seq, stateElapsed,
                                                     hkElapsed, logElapsed);
-    // Accept v1 (no vars) and v2 (with vars).  Reject everything else.
+    // Accept v1 (no vars), v2 (with vars), v3 (with vars + per-slot timers).
     if (!parsed
-        || (version != 1U && version != static_cast<uint32_t>(AMS_RESUME_VERSION)))
+        || (version != 1U && version != 2U && version != 3U))
     {
         clearResumePointLocked();
         return false;
@@ -1406,20 +1510,26 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs) // NOLINT(
         return false;
     }
 
-    // ── v2: restore global variables ─────────────────────────────────
-    if (version == static_cast<uint32_t>(AMS_RESUME_VERSION))
+    // ── v2/v3: restore global variables ──────────────────────────────
+    if (version >= 2U)
     {
         // Locate the 11th '|'-delimited token (index 10 = varCount field).
         const char* cursor = buf;
-        uint8_t pipes = 0;
+        uint8_t pipes = 0U;
         while (*cursor != '\0' && pipes < 10U)
         {
             if (*cursor == '|') { pipes++; }
             cursor++;
         }
-        if (*cursor != '\0')
+        if (*cursor != '\0' && program_.varCount > 0U)
         {
-            restoreCheckpointVarsLocked(cursor);
+            cursor = restoreCheckpointVarsLocked(cursor);
+        }
+
+        // ── v3: restore per-slot HK/LOG elapsed timers (AMS-4.3.1) ──
+        if (version == 3U && *cursor == '|')
+        {
+            restoreCheckpointSlotsLocked(cursor + 1U, nowMs);
         }
     }
 

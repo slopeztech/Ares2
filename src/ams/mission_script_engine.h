@@ -940,7 +940,8 @@ private:
                                      uint32_t stateElapsed, uint32_t hkElapsed,
                                      uint32_t logElapsed);
     static bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed);
-    void restoreCheckpointVarsLocked(const char* cursor);
+    const char* restoreCheckpointVarsLocked(const char* cursor);
+    void restoreCheckpointSlotsLocked(const char* cursor, uint32_t nowMs);
     void clearResumePointLocked();
 
     /**

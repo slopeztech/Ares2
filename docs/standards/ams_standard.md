@@ -63,14 +63,19 @@ Persistent resume checkpoint:
 1|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed
 ```
 
-**Checkpoint format v2** (current — `AMS_RESUME_VERSION = 2`):
+**Checkpoint format v2** (legacy — accepted on restore, no longer written):
 ```
 2|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed[|varCount|name1=value1=valid1|...|nameN=valueN=validN]
+```
+
+**Checkpoint format v3** (current — `AMS_RESUME_VERSION = 3`):
+```
+3|file|stateIdx|executionEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed[|varCount|name1=value1=valid1|...|nameN=valueN=validN]|hkSlotCount|hkSlotElap0|...|logSlotCount|logSlotElap0|...
 ```
 Fields:
 | Field | Description |
 |---|---|
-| `version` | Format version (`1` legacy, `2` current) |
+| `version` | Format version (`1`/`2` legacy, `3` current) |
 | `file` | Script filename (e.g. `flight_test.ams`) |
 | `stateIdx` | Zero-based index of active state |
 | `executionEnabled` | `1` if armed and executing; `0` if paused |
@@ -78,14 +83,19 @@ Fields:
 | `status` | Numeric `EngineStatus` value |
 | `seq` | HK frame sequence counter |
 | `stateElapsed` | ms since state entry |
-| `hkElapsed` | ms since last HK transmission |
-| `logElapsed` | ms since last LOG write |
-| `varCount` | Number of variable entries (v2 only) |
-| `name=value=valid` | Per-variable: name, float value, `0`/`1` valid flag (v2 only) |
+| `hkElapsed` | ms since last global HK transmission |
+| `logElapsed` | ms since last global LOG write |
+| `varCount` | Number of variable entries (v2/v3, omitted if 0) |
+| `name=value=valid` | Per-variable: name, float value, `0`/`1` valid flag (v2/v3) |
+| `hkSlotCount` | Number of per-slot HK elapsed entries (v3) |
+| `hkSlotElapN` | ms elapsed since last HK for slot N (v3) |
+| `logSlotCount` | Number of per-slot LOG elapsed entries (v3) |
+| `logSlotElapN` | ms elapsed since last LOG for slot N (v3) |
 
 Restore rules:
-- v1 checkpoints are restored without variable data
-- v2 checkpoints restore global variable state
+- v1 checkpoints are restored without variable or slot data; slot timers default to `nowMs`
+- v2 checkpoints restore global variable state; slot timers default to `nowMs`
+- v3 checkpoints restore global variable state and precise per-slot HK/LOG timers
 - Checkpoint is discarded if `!(running && executionEnabled && status == RUNNING)`
 
 ---
@@ -588,18 +598,19 @@ transition to LANDED when BARO.alt < (ground_alt - 5)
   transitions before the calibration state has executed.
 - The offset form `(varname ± offset)` is evaluated as `var.value + offset`.
 
-### AMS-4.8.7 Checkpoint Persistence (v2)
+### AMS-4.8.7 Checkpoint Persistence (v3)
 
-Variables are persisted in the AMS checkpoint file (version 2):
+Variables and per-slot HK/LOG timers are persisted in the AMS checkpoint file (version 3):
 
 ```
-2|fileName|stateIdx|exec|running|status|seq|stateElap|hkElap|logElap|varCount|name1=val1=valid1|...|nameN=valN=validN
+3|fileName|stateIdx|exec|running|status|seq|stateElap|hkElap|logElap[|varCount|name1=val1=valid1|...|nameN=valN=validN]|hkSlotCount|hkSlotElap0|...|logSlotCount|logSlotElap0|...
 ```
 
 On restore:
 - Variables are matched by name against the loaded program's variable table.
 - If a persisted variable is not found in the current script, it is silently skipped.
-- v1 checkpoints (no variable data) are still accepted; variables start invalid.
+- Per-slot elapsed times are clamped to `AMS_MAX_HK_SLOTS` entries.
+- v1/v2 checkpoints are still accepted; slot timers fall back to `nowMs` (conservative — next HK/LOG fires at the normal interval from restore time).
 
 ---
 
