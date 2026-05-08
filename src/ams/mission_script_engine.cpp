@@ -1107,6 +1107,13 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     stateEnterMs_ = nowMs;
     lastHkMs_ = nowMs;
     lastLogMs_ = nowMs;
+    // AMS-4.3.1: reset per-slot HK/LOG timers so the new state's cadences start
+    // from zero, not from the previous state's last-fire timestamps.
+    for (uint8_t s = 0U; s < ares::AMS_MAX_HK_SLOTS; s++)
+    {
+        lastHkSlotMs_[s]  = nowMs;
+        lastLogSlotMs_[s] = nowMs;
+    }
     // AMS-4.6.1: reset all per-transition hold windows on every state entry.
     for (uint8_t ti = 0; ti < ares::AMS_MAX_TRANSITIONS; ti++)
     {
