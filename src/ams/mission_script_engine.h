@@ -859,6 +859,11 @@ private:
                                     const CondExpr& expr,
                                     float           actualVal,
                                     uint32_t        nowMs);
+    void logGuardViolationLocked(const StateDef& state,
+                                 const CondExpr& expr,
+                                 float           actualVal,
+                                 uint32_t        nowMs);
+    bool applyGuardErrorLocked(const StateDef& state, uint32_t nowMs);
     void sendHkReportLocked(uint32_t nowMs);
     void sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot);       ///< AMS-4.3.1: single slot variant.
     void appendLogReportLocked(uint32_t nowMs);

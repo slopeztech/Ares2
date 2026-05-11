@@ -795,7 +795,6 @@ Any APID outside this mapping is rejected.
 
 Not implemented in current AMS profile:
 - Multiple active scripts
-- Boolean compound conditions (`AND`/`OR`)
 - Complex arithmetic expressions in fields
 - Absolute time scheduling
 - Automatic log rotation/partitioning---

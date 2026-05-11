@@ -287,6 +287,15 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
     else if (!enabled && status_ == EngineStatus::RUNNING)
     {
         status_ = EngineStatus::LOADED;
+
+        // Clear all per-transition hold windows so that a paused "for Nms"
+        // window cannot fire spuriously on the first tick after re-enabling
+        // (Bug #5: hold state must not accumulate during pause).
+        for (uint8_t ti = 0U; ti < ares::AMS_MAX_TRANSITIONS; ti++)
+        {
+            transitionCondHolding_[ti] = false;
+            transitionCondMetMs_[ti]   = 0U;
+        }
     }
     LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
 
@@ -947,6 +956,15 @@ bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
                                                      float           actualVal,
                                                      uint32_t        nowMs)
 {
+    logGuardViolationLocked(state, expr, actualVal, nowMs);
+    return applyGuardErrorLocked(state, nowMs);
+}
+
+void MissionScriptEngine::logGuardViolationLocked(const StateDef& state,
+                                                  const CondExpr& expr,
+                                                  float           actualVal,
+                                                  uint32_t        nowMs)
+{
     char valText[16] = {};
     char thrText[16] = {};
     if (!formatScaledFloat(actualVal, 3U, valText, sizeof(valText)))
@@ -984,7 +1002,11 @@ bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
                         state.onErrorText,
                         nowMs);
     }
+}
 
+bool MissionScriptEngine::applyGuardErrorLocked(const StateDef& state,
+                                                uint32_t        nowMs)
+{
     if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
     {
         LOG_I(TAG,
@@ -1020,12 +1042,23 @@ bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
         return false;
     }
 
+    bool anyViolation = false;
+
     for (uint8_t i = 0; i < state.conditionCount; i++)  // PO10-2: bounded
     {
         const CondExpr& expr = state.conditions[i].expr;
         float actualVal = 0.0f;
         const bool holds = evaluateGuardExprHoldsLocked(expr, state, nowMs, actualVal);
-        if (!holds) { return handleGuardViolationLocked(state, expr, actualVal, nowMs); }
+        if (!holds)
+        {
+            logGuardViolationLocked(state, expr, actualVal, nowMs);
+            anyViolation = true;
+        }
+    }
+
+    if (anyViolation)
+    {
+        return applyGuardErrorLocked(state, nowMs);
     }
 
     return false;
