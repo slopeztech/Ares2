@@ -286,6 +286,7 @@ private:
         TASK_IF    = 7,  ///< Inside an if COND: block within a task (AMS-11).
         ASSERT     = 8,  ///< Inside an assert: block (AMS-15).
         ON_EXIT    = 9,  ///< Inside an on_exit: block (EVENT.* and set actions).
+        ON_TIMEOUT = 10, ///< Inside an on_timeout: block (transition + optional EVENT).
     };
 
     // ── Peripheral kind ──────────────────────────────────────────────────────
@@ -640,6 +641,18 @@ private:
         char      onExitText[ares::AMS_MAX_EVENT_TEXT] = {};
         uint8_t   onExitSetCount = 0;
         SetAction onExitSetActions[ares::AMS_MAX_SET_ACTIONS] = {};
+
+        // ── on_timeout handler (AMS-4.10.3) ─────────────────────────────────
+        // Forces a transition after onTimeoutMs if no regular transition fired.
+        // An optional EVENT is emitted before the forced transition.
+        bool      hasOnTimeout                = false;
+        uint32_t  onTimeoutMs                 = 0U;
+        bool      hasOnTimeoutEvent           = false;
+        EventVerb onTimeoutVerb               = EventVerb::WARN;
+        char      onTimeoutText[ares::AMS_MAX_EVENT_TEXT]       = {};
+        char      onTimeoutTransitionTarget[ares::AMS_MAX_STATE_NAME] = {};
+        uint8_t   onTimeoutTransitionIdx      = 0U;
+        bool      onTimeoutTransitionResolved = false;
     };
 
     /**
@@ -760,6 +773,9 @@ private:
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
     bool parseOnExitEventLineLocked(const char* line, StateDef& st);
+    bool parseOnTimeoutHeaderLocked(const char* line, StateDef& st, BlockType& blockType);
+    bool parseOnTimeoutEventLineLocked(const char* line, StateDef& st);
+    bool parseOnTimeoutTransitionLineLocked(const char* line, StateDef& st);
     bool parseVarLineLocked(const char* line);
     bool parseConstLineLocked(const char* line);
     bool validateConstIdentifierLocked(const char* name);
@@ -855,6 +871,7 @@ private:
     void setErrorLocked(const char* reason);
     void exitStateLocked(uint8_t stateIndex, uint32_t nowMs);
     void enterStateLocked(uint8_t stateIndex, uint32_t nowMs);
+    bool checkOnTimeoutLocked(StateDef& state, uint32_t nowMs);
     bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint32_t nowMs);
     bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
                                               StateDef&,

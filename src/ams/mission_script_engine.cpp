@@ -409,6 +409,8 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
     StateDef& state = program_.states[currentState_];
     if (evaluateTransitionAndMaybeEnterLocked(state, nowMs)) { return; }
 
+    if (checkOnTimeoutLocked(state, nowMs)) { return; }
+
     if (state.hasFallback && state.fallbackTargetResolved)
     {
         const uint32_t elapsed = nowMs - stateEnterMs_;
@@ -459,6 +461,7 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
                                && state.logFieldCount > 0U);
     if (state.transitionCount == 0U
         && !state.hasFallback
+        && !state.hasOnTimeout
         && !pendingOnEnterEvent_
         && !hasActiveHk
         && !hasActiveLog)
@@ -1153,6 +1156,43 @@ void MissionScriptEngine::exitStateLocked(uint8_t stateIndex, uint32_t nowMs)
                         inferEventId(st.onExitVerb),
                         st.onExitText, nowMs);
     }
+}
+
+/**
+ * @brief Check whether the on_timeout deadline has elapsed and fire if so.
+ *
+ * Called every tick after regular transitions and before the fallback transition.
+ * If the state has an on_timeout block and the elapsed time since state entry
+ * equals or exceeds onTimeoutMs, the optional event is emitted and the engine
+ * transitions to the configured target state.
+ *
+ * @param[in] state   Current state definition.
+ * @param[in] nowMs   Current system time in milliseconds.
+ * @return @c true if the timeout fired (caller must return immediately).
+ * @pre  mutex_ is held by the caller.
+ */
+bool MissionScriptEngine::checkOnTimeoutLocked(StateDef& state, uint32_t nowMs)
+{
+    if (!state.hasOnTimeout || !state.onTimeoutTransitionResolved) { return false; }
+
+    const uint32_t elapsed = nowMs - stateEnterMs_;
+    if (elapsed < state.onTimeoutMs) { return false; }
+
+    LOG_I(TAG, "on_timeout: '%s' -> '%s' (elapsed %" PRIu32 "ms)",
+          state.name,
+          program_.states[state.onTimeoutTransitionIdx].name,
+          elapsed);
+
+    if (state.hasOnTimeoutEvent)
+    {
+        sendEventLocked(state.onTimeoutVerb,
+                        inferEventId(state.onTimeoutVerb),
+                        state.onTimeoutText, nowMs);
+    }
+
+    exitStateLocked(currentState_, nowMs);
+    enterStateLocked(state.onTimeoutTransitionIdx, nowMs);
+    return true;
 }
 
 /**

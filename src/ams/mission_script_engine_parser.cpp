@@ -648,6 +648,7 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
     if (startsWith(line, "on_enter:"))   { blockType = BlockType::ON_ENTER;   return true; }
     if (startsWith(line, "on_exit:"))    { blockType = BlockType::ON_EXIT;    return true; }
     if (startsWith(line, "on_error:"))   { blockType = BlockType::ON_ERROR;   return true; }
+    if (startsWith(line, "on_timeout ")) { return parseOnTimeoutHeaderLocked(line, st, blockType); }
     if (startsWith(line, "conditions:")) { blockType = BlockType::CONDITIONS; return true; }
 
     if (startsWith(line, "every "))
@@ -747,6 +748,15 @@ bool MissionScriptEngine::parseStateBlockContentLocked(const char* line, // NOLI
             return false;
         }
         setErrorLocked("only EVENT.* and set are allowed inside on_exit");
+        return false;
+    }
+    if (blockType == BlockType::ON_TIMEOUT)
+    {
+        char evtPrefix[20] = {};
+        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+        if (startsWith(line, evtPrefix)) { return parseOnTimeoutEventLineLocked(line, st); }
+        if (startsWith(line, "transition to ")) { return parseOnTimeoutTransitionLineLocked(line, st); }
+        setErrorLocked("only EVENT.* and 'transition to' allowed inside on_timeout");
         return false;
     }
     if (blockType == BlockType::HK)
@@ -1937,6 +1947,167 @@ bool MissionScriptEngine::parseOnExitEventLineLocked(const char* line,
     return false;
 }
 
+// ── parseOnTimeoutHeaderLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Parse an @c on_timeout @c Nms: header and open the block (AMS-4.10.3).
+ *
+ * Syntax: @c "on_timeout Nms:"
+ *
+ * N must be a positive integer.  Only one @c on_timeout block per state is
+ * allowed; a second declaration is a parse error.
+ *
+ * @param[in]     line       Script line starting with @c "on_timeout ".
+ * @param[out]    st         State to attach the timeout to.
+ * @param[in,out] blockType  Set to @c ON_TIMEOUT on success.
+ * @return @c true if the header was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseOnTimeoutHeaderLocked(const char* line,
+                                                     StateDef&   st,
+                                                     BlockType&  blockType)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.hasOnTimeout)
+    {
+        setErrorLocked("duplicate on_timeout block in state");
+        return false;
+    }
+
+    // Parse "on_timeout Nms:"
+    const char* numStart = line + sizeof("on_timeout ") - 1U;
+    const char* msPtr    = strstr(numStart, "ms:");
+    if (msPtr == nullptr)
+    {
+        setErrorLocked("on_timeout: expected 'on_timeout Nms:'");
+        return false;
+    }
+
+    const ptrdiff_t numLen = msPtr - numStart;
+    if (numLen <= 0 || numLen >= 16)
+    {
+        setErrorLocked("on_timeout: timeout value out of range");
+        return false;
+    }
+
+    char numBuf[16] = {};
+    memcpy(numBuf, numStart, static_cast<size_t>(numLen));
+    numBuf[static_cast<size_t>(numLen)] = '\0';
+
+    uint32_t ms = 0U;
+    if (!parseUint(numBuf, ms) || ms == 0U)
+    {
+        setErrorLocked("on_timeout: timeout must be > 0 ms");
+        return false;
+    }
+
+    if (!isOnlyTrailingWhitespace(msPtr + 3))
+    {
+        setErrorLocked("on_timeout: unexpected suffix after 'ms:'");
+        return false;
+    }
+
+    st.hasOnTimeout = true;
+    st.onTimeoutMs  = ms;
+    blockType       = BlockType::ON_TIMEOUT;
+    return true;
+}
+
+// ── parseOnTimeoutEventLineLocked ────────────────────────────────────────────
+
+/**
+ * @brief Parse an @c EVENT.* directive inside an @c on_timeout: block (AMS-4.10.3).
+ *
+ * At most one EVENT.* is permitted per on_timeout block.
+ * Accepted verbs: @c info, @c warning, @c error.
+ *
+ * @param[in]  line  Script line starting with @c "EVENT.".
+ * @param[out] st    State to store the on-timeout event configuration.
+ * @return @c true if the event directive was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseOnTimeoutEventLineLocked(const char* line,
+                                                        StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.hasOnTimeoutEvent)
+    {
+        setErrorLocked("only one EVENT.* allowed inside on_timeout");
+        return false;
+    }
+
+    char verb[8] = {};
+    char text[ares::AMS_MAX_EVENT_TEXT] = {};
+    const char* dotPos = strchr(line, '.');
+    if (dotPos == nullptr)
+    {
+        setErrorLocked("invalid EVENT syntax in on_timeout");
+        return false;
+    }
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
+    if (n != 2)
+    {
+        setErrorLocked("invalid EVENT syntax in on_timeout");
+        return false;
+    }
+
+    st.hasOnTimeoutEvent = true;
+    strncpy(st.onTimeoutText, text, sizeof(st.onTimeoutText) - 1U);
+    st.onTimeoutText[sizeof(st.onTimeoutText) - 1U] = '\0';
+
+    if (strcmp(verb, "info")    == 0) { st.onTimeoutVerb = EventVerb::INFO;  return true; }
+    if (strcmp(verb, "warning") == 0) { st.onTimeoutVerb = EventVerb::WARN;  return true; }
+    if (strcmp(verb, "error")   == 0) { st.onTimeoutVerb = EventVerb::ERROR; return true; }
+
+    setErrorLocked("unknown EVENT verb in on_timeout");
+    return false;
+}
+
+// ── parseOnTimeoutTransitionLineLocked ───────────────────────────────────────
+
+/**
+ * @brief Parse a @c transition @c to directive inside an @c on_timeout: block (AMS-4.10.3).
+ *
+ * Syntax: @c "transition to \<STATE\>"
+ *
+ * Exactly one transition is required per on_timeout block; duplicates are rejected.
+ *
+ * @param[in]  line  Script line starting with @c "transition to ".
+ * @param[out] st    State to attach the forced timeout transition to.
+ * @return @c true if the transition target was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseOnTimeoutTransitionLineLocked(const char* line,
+                                                             StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.onTimeoutTransitionTarget[0] != '\0')
+    {
+        setErrorLocked("duplicate 'transition to' in on_timeout block");
+        return false;
+    }
+
+    char target[ares::AMS_MAX_STATE_NAME] = {};
+    // cppcheck-suppress [cert-err34-c]
+    const int32_t n = static_cast<int32_t>(sscanf(line, "transition to %15s", target));
+    if (n != 1 || target[0] == '\0')
+    {
+        setErrorLocked("invalid on_timeout transition syntax: missing target state");
+        return false;
+    }
+
+    strncpy(st.onTimeoutTransitionTarget, target,
+            sizeof(st.onTimeoutTransitionTarget) - 1U);
+    st.onTimeoutTransitionTarget[sizeof(st.onTimeoutTransitionTarget) - 1U] = '\0';
+    st.onTimeoutTransitionResolved = false;
+
+    LOG_I(TAG, "on_timeout transition: -> '%s'", target);
+    return true;
+}
+
 // ── mapApidToNode ─────────────────────────────────────────────────────────────
 
 /**
@@ -2015,6 +2186,24 @@ bool MissionScriptEngine::resolveTransitionsLocked()
             }
             st.onErrorTransitionIdx      = idx;
             st.onErrorTransitionResolved = true;
+        }
+
+        // AMS-4.10.3: on_timeout forced transition target.
+        if (st.hasOnTimeout)
+        {
+            if (st.onTimeoutTransitionTarget[0] == '\0')
+            {
+                setErrorLocked("on_timeout block requires a 'transition to' directive");
+                return false;
+            }
+            const uint8_t idx = findStateByNameLocked(st.onTimeoutTransitionTarget);
+            if (idx >= program_.stateCount)
+            {
+                setErrorLocked("unknown on_timeout transition target state");
+                return false;
+            }
+            st.onTimeoutTransitionIdx      = idx;
+            st.onTimeoutTransitionResolved = true;
         }
     }
 

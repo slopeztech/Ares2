@@ -196,6 +196,10 @@ class AmsParser:
             self._parse_apid(line, ln)
             return
 
+        # Top-level var/const declarations
+        if line.startswith("var ") or line.startswith("const "):
+            return
+
         # State header
         if line.startswith("state "):
             self._block = None
@@ -314,13 +318,33 @@ class AmsParser:
     def _parse_state_scoped(self, line: str, ln: int) -> None:
         assert self._current is not None
 
-        if line == "on_enter:":
+        # Block headers that reset block context
+        if line in ("on_enter:", "on_exit:", "on_error:", "conditions:"):
             self._block = None
+            return
+
+        if re.match(r"on_timeout\s+\d+\s*ms:", line):
+            self._block = "ON_TIMEOUT"
+            return
+
+        # on_timeout / on_error / on_exit content
+        if self._block in ("ON_TIMEOUT", "ON_ERROR", "ON_EXIT"):
+            if line.startswith(self._event_alias + "."):
+                self._parse_event(line, ln)
+            elif line.startswith("set "):
+                pass  # validated by firmware
+            elif line.startswith("transition to "):
+                self._parse_transition(line, ln)
+            # ignore other lines inside these blocks
             return
 
         if line.startswith(self._event_alias + "."):
             self._block = None
             self._parse_event(line, ln)
+            return
+
+        if line.startswith("set "):
+            self._block = None
             return
 
         if line.startswith("every "):
@@ -364,6 +388,10 @@ class AmsParser:
 
         if line.startswith("transition to "):
             self._parse_transition(line, ln)
+            return
+
+        if line.startswith("fallback transition to "):
+            self._current.has_transition = True
             return
 
         self._error(ln, f"unsupported statement: '{line}'")
