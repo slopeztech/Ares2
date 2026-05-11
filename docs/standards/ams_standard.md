@@ -170,6 +170,7 @@ Allowed statements inside a state:
 - `conditions:`
 - `<LHS> <OP> <RHS>` (inside `conditions:`)
 - `on_error:`
+- `on_timeout Nms:`
 - `every Nms:`
 - `HK.report { ... }`
 - `log_every Nms:`
@@ -667,6 +668,34 @@ Rules:
 - If no `transition to` is present and a guard condition is violated, the engine
   still halts in `ERROR` (existing behaviour, AMS-5.6).
 
+### AMS-4.10.3 On-Timeout Forced Transition
+
+An `on_timeout Nms:` block forces a transition if no regular transition fires
+within `N` milliseconds after entering the state.
+
+```ams
+state HOLD:
+  transition to FLIGHT when TC.command == arm
+  on_timeout 30000ms:
+    EVENT.warning "arm timeout — aborting hold"
+    transition to SAFE
+```
+
+Rules:
+- `N` must be a positive integer (milliseconds); `0` is a parse error.
+- Exactly one `on_timeout` block per state (duplicate is a parse error).
+- A `transition to TARGET` directive is **required** inside the block.
+- An optional `EVENT.info|warning|error "text"` may precede the transition.
+- The target state must be declared in the same script.
+- `on_timeout` fires **after** regular transitions are evaluated and **before**
+  the fallback transition on each tick.
+- `on_timeout` fires even if the engine has a fallback transition; they are
+  independent mechanisms with different evaluation order.
+- When `on_timeout` fires: the optional EVENT is sent, `on_exit:` executes
+  for the current state, then the engine enters the target state.
+- The transition is resolved at parse time; an unknown target state is a
+  parse error.
+
 ---
 
 ## AMS-5 Runtime Semantics
@@ -717,9 +746,14 @@ Tick execution order:
    reset the hold timer.
 5. If transition fires: execute on_exit set actions and EVENT for the current
    state (AMS-4.16); consume TC token (if any); enter next state; end tick.
-6. Evaluate guard conditions (`conditions:`)
-7. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
-8. Otherwise, evaluate due actions and run arbitration
+6. If `on_timeout` is defined and elapsed time ≥ `onTimeoutMs`: emit optional EVENT,
+   execute on_exit, enter timeout target state; end tick (AMS-4.10.3).
+7. If fallback transition is defined and elapsed time ≥ fallback threshold: enter
+   fallback target state; end tick (AMS-4.9.2).
+8. Evaluate guard conditions (`conditions:`)
+9. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
+   (or enter recovery state if `transition to` is defined — AMS-4.10.2).
+10. Otherwise, evaluate due actions and run arbitration
 
 ### AMS-5.2 On-Enter Event Queueing
 

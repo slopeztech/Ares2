@@ -151,13 +151,29 @@ The `on_exit:` EVENT is dispatched **immediately** (not queued) and appears on
 the radio bus before the incoming state's `on_enter:` event.  Variables set in
 `on_exit:` are available to the new state's `on_enter:` set actions and to
 transition conditions on subsequent ticks.
+
+### 2.7 on_timeout Handler
+
+Use `on_timeout Nms:` to force a transition out of a state if no regular
+transition fires within `N` milliseconds.  Unlike `fallback transition`, which
+also forces a transition after a deadline, `on_timeout` evaluates **before** the
+fallback on each tick and supports an optional EVENT.
+
+```ams
+state HOLD:
+  transition to FLIGHT when TC.command == arm
+  on_timeout 30000ms:
+    EVENT.warning "arm timeout — aborting hold"
+    transition to SAFE
 ```
 
-Current profile notes:
-- Up to `ares::AMS_MAX_CONDITIONS` guards per state
-- `on_error:` currently supports only `EVENT.*`
-- `TC.command` is not valid inside `conditions:`
-```
+Allowed inside `on_timeout Nms:`:
+- Zero or one `EVENT.info|warning|error "text"` line.
+- Exactly one `transition to TARGET` line (required — parse error if absent).
+
+When the timeout fires the optional EVENT is sent, `on_exit:` executes, and the
+engine enters the target state.  Regular transitions still take priority: if a
+normal transition fires before the deadline, `on_timeout` never triggers.
 
 ---
 
