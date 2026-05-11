@@ -671,6 +671,15 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
     if (reportMatched) { return true; }
     if (startsWith(line, "transition to "))
     {
+        // AMS-4.10.2: inside an on_error: block the 'transition to' directive
+        // is an error-recovery transition, NOT a regular state transition.
+        // Defer to parseStateBlockContentLocked which calls
+        // parseOnErrorTransitionLineLocked in that case.
+        if (blockType == BlockType::ON_ERROR)
+        {
+            handled = false;
+            return true;
+        }
         blockType = BlockType::NONE;
         return parseTransitionLineLocked(line, st);
     }

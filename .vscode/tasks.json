@@ -181,6 +181,26 @@
         "reveal": "always",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "Test: SITL sim (AMS integration)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".vscode/scripts/run_sitl_sim.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
     }
   ]
 }
