@@ -1255,3 +1255,89 @@ The `on_exit:` handler fires in all of the following transition sites:
 | More than `AMS_MAX_SET_ACTIONS` set actions | Parse error |
 | Unknown EVENT verb | Parse error |
 
+---
+
+## AMS-4.17 Pulse Channel Commands
+
+Pulse (`PULSE.fire`) commands allow a mission script to activate a generic
+electric-pulse channel synchronously when entering a state.  Commands are
+placed in the `on_enter:` block of any state definition and are executed before
+the `EVENT.*` telemetry frame is emitted.
+
+> **Safety note**: Once a channel is marked as fired, the hardware driver
+> rejects further fire requests for that channel for the lifetime of the power
+> cycle.  This is an intentional safety interlock — a pulse channel must never
+> receive a second activation.
+
+### AMS-4.17.1 Syntax
+
+```
+on_enter:
+    PULSE.fire <channel>
+    PULSE.fire <channel> <duration>ms
+```
+
+| Token | Values | Description |
+|---|---|---|
+| `<channel>` | `A` or `B` | `A` = drogue (PIN_DROGUE), `B` = main chute (PIN_MAIN) |
+| `<duration>ms` | positive integer | Optional pulse width in milliseconds.  Omit to use `FIRE_DURATION_MS` (default 1000 ms). |
+
+A maximum of `AMS_MAX_PULSE_ACTIONS` (2) `PULSE.fire` directives may appear in a
+single `on_enter:` block.
+
+**Examples:**
+
+```ams
+state DEPLOY:
+  on_enter:
+    PULSE.fire A             # drogue at default duration
+    PULSE.fire B             # main at default duration
+    EVENT.info "DEPLOYED"
+```
+
+```ams
+state STAGE_SEP:
+  on_enter:
+    PULSE.fire A 500ms       # drogue with 500 ms pulse override
+```
+
+### AMS-4.17.2 Semantics
+
+When the engine transitions into a state that contains `PULSE.fire` directives,
+`executePulseActionsLocked` is called during `sendOnEnterEventLocked` (before the
+`EVENT.*` frame is sent).  For each directive:
+
+1. The compile-time default `FIRE_DURATION_MS` is used if no override was given
+   (`durationMs == 0` in the stored `PulseAction`).
+2. `PulseInterface::fire(channel, durationMs)` is called on the registered driver.
+3. On success, the corresponding `STATUS_PULSE_A_FIRED` or `STATUS_PULSE_B_FIRED`
+   status bit is set (visible via `getStatusBits()` and in APUS HK frames).
+4. On failure (driver rejects the call), `setErrorLocked` is invoked and the
+   engine transitions to `ERROR` status.
+
+If no `PulseInterface` was registered (constructor `pulseIface = nullptr`), all
+`PULSE.fire` directives are silently skipped and the engine continues normally.
+This allows flight-software unit tests and ground-station builds to run without
+pulse hardware.
+
+### AMS-4.17.3 Compliance
+
+| Standard | Clause | Requirement |
+|---|---|---|
+| PO10-3 | No heap allocation | `PulseAction` array is statically sized; no dynamic allocation |
+| PO10-2 | Bounded loops | Loop iterates at most `AMS_MAX_PULSE_ACTIONS` (2) times |
+| RTOS-4 | Mutex on critical sections | `executePulseActionsLocked` executes under the engine mutex |
+| DO-178C | Deterministic execution | Fire sequence is synchronous and order-deterministic |
+| APUS-6 | Pulse status in HK frames | `STATUS_PULSE_A_FIRED` / `STATUS_PULSE_B_FIRED` bits reported |
+
+### AMS-4.17.4 Error conditions
+
+| Condition | Error |
+|---|---|
+| Channel letter other than `A` or `B` | Parse error: `PULSE.fire: channel must be A (drogue) or B (main)` |
+| More than `AMS_MAX_PULSE_ACTIONS` directives in one block | Parse error: `too many PULSE.fire actions in on_enter block` |
+| Unexpected characters after channel letter | Parse error: `PULSE.fire: unexpected characters after channel letter` |
+| Duration is zero or not a positive integer | Parse error: `PULSE.fire: duration must be a positive integer` |
+| Duration suffix missing `ms` | Parse error: `PULSE.fire: duration must be in the form Nms (e.g. 500ms)` |
+| Driver rejects the fire request (e.g. channel already fired) | Runtime error: `PULSE.fire: driver rejected fire command` → engine ERROR |
+

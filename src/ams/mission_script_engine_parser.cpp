@@ -715,7 +715,8 @@ bool MissionScriptEngine::parseStateBlockContentLocked(const char* line, // NOLI
         snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
         if (startsWith(line, evtPrefix)) { return parseEventLineLocked(line, st); }
         if (startsWith(line, "set ")) { return parseSetActionLineLocked(line, st); }
-        setErrorLocked("only EVENT.* and set are allowed inside on_enter");
+        if (startsWith(line, "PULSE.fire ")) { return parsePulseFireLineLocked(line, st); }  // AMS-4.17
+        setErrorLocked("only EVENT.*, set and PULSE.fire are allowed inside on_enter");
         return false;
     }
     if (blockType == BlockType::ON_EXIT)
@@ -2534,7 +2535,119 @@ bool MissionScriptEngine::parseSetActionLineLocked(const char* line,
     st.setActionCount++;
     return true;
 }
-// ── parseFallbackTransitionLineLocked ────────────────────────────────────────
+
+// ── parsePulseFireLineLocked ──────────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c PULSE.fire directive inside an @c on_enter: block (AMS-4.17).
+ *
+ * Syntax:
+ * @code
+ *   PULSE.fire A             -- fire channel A at default duration
+ *   PULSE.fire B             -- fire channel B at default duration
+ *   PULSE.fire A 500ms       -- fire channel A with 500 ms pulse override
+ *   PULSE.fire B 1500ms      -- fire channel B with 1500 ms pulse override
+ * @endcode
+ *
+ * The optional @c Nms duration overrides @c ares::FIRE_DURATION_MS at
+ * execution time.  Storing 0 means "use the compile-time default".
+ *
+ * @param[in]  line  Script line starting with @c "PULSE.fire ".
+ * @param[out] st    State definition to append the action to.
+ * @return @c true if the directive was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseFireLineLocked(const char* line,
+                                                  StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.pulseActionCount >= ares::AMS_MAX_PULSE_ACTIONS)
+    {
+        setErrorLocked("too many PULSE.fire actions in on_enter block");
+        return false;
+    }
+
+    // Skip "PULSE.fire " prefix (11 characters).
+    static constexpr uint8_t kPrefixLen = 11U;
+    const char* rest = line + kPrefixLen;
+
+    // Determine channel.
+    uint8_t channel;
+    if (rest[0] == 'A')
+    {
+        channel = PulseChannel::CH_A;
+    }
+    else if (rest[0] == 'B')
+    {
+        channel = PulseChannel::CH_B;
+    }
+    else
+    {
+        setErrorLocked("PULSE.fire: channel must be A or B");
+        return false;
+    }
+
+    // rest[1] must be a space, NUL, or end of printable text.
+    const char* afterCh = rest + 1U;
+
+    // 0 means "use compile-time default (ares::FIRE_DURATION_MS)".
+    uint32_t durationMs = 0U;
+
+    if (*afterCh != '\0' && *afterCh != ' ')
+    {
+        setErrorLocked("PULSE.fire: unexpected characters after channel letter");
+        return false;
+    }
+
+    if (*afterCh == ' ')
+    {
+        const char* numStart = afterCh + 1U;
+
+        // Reject if nothing follows the space.
+        if (*numStart == '\0')
+        {
+            setErrorLocked("PULSE.fire: expected Nms after channel letter");
+            return false;
+        }
+
+        // Find the "ms" suffix.
+        const char* msPtr = strstr(numStart, "ms");
+        if (msPtr == nullptr || msPtr == numStart)
+        {
+            setErrorLocked("PULSE.fire: duration must be in the form Nms (e.g. 500ms)");
+            return false;
+        }
+
+        const ptrdiff_t numLen = msPtr - numStart;
+        if (numLen <= 0 || numLen >= 16)
+        {
+            setErrorLocked("PULSE.fire: duration value too long");
+            return false;
+        }
+
+        char numBuf[16] = {};
+        memcpy(numBuf, numStart, static_cast<size_t>(numLen));
+        numBuf[static_cast<size_t>(numLen)] = '\0';
+
+        if (!parseUint(numBuf, durationMs) || durationMs == 0U)
+        {
+            setErrorLocked("PULSE.fire: duration must be a positive integer");
+            return false;
+        }
+
+        if (!isOnlyTrailingWhitespace(msPtr + 2U))
+        {
+            setErrorLocked("PULSE.fire: unexpected suffix after duration");
+            return false;
+        }
+    }
+
+    st.pulseActions[st.pulseActionCount].channel    = channel;
+    st.pulseActions[st.pulseActionCount].durationMs = durationMs;
+    st.pulseActionCount++;
+    return true;
+}
 
 /**
  * @brief Parse a @c fallback @c transition directive (AMS-4.9.2).

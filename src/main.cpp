@@ -21,6 +21,7 @@
 #include "drivers/imu/mpu6050_driver.h"
 #include "drivers/imu/adxl375_driver.h"
 #include "drivers/radio/dxlr03_driver.h"
+#include "drivers/pulse/pulse_driver.h"
 #include "sys/led/neopixel_driver.h"
 #include "sys/led/status_led.h"
 #include "sys/wifi/wifi_ap.h"
@@ -54,6 +55,7 @@ static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
 static Adxl375Driver  imu2(imuWire, ares::ADXL375_I2C_ADDR);
 static NeopixelDriver led(ares::PIN_LED_RGB);
 static StatusLed      statusLed(led);
+static PulseDriver    pulse(ares::PIN_DROGUE, ares::PIN_MAIN);
 
 // WiFi Access Point (sys layer) — ground configuration link.
 static WifiAp wifiAp;
@@ -82,17 +84,19 @@ static ares::ams::MissionScriptEngine missionEngine(
     kGpsDrivers,  static_cast<uint8_t>(1),
     kBaroDrivers, static_cast<uint8_t>(1),
     kComDrivers,  static_cast<uint8_t>(1),
-    kImuDrivers,  static_cast<uint8_t>(2));
+    kImuDrivers,  static_cast<uint8_t>(2),
+    &pulse);
 static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
                            &storageIf, &missionEngine,
                            &statusLed,
                            &Wire, &imuWire,
                            &gpsSerial, &loraSerial,
-                           &radioIf);
+                           &radioIf,
+                           &pulse);
 
 // Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
 // frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
-static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine);
+static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
 
 // ═══════════════════════════════════════════════════════════
 void setup()
@@ -113,6 +117,7 @@ void setup()
     for (BarometerInterface* iface : kBaroIfaces) { (void)iface->begin(); }
     for (ImuInterface*        iface : kImuIfaces)  { (void)iface->begin(); }
     for (GpsInterface*        iface : kGpsIfaces)  { (void)iface->begin(); }
+    (void)pulse.begin();
 
     // Status LED — NeoPixel on GPIO 21
     (void)ledIf.begin();

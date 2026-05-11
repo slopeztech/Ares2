@@ -25,6 +25,7 @@
 #include "hal/baro/barometer_interface.h"
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
+#include "hal/pulse/pulse_interface.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
 
@@ -105,12 +106,16 @@ public:
      * @param[in] comCount    Number of entries in @p comDrivers.
      * @param[in] imuDrivers  Array of compiled-in IMU drivers.
      * @param[in] imuCount    Number of entries in @p imuDrivers.
+     * @param[in] pulseIface  Optional electric-pulse channel interface.
+     *                        Pass @c nullptr to disable PULSE.fire execution
+     *                        (e.g. in SITL tests without a pulse driver).
      */
     MissionScriptEngine(StorageInterface&  storage,
                         const GpsEntry*    gpsDrivers,  uint8_t gpsCount,
                         const BaroEntry*   baroDrivers, uint8_t baroCount,
                         const ComEntry*    comDrivers,  uint8_t comCount,
-                        const ImuEntry*    imuDrivers,  uint8_t imuCount);
+                        const ImuEntry*    imuDrivers,  uint8_t imuCount,
+                        PulseInterface*    pulseIface = nullptr);
 
     MissionScriptEngine(const MissionScriptEngine&)            = delete;
     MissionScriptEngine& operator=(const MissionScriptEngine&) = delete;
@@ -202,7 +207,7 @@ public:
 
     /**
      * Thread-safe read of the current wire-protocol StatusBits
-     * (armed, fcsActive, gpsValid, pyroAFired, pyroBFired).
+     * (armed, fcsActive, gpsValid, pulseAFired, pulseBFired).
      *
      * Used by @c RadioDispatcher when building an immediate status
      * response to a @c REQUEST_STATUS command (APUS-6).
@@ -212,16 +217,16 @@ public:
     ares::proto::StatusBits getStatusBits() const;
 
     /**
-     * Record that a pyro channel was successfully actuated.
+     * Record that a pulse channel was successfully actuated.
      *
      * Sets the corresponding bit in StatusBits so the next telemetry
      * frame reflects the actuation.  Must be called by the layer that
-     * drives the pyro GPIO after a confirmed FIRE_PYRO_A / FIRE_PYRO_B
+     * drives the pulse GPIO after a confirmed FIRE_PULSE_A / FIRE_PULSE_B
      * command.
      *
-     * @param[in] channel  0 = pyro A (drogue), 1 = pyro B (main).
+     * @param[in] channel  0 = pulse A (drogue), 1 = pulse B (main).
      */
-    void notifyPyroFired(uint8_t channel);
+    void notifyPulseFired(uint8_t channel);
 
     /**
      * Thread-safe snapshot of the engine's current state.
@@ -616,6 +621,16 @@ private:
         uint8_t   setActionCount = 0;
         SetAction setActions[ares::AMS_MAX_SET_ACTIONS] = {};
 
+        // ── on_enter pulse fire actions (AMS-4.17) ───────────
+        /// A single PULSE.fire command parsed from an on_enter: block.
+        struct PulseAction
+        {
+            uint8_t  channel;      ///< PulseChannel::CH_A (0) or CH_B (1).
+            uint32_t durationMs;   ///< Pulse duration; 0 means use config default.
+        };
+        uint8_t      pulseActionCount = 0U;
+        PulseAction  pulseActions[ares::AMS_MAX_PULSE_ACTIONS] = {};
+
         // ── on_exit handler (AMS-4.9) ────────────────────────
         // Executed synchronously when leaving this state via any transition
         // (normal, fallback, or error-recovery). Does NOT fire on deactivate()
@@ -750,6 +765,7 @@ private:
     bool validateConstIdentifierLocked(const char* name);
     bool ensureConstDoesNotConflictLocked(const char* name);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
+    bool parsePulseFireLineLocked(const char* line, StateDef& st);  ///< AMS-4.17: parse "PULSE.fire A[/B] [Nms]".
     bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
     bool ensureSetVariableExistsLocked(const char* varName);
     bool parseCalibrateSetActionLocked(const char* rhsBuf, SetAction& out);
@@ -853,6 +869,7 @@ private:
 
     void sendOnEnterEventLocked(uint32_t nowMs);
     void executeSetActionsLocked(StateDef& st, uint32_t nowMs);
+    void executePulseActionsLocked(const StateDef& st);  ///< AMS-4.17: fire all PULSE.fire actions for state entry.
     void executeOneSetActionLocked(SetAction& act, uint32_t nowMs); ///< Execute a single set action (shared by state + task paths).
     void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint32_t nowMs);
     void executeDeltaSetActionLocked(SetAction& act, float& result, bool& gotReading);
@@ -982,6 +999,7 @@ private:
     const ImuEntry*      imuDrivers_;
     uint8_t              imuCount_;
     RadioInterface*      primaryCom_ = nullptr; ///< Active COM driver for frame TX.
+    PulseInterface*      pulseIface_ = nullptr;  ///< Nullable — pulse disabled if null (AMS-4.17).
 
     StaticSemaphore_t mutexBuf_ = {};
     SemaphoreHandle_t mutex_ = nullptr;
@@ -1008,8 +1026,8 @@ private:
 
     TcCommand pendingTc_ = TcCommand::NONE;
     uint8_t   tcConfirmCount_[4] = {}; ///< Per-TC injection counter for CONFIRM mode (AMS-4.11.2).
-    bool      pyroAFired_ = false;     ///< True after FIRE_PYRO_A was successfully executed (APUS-6).
-    bool      pyroBFired_ = false;     ///< True after FIRE_PYRO_B was successfully executed (APUS-6).
+    bool      pulseAFired_ = false;    ///< True after FIRE_PULSE_A was successfully executed (APUS-6).
+    bool      pulseBFired_ = false;    ///< True after FIRE_PULSE_B was successfully executed (APUS-6).
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
 

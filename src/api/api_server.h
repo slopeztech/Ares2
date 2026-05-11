@@ -40,6 +40,7 @@
 #include "hal/baro/barometer_interface.h"
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
+#include "hal/pulse/pulse_interface.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
 #include "sys/wifi/wifi_ap.h"
@@ -86,6 +87,7 @@ public:
      * @param[in] gpsUart    Pointer to GPS UART port (nullable).
      * @param[in] loraUart   Pointer to LoRa UART port (nullable).
      * @param[in] radio      Pointer to radio interface (nullable).
+     * @param[in] pulse      Pointer to pulse channel interface (nullable).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
               GpsInterface& gps, ImuInterface& imu,
@@ -96,7 +98,8 @@ public:
               TwoWire* i2c1 = nullptr,
               HardwareSerial* gpsUart = nullptr,
               HardwareSerial* loraUart = nullptr,
-              RadioInterface* radio = nullptr);
+              RadioInterface* radio = nullptr,
+              PulseInterface* pulse = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;
@@ -208,6 +211,8 @@ private:
     void handleMissionDeactivate(class WiFiClient& client);
     void handleMissionCommand(class WiFiClient& client,
                               const char* body, uint32_t bodyLen);
+    // pulse/
+    void handlePulseStatus(class WiFiClient& client);  ///< GET /api/pulse/status (AMS-4.17)
 
     // ── Request routing (PO10-4.1: decomposed from handleClient) ─
     void routeRequest(class WiFiClient& client,
@@ -280,6 +285,7 @@ private:
     HardwareSerial*      gpsUart_;   ///< Nullable — UART1 monitor handle.
     HardwareSerial*      loraUart_;  ///< Nullable — UART2 monitor handle.
     RadioInterface*      radio_;     ///< Nullable — radio health probe.
+    PulseInterface*      pulse_;     ///< Nullable — pulse status disabled if null.
 
     // ── Shared state ────────────────────────────────────────
     RuntimeConfig config_ = {};

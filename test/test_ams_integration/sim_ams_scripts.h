@@ -375,5 +375,64 @@ static const char kScriptConfirmLaunch[] =
     "  on_enter:\n"
     "    EVENT.info \"FLIGHT\"\n";
 
+// ── AMS-4.17: Pulse channel fire scripts ────────────────────────────────────────────
+
+/**
+ * Script that fires both pulse channels (A=drogue, B=main) on state entry.
+ *
+ * Flow: WAIT --(TC LAUNCH)--> DEPLOY
+ * DEPLOY on_enter fires PULSE.fire A and PULSE.fire B at default duration.
+ */
+static const char kScriptPulseFire[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    PULSE.fire A\n"
+    "    PULSE.fire B\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script that fires drogue with an explicit 500 ms pulse override.
+ *
+ * Flow: WAIT --(TC LAUNCH)--> FIRE
+ * FIRE on_enter fires PULSE.fire A 500ms.
+ */
+static const char kScriptPulseDuration[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to FIRE when TC.command == LAUNCH\n"
+    "\n"
+    "state FIRE:\n"
+    "  on_enter:\n"
+    "    PULSE.fire A 500ms\n"
+    "    EVENT.info \"FIRED\"\n";
+
 } // namespace sim
 } // namespace ares

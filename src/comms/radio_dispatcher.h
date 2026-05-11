@@ -34,6 +34,7 @@
 #include "comms/ares_radio_protocol.h"
 #include "ams/mission_script_engine.h"
 #include "hal/radio/radio_interface.h"
+#include "hal/pulse/pulse_interface.h"
 
 #include <cstdint>
 
@@ -53,9 +54,11 @@ public:
     /**
      * @param[in] radio   Primary radio interface used for both RX and TX.
      * @param[in] engine  Mission script engine used for command injection.
+     * @param[in] pulse   Pulse channel driver (nullable — FIRE_PULSE rejected if nullptr).
      */
-    RadioDispatcher(RadioInterface&              radio,
-                    ares::ams::MissionScriptEngine& engine);
+    RadioDispatcher(RadioInterface&               radio,
+                    ares::ams::MissionScriptEngine& engine,
+                    PulseInterface*               pulse = nullptr);
 
     /**
      * @brief Drain available radio bytes, decode complete APUS frames,
@@ -84,6 +87,7 @@ private:
     // ── References ──────────────────────────────────────────
     RadioInterface&               radio_;
     ares::ams::MissionScriptEngine& engine_;
+    PulseInterface*               pulse_;   ///< Nullable — guarded before use.
 
     // ── Receive state ────────────────────────────────────────
     uint8_t  rxBuf_[kRxBufLen];  ///< Byte accumulation buffer (static, PO10-3).
@@ -112,7 +116,7 @@ private:
     TxRetrySlot retrySlots_[kMaxRetrySlots] = {};
 
     // ── Priority command queue (APUS-2.1, APUS-2.2, APUS-2.4) ──────────────
-    static constexpr uint8_t kCriticalPriority = 0U;  ///< ABORT, FIRE_PYRO, FACTORY_RESET.
+    static constexpr uint8_t kCriticalPriority = 0U;  ///< ABORT, FIRE_PULSE, FACTORY_RESET.
     static constexpr uint8_t kHighPriority     = 1U;  ///< ARM, SET_MODE, SET_FCS_ACTIVE.
     static constexpr uint8_t kNormalPriority   = 2U;  ///< REQUEST_TELEMETRY, SET_TELEM_INTERVAL.
     static constexpr uint8_t kLowPriority      = 3U;  ///< REQUEST_STATUS, config queries.

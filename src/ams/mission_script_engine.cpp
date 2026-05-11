@@ -83,12 +83,14 @@ MissionScriptEngine::MissionScriptEngine(StorageInterface&  storage,
                                          const GpsEntry*    gpsDrivers,  uint8_t gpsCount,
                                          const BaroEntry*   baroDrivers, uint8_t baroCount,
                                          const ComEntry*    comDrivers,  uint8_t comCount,
-                                         const ImuEntry*    imuDrivers,  uint8_t imuCount)
+                                         const ImuEntry*    imuDrivers,  uint8_t imuCount,
+                                         PulseInterface*    pulseIface)
     : storage_(storage),
       gpsDrivers_(gpsDrivers),   gpsCount_(gpsCount),
       baroDrivers_(baroDrivers), baroCount_(baroCount),
       comDrivers_(comDrivers),   comCount_(comCount),
-      imuDrivers_(imuDrivers),   imuCount_(imuCount)
+      imuDrivers_(imuDrivers),   imuCount_(imuCount),
+      pulseIface_(pulseIface)
 {
 }
 
@@ -374,14 +376,14 @@ ares::proto::StatusBits MissionScriptEngine::getStatusBits() const
     return buildStatusBitsLocked();
 }
 
-// ── notifyPyroFired ───────────────────────────────────────────────────────────
+// ── notifyPulseFired ──────────────────────────────────────────────────────────
 
-void MissionScriptEngine::notifyPyroFired(uint8_t channel)
+void MissionScriptEngine::notifyPulseFired(uint8_t channel)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired()) { return; }
-    if (channel == 0U) { pyroAFired_ = true; }
-    else if (channel == 1U) { pyroBFired_ = true; }
+    if (channel == 0U) { pulseAFired_ = true; }
+    else if (channel == 1U) { pulseBFired_ = true; }
     else { /* invalid channel — ignore */ }
 }
 
@@ -1985,6 +1987,12 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint32_t nowMs)
         executeSetActionsLocked(st, nowMs);
     }
 
+    // AMS-4.17: fire pulse channels declared in on_enter: block.
+    if (st.pulseActionCount > 0U)
+    {
+        executePulseActionsLocked(st);
+    }
+
     if (!st.hasOnEnterEvent)
     {
         return;
@@ -1995,6 +2003,48 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint32_t nowMs)
     pendingEventTsMs_ = nowMs;
     strncpy(pendingEventText_, st.onEnterText, sizeof(pendingEventText_) - 1U);
     pendingEventText_[sizeof(pendingEventText_) - 1U] = '\0';
+}
+
+/**
+ * @brief Execute all PULSE.fire actions declared in a state's on_enter: block.
+ *
+ * Safety gate: only fires when the engine is RUNNING and execution is enabled.
+ * If pulseIface_ is null (SITL / no pulse hardware) the call is silently skipped.
+ *
+ * @param[in] st  State definition containing pulseActions[].
+ * @pre  mutex_ is held by the caller.
+ */
+void MissionScriptEngine::executePulseActionsLocked(const StateDef& st)
+{
+    if (pulseIface_ == nullptr
+        || !executionEnabled_
+        || status_ != EngineStatus::RUNNING)
+    {
+        return;
+    }
+
+    for (uint8_t i = 0U; i < st.pulseActionCount; i++)
+    {
+        const StateDef::PulseAction& act = st.pulseActions[i];
+        const uint32_t dur = (act.durationMs == 0U)
+                             ? static_cast<uint32_t>(ares::FIRE_DURATION_MS)
+                             : act.durationMs;
+
+        if (pulseIface_->fire(act.channel, dur))
+        {
+            // Set status bit directly — we already hold the mutex (Locked context).
+            if (act.channel == 0U) { pulseAFired_ = true; }
+            else if (act.channel == 1U) { pulseBFired_ = true; }
+            LOG_I(TAG, "PULSE ch=%u fired dur=%" PRIu32 "ms",
+                  static_cast<uint32_t>(act.channel), dur);
+        }
+        else
+        {
+            LOG_E(TAG, "PULSE ch=%u fire failed",
+                  static_cast<uint32_t>(act.channel));
+            setErrorLocked("PULSE.fire: driver rejected fire command");
+        }
+    }
 }
 
 } // namespace ams

@@ -116,7 +116,7 @@ static_assert(sizeof(FragHeader) == 6,
 enum class Priority : uint8_t
 {
     FIRST        = 0,
-    PRI_CRITICAL = 0,   // Abort, pyro fire
+    PRI_CRITICAL = 0,   // Abort, pulse fire
     PRI_HIGH     = 1,   // Flight control, FCS overrides
     PRI_NORMAL   = 2,   // Sensor requests, config changes
     PRI_LOW      = 3,   // Logging, diagnostics, heartbeat
@@ -131,8 +131,8 @@ enum class CommandId : uint8_t
     FIRST              = 0x01,
     ARM_FLIGHT         = 0x01,
     ABORT              = 0x02,
-    FIRE_PYRO_A        = 0x03,
-    FIRE_PYRO_B        = 0x04,
+    FIRE_PULSE_A       = 0x03,
+    FIRE_PULSE_B       = 0x04,
     SET_MODE           = 0x05,
     SET_FCS_ACTIVE     = 0x06,
     REQUEST_TELEMETRY  = 0x10,
@@ -166,7 +166,7 @@ enum class EventId : uint8_t
     MODE_CHANGE     = 0x01,
     PHASE_CHANGE    = 0x02,
     FCS_RULE_FIRED  = 0x03,
-    PYRO_FIRED      = 0x04,
+    PULSE_FIRED     = 0x04,
     ABORT_TRIGGERED = 0x05,
     SENSOR_FAILURE  = 0x06,
     CRC_FAILURE     = 0x07,
@@ -201,8 +201,8 @@ enum class FailureCode : uint8_t
 static constexpr uint8_t STATUS_ARMED        = 0x01U;  ///< Bit 0: flight mode armed.
 static constexpr uint8_t STATUS_FCS_ACTIVE   = 0x02U;  ///< Bit 1: flight control system active.
 static constexpr uint8_t STATUS_GPS_VALID    = 0x04U;  ///< Bit 2: GPS fix valid.
-static constexpr uint8_t STATUS_PYRO_A_FIRED = 0x08U;  ///< Bit 3: pyro channel A fired.
-static constexpr uint8_t STATUS_PYRO_B_FIRED = 0x10U;  ///< Bit 4: pyro channel B fired.
+static constexpr uint8_t STATUS_PULSE_A_FIRED = 0x08U;  ///< Bit 3: pulse channel A fired.
+static constexpr uint8_t STATUS_PULSE_B_FIRED = 0x10U;  ///< Bit 4: pulse channel B fired.
 static constexpr uint8_t STATUS_DELTA_FRAME  = 0x20U;  ///< Bit 5: delta-encoded frame (APUS-3.3).
 static constexpr uint8_t STATUS_RESERVED     = 0xC0U;  ///< Bits 6–7: reserved, must be zero.
 

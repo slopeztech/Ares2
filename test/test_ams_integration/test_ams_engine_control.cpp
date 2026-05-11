@@ -4,7 +4,7 @@
  *
  * Covers: ABORT TC force-deactivation vs. explicit-transition consumption,
  * setExecutionEnabled pause/resume (including Bug #5 hold-window regression),
- * requestTelemetry on-demand HK emission, and notifyPyroFired status bits.
+ * requestTelemetry on-demand HK emission, and notifyPulseFired status bits.
  */
 
 #include <unity.h>
@@ -284,31 +284,31 @@ void test_request_telemetry_emits_hk()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// notifyPyroFired: STATUS_PYRO_A_FIRED bit is set after channel 0 fires.
+// notifyPulseFired: STATUS_PULSE_A_FIRED bit is set after channel 0 fires.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void test_notify_pyro_a_sets_status_bit()
+void test_notify_pulse_a_sets_status_bit()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
 
-    f.engine.notifyPyroFired(0U);
+    f.engine.notifyPulseFired(0U);
 
     const ares::proto::StatusBits bits = f.engine.getStatusBits();
-    TEST_ASSERT_TRUE((bits & ares::proto::STATUS_PYRO_A_FIRED) != 0U);
+    TEST_ASSERT_TRUE((bits & ares::proto::STATUS_PULSE_A_FIRED) != 0U);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// notifyPyroFired: STATUS_PYRO_B_FIRED bit is set after channel 1 fires.
+// notifyPulseFired: STATUS_PULSE_B_FIRED bit is set after channel 1 fires.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void test_notify_pyro_b_sets_status_bit()
+void test_notify_pulse_b_sets_status_bit()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
 
-    f.engine.notifyPyroFired(1U);
+    f.engine.notifyPulseFired(1U);
 
     const ares::proto::StatusBits bits = f.engine.getStatusBits();
-    TEST_ASSERT_TRUE((bits & ares::proto::STATUS_PYRO_B_FIRED) != 0U);
+    TEST_ASSERT_TRUE((bits & ares::proto::STATUS_PULSE_B_FIRED) != 0U);
 }

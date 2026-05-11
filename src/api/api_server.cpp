@@ -62,11 +62,12 @@ ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
                      TwoWire* i2c1,
                      HardwareSerial* gpsUart,
                      HardwareSerial* loraUart,
-                     RadioInterface* radio)
+                     RadioInterface* radio,
+                     PulseInterface* pulse)
         : wifi_(wifi), baro_(baro), gps_(gps), imu_(imu),
           storage_(storage), mission_(mission), statusLed_(statusLed),
           i2c0_(i2c0), i2c1_(i2c1), gpsUart_(gpsUart),
-          loraUart_(loraUart), radio_(radio)
+          loraUart_(loraUart), radio_(radio), pulse_(pulse)
 {
 }
 
@@ -409,6 +410,24 @@ void ApiServer::routeRequest(WiFiClient& client,
 
     if (routeStatusAndConfigRequest(client, method, path, body, bodyLen)) { return; }
     if (routeFlightRequest(client, method, path, body, bodyLen)) { return; }
+
+    if (strncmp(path, "/api/pulse", 10) == 0)
+    {
+        if (strcmp(path, "/api/pulse/status") == 0)
+        {
+            if (strcmp(method, "GET") != 0)
+            {
+                sendError(client, 405, "method not allowed");
+                LOG_W(TAG, "%s /api/pulse/status 405", method);
+                return;
+            }
+            handlePulseStatus(client);
+            return;
+        }
+        sendError(client, 404, "not found");
+        LOG_W(TAG, "%s %s 404", method, path);
+        return;
+    }
 
     if (strncmp(path, "/api/logs", 9) == 0)
     {

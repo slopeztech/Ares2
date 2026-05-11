@@ -28,9 +28,11 @@ static constexpr const char* TAG = "RADIO";
 // ── Constructor ──────────────────────────────────────────────────────────────
 
 RadioDispatcher::RadioDispatcher(RadioInterface&               radio,
-                                 ares::ams::MissionScriptEngine& engine)
+                                 ares::ams::MissionScriptEngine& engine,
+                                 PulseInterface*               pulse)
     : radio_(radio)
     , engine_(engine)
+    , pulse_(pulse)
     , rxBuf_{}
     , rxLen_(0U)
     , txSeq_(0U)
@@ -366,8 +368,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     // ── APUS-7.3: CRITICAL commands must carry FLAG_PRIORITY ──────────────
     const bool isCritical = (cmd == proto::CommandId::ABORT         ||
-                             cmd == proto::CommandId::FIRE_PYRO_A   ||
-                             cmd == proto::CommandId::FIRE_PYRO_B   ||
+                             cmd == proto::CommandId::FIRE_PULSE_A  ||
+                             cmd == proto::CommandId::FIRE_PULSE_B  ||
                              cmd == proto::CommandId::FACTORY_RESET);
     if (isCritical && ((frame.flags & proto::FLAG_PRIORITY) == 0U))
     {
@@ -431,23 +433,40 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
         LOG_I(TAG, "FACTORY_RESET: RESET injected via radio TC");
         return proto::FailureCode::NONE;
 
-    case proto::CommandId::FIRE_PYRO_A:
-    case proto::CommandId::FIRE_PYRO_B:
+    case proto::CommandId::FIRE_PULSE_A:
+    case proto::CommandId::FIRE_PULSE_B:
     {
-        // ── APUS-7.2: pyro commands require engine RUNNING (armed) ────────
+        // ── APUS-7.2: pulse commands require engine RUNNING (armed) ────────
         ares::ams::EngineSnapshot snap = {};
         engine_.getSnapshot(snap);
         if (snap.status != ares::ams::EngineStatus::RUNNING)
         {
-            LOG_W(TAG, "FIRE_PYRO commandId=0x%02X rejected: engine not RUNNING",
+            LOG_W(TAG, "FIRE_PULSE commandId=0x%02X rejected: engine not RUNNING",
                   static_cast<unsigned>(commandId));
             return proto::FailureCode::PRECONDITION_FAIL;
         }
-        // Pyro direct-fire bypasses the AMS script — not yet wired to HAL.
-        // Return EXECUTION_ERROR so ground retries via the AMS script path.
-        LOG_W(TAG, "FIRE_PYRO commandId=0x%02X: HAL not yet connected",
-              static_cast<unsigned>(commandId));
-        return proto::FailureCode::EXECUTION_ERROR;
+
+        if (pulse_ == nullptr)
+        {
+            LOG_E(TAG, "FIRE_PULSE commandId=0x%02X: no pulse driver attached",
+                  static_cast<unsigned>(commandId));
+            return proto::FailureCode::EXECUTION_ERROR;
+        }
+
+        const uint8_t ch = (cmd == proto::CommandId::FIRE_PULSE_A)
+                           ? PulseChannel::CH_A
+                           : PulseChannel::CH_B;
+
+        if (!pulse_->fire(ch, static_cast<uint32_t>(ares::FIRE_DURATION_MS)))
+        {
+            LOG_E(TAG, "FIRE_PULSE ch=%u: driver rejected fire",
+                  static_cast<unsigned>(ch));
+            return proto::FailureCode::EXECUTION_ERROR;
+        }
+
+        engine_.notifyPulseFired(ch);
+        LOG_I(TAG, "FIRE_PULSE ch=%u OK", static_cast<unsigned>(ch));
+        return proto::FailureCode::NONE;
     }
 
     // ── ST[8] Mode control ────────────────────────────────────────────────
@@ -543,7 +562,7 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
     {
         // Build and send a TELEMETRY frame with the engine's current status.
         // StatusBits are populated from live engine state (APUS-6):
-        // armed, fcsActive, gpsValid, pyroAFired, pyroBFired.
+        // armed, fcsActive, gpsValid, pulseAFired, pulseBFired.
         ares::ams::EngineSnapshot snap = {};
         engine_.getSnapshot(snap);
 
@@ -858,7 +877,7 @@ bool RadioDispatcher::sendReliable(const proto::Frame& frame, uint32_t nowMs)
  * @brief Return the priority level for a given CommandId (APUS-2.1).
  *
  * Priority levels:
- *   - 0 (CRITICAL): ABORT, FIRE_PYRO_A/B, FACTORY_RESET
+ *   - 0 (CRITICAL): ABORT, FIRE_PULSE_A/B, FACTORY_RESET
  *   - 1 (HIGH):     ARM_FLIGHT, SET_MODE, SET_FCS_ACTIVE, SET_CONFIG_PARAM
  *   - 2 (NORMAL):   REQUEST_TELEMETRY, SET_TELEM_INTERVAL
  *   - 3 (LOW):      REQUEST_STATUS, REQUEST_CONFIG, VERIFY_CONFIG
@@ -871,8 +890,8 @@ uint8_t RadioDispatcher::commandPriority(proto::CommandId id)
     switch (id)
     {
     case proto::CommandId::ABORT:
-    case proto::CommandId::FIRE_PYRO_A:
-    case proto::CommandId::FIRE_PYRO_B:
+    case proto::CommandId::FIRE_PULSE_A:
+    case proto::CommandId::FIRE_PULSE_B:
     case proto::CommandId::FACTORY_RESET:
         return kCriticalPriority;
 

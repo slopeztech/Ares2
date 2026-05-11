@@ -40,8 +40,8 @@ using ares::proto::StatusBits;
 using ares::proto::STATUS_ARMED;
 using ares::proto::STATUS_FCS_ACTIVE;
 using ares::proto::STATUS_GPS_VALID;
-using ares::proto::STATUS_PYRO_A_FIRED;
-using ares::proto::STATUS_PYRO_B_FIRED;
+using ares::proto::STATUS_PULSE_A_FIRED;
+using ares::proto::STATUS_PULSE_B_FIRED;
 using ares::proto::STATUS_DELTA_FRAME;
 
 using detail::formatScaledFloat;
@@ -265,7 +265,7 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& s
  * - @c armed      true when the engine is in the RUNNING state.
  * - @c fcsActive  true when execution is enabled (not paused).
  * - @c gpsValid   true when at least one registered GPS driver reports hasFix().
- * - @c pyroAFired / @c pyroBFired set via notifyPyroFired().
+ * - @c pulseAFired / @c pulseBFired set via notifyPulseFired().
  *
  * @pre  Caller holds mutex_.
  * @return StatusBits struct with reserved bits cleared.
@@ -286,8 +286,8 @@ ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
         }
     }
 
-    if (pyroAFired_) { bits |= STATUS_PYRO_A_FIRED; }
-    if (pyroBFired_) { bits |= STATUS_PYRO_B_FIRED; }
+    if (pulseAFired_) { bits |= STATUS_PULSE_A_FIRED; }
+    if (pulseBFired_) { bits |= STATUS_PULSE_B_FIRED; }
     // STATUS_RESERVED bits remain 0 (initialized to 0U).
     return bits;
 }

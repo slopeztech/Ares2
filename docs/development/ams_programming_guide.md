@@ -1317,8 +1317,8 @@ called from `loop()` **before** `missionEngine.tick()`.
 | `ARM_FLIGHT`          | `engine_.arm()`                                                       | None                             |
 | `ABORT`               | `engine_.injectTcCommand("ABORT")`                                    | None                             |
 | `FACTORY_RESET`       | `engine_.injectTcCommand("RESET")`                                    | None                             |
-| `FIRE_PYRO_A`         | HAL not yet connected — returns `EXECUTION_ERROR`                     | `status == RUNNING`              |
-| `FIRE_PYRO_B`         | HAL not yet connected — returns `EXECUTION_ERROR`                     | `status == RUNNING`              |
+| `FIRE_PULSE_A`        | Fires pulse channel A (drogue) via `PulseDriver`                      | `status == RUNNING`              |
+| `FIRE_PULSE_B`        | Fires pulse channel B (main) via `PulseDriver`                        | `status == RUNNING`              |
 | `SET_MODE`            | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
 | `SET_FCS_ACTIVE`      | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
 | `REQUEST_TELEMETRY`   | `engine_.requestTelemetry(nowMs)` — sends all active HK slots now     | None                             |
@@ -1339,7 +1339,7 @@ sets `FLAG_ACK_REQ` in the frame flags.
 | FailureCode         | Meaning                                                   |
 |---------------------|-----------------------------------------------------------|
 | `NONE`              | Success                                                   |
-| `PRECONDITION_FAIL` | Rejected because a precondition was not met (e.g. not RUNNING for pyro) |
+| `PRECONDITION_FAIL` | Rejected because a precondition was not met (e.g. not RUNNING for pulse fire) |
 | `EXECUTION_ERROR`   | Command accepted but runtime failed (HAL not connected, etc.) |
 
 ### 17.4 Interaction with AMS mission scripts
@@ -1371,8 +1371,8 @@ Prior to this implementation, all five `statusBits` flags were always `0`
   derives all five bits from live engine state and GPS driver `hasFix()`.
 - `MissionScriptEngine::getStatusBits()` — public thread-safe wrapper used by
   `RadioDispatcher`.
-- `MissionScriptEngine::notifyPyroFired(channel)` — call this after a
-  successful pyro GPIO pulse to latch `pyroAFired` / `pyroBFired`.
+- `MissionScriptEngine::notifyPulseFired(channel)` — call this after a
+  successful pulse GPIO activation to latch `pulseAFired` / `pulseBFired`.
 
 All three telemetry TX paths (`sendHkReportLocked`, `sendHkReportSlotLocked`,
 and the `REQUEST_STATUS` handler) now call `buildStatusBitsLocked()` so the GCS

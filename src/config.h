@@ -46,8 +46,8 @@ constexpr uint8_t     PIN_LORA_AUX   = 9;    ///< AUX pin (HIGH = idle).
 constexpr uint8_t     PIN_LORA_M0    = 14;   ///< Mode select bit 0 (not wired).
 constexpr uint8_t     PIN_LORA_M1    = 3;    ///< Mode select bit 1 (not wired).
 constexpr uint8_t     LORA_UART_PORT = 2;    ///< HardwareSerial port index.
-constexpr uint8_t     PIN_DROGUE     = 4;    ///< Drogue pyro channel GPIO.
-constexpr uint8_t     PIN_MAIN       = 15;   ///< Main chute pyro channel GPIO.
+constexpr uint8_t     PIN_DROGUE     = 4;    ///< Drogue pulse channel GPIO.
+    constexpr uint8_t     PIN_MAIN       = 15;   ///< Main chute pulse channel GPIO.
 
 // ═══════════════════════════════════════════════════════════
 // Common configuration (shared across all boards)
@@ -87,7 +87,7 @@ constexpr uint8_t  ADXL375_SPI_BUS      = 1U;
 constexpr uint32_t GPS_BAUD      = 9600;   ///< Factory default baud rate.
 
 // ── Actuators (parachute) ──────────────────────────────────
-constexpr uint32_t FIRE_DURATION_MS = 1000;  ///< Pyro channel fire pulse duration.
+constexpr uint32_t FIRE_DURATION_MS = 1000;  ///< Channel fire pulse duration (ms).
 
 // ── LoRa (UART-based modules) ───────────────────────────────
 constexpr float    LORA_FREQ_MHZ          = 433.125f; ///< CH=23: 410.125+23.
@@ -136,6 +136,7 @@ constexpr uint8_t     AMS_MAX_TASK_ACTIVE_STATES = 6U;  ///< Max states in a tas
 constexpr uint8_t     AMS_MAX_ASSERTS            = 8U;  ///< Max assert directives per script (AMS-15).
 constexpr uint8_t     AMS_VAR_NAME_LEN         = 16U;///< Max variable name length including NUL (AMS-4.8).
 constexpr uint8_t     AMS_MAX_SET_ACTIONS      = 4U; ///< Max set actions per on_enter block (AMS-4.8).
+constexpr uint8_t     AMS_MAX_PULSE_ACTIONS    = 2U; ///< Max PULSE.fire actions per on_enter block (AMS-4.17).
 constexpr uint8_t     AMS_MAX_SENSOR_RETRY     = 5U; ///< Max sensor read retries declared in include (AMS-4.9.1).
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.

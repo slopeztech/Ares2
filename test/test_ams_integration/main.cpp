@@ -43,8 +43,8 @@ extern void test_pause_stops_tick_execution();
 extern void test_resume_restores_running_status();
 extern void test_pause_clears_transition_hold_windows();
 extern void test_request_telemetry_emits_hk();
-extern void test_notify_pyro_a_sets_status_bit();
-extern void test_notify_pyro_b_sets_status_bit();
+extern void test_notify_pulse_a_sets_status_bit();
+extern void test_notify_pulse_b_sets_status_bit();
 
 // ── test_ams_script_variants.cpp ──────────────────────────────────────────────
 
@@ -56,6 +56,16 @@ extern void test_hold_window_prevents_early_fire();
 extern void test_hold_window_fires_after_window();
 extern void test_confirm_mode_requires_two_injects();
 extern void test_list_scripts_returns_ams_files();
+
+// ── test_ams_pulse.cpp ─────────────────────────────────────────────────────────
+
+extern void test_pulse_fire_a_calls_driver_on_state_entry();
+extern void test_pulse_fire_b_calls_driver_on_state_entry();
+extern void test_pulse_fire_sets_status_bit_a();
+extern void test_pulse_fire_sets_status_bit_b();
+extern void test_pulse_fire_duration_override();
+extern void test_pulse_fire_only_when_execution_enabled();
+extern void test_pulse_fire_no_driver_no_crash();
 
 int main()
 {
@@ -91,8 +101,8 @@ int main()
     RUN_TEST(test_resume_restores_running_status);
     RUN_TEST(test_pause_clears_transition_hold_windows);
     RUN_TEST(test_request_telemetry_emits_hk);
-    RUN_TEST(test_notify_pyro_a_sets_status_bit);
-    RUN_TEST(test_notify_pyro_b_sets_status_bit);
+    RUN_TEST(test_notify_pulse_a_sets_status_bit);
+    RUN_TEST(test_notify_pulse_b_sets_status_bit);
 
     // Script variants
     RUN_TEST(test_parser_error_on_empty_script);
@@ -103,6 +113,15 @@ int main()
     RUN_TEST(test_hold_window_fires_after_window);
     RUN_TEST(test_confirm_mode_requires_two_injects);
     RUN_TEST(test_list_scripts_returns_ams_files);
+
+    // Pulse channel commands (AMS-4.17)
+    RUN_TEST(test_pulse_fire_a_calls_driver_on_state_entry);
+    RUN_TEST(test_pulse_fire_b_calls_driver_on_state_entry);
+    RUN_TEST(test_pulse_fire_sets_status_bit_a);
+    RUN_TEST(test_pulse_fire_sets_status_bit_b);
+    RUN_TEST(test_pulse_fire_duration_override);
+    RUN_TEST(test_pulse_fire_only_when_execution_enabled);
+    RUN_TEST(test_pulse_fire_no_driver_no_crash);
 
     return UNITY_END();
 }
