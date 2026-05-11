@@ -2573,7 +2573,7 @@ bool MissionScriptEngine::parsePulseFireLineLocked(const char* line,
     const char* rest = line + kPrefixLen;
 
     // Determine channel.
-    uint8_t channel;
+    uint8_t channel = 0U;
     if (rest[0] == 'A')
     {
         channel = PulseChannel::CH_A;
@@ -2588,64 +2588,83 @@ bool MissionScriptEngine::parsePulseFireLineLocked(const char* line,
         return false;
     }
 
-    // rest[1] must be a space, NUL, or end of printable text.
-    const char* afterCh = rest + 1U;
-
-    // 0 means "use compile-time default (ares::FIRE_DURATION_MS)".
     uint32_t durationMs = 0U;
-
-    if (*afterCh != '\0' && *afterCh != ' ')
+    if (!parsePulseDurationSuffixLocked(rest + 1U, durationMs))
     {
-        setErrorLocked("PULSE.fire: unexpected characters after channel letter");
         return false;
-    }
-
-    if (*afterCh == ' ')
-    {
-        const char* numStart = afterCh + 1U;
-
-        // Reject if nothing follows the space.
-        if (*numStart == '\0')
-        {
-            setErrorLocked("PULSE.fire: expected Nms after channel letter");
-            return false;
-        }
-
-        // Find the "ms" suffix.
-        const char* msPtr = strstr(numStart, "ms");
-        if (msPtr == nullptr || msPtr == numStart)
-        {
-            setErrorLocked("PULSE.fire: duration must be in the form Nms (e.g. 500ms)");
-            return false;
-        }
-
-        const ptrdiff_t numLen = msPtr - numStart;
-        if (numLen <= 0 || numLen >= 16)
-        {
-            setErrorLocked("PULSE.fire: duration value too long");
-            return false;
-        }
-
-        char numBuf[16] = {};
-        memcpy(numBuf, numStart, static_cast<size_t>(numLen));
-        numBuf[static_cast<size_t>(numLen)] = '\0';
-
-        if (!parseUint(numBuf, durationMs) || durationMs == 0U)
-        {
-            setErrorLocked("PULSE.fire: duration must be a positive integer");
-            return false;
-        }
-
-        if (!isOnlyTrailingWhitespace(msPtr + 2U))
-        {
-            setErrorLocked("PULSE.fire: unexpected suffix after duration");
-            return false;
-        }
     }
 
     st.pulseActions[st.pulseActionCount].channel    = channel;
     st.pulseActions[st.pulseActionCount].durationMs = durationMs;
     st.pulseActionCount++;
+    return true;
+}
+
+/**
+ * @brief Parse the optional " Nms" duration suffix of a PULSE.fire directive.
+ *
+ * @param[in]  afterCh  Pointer to the character immediately after the channel
+ *                      letter ('A' or 'B') in the script line.
+ * @param[out] out      Set to the parsed millisecond value, or 0 if absent
+ *                      (meaning: use @c ares::FIRE_DURATION_MS at runtime).
+ * @return @c true on success; @c false after calling @c setErrorLocked().
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseDurationSuffixLocked(const char* afterCh,
+                                                         uint32_t&   out)
+{
+    out = 0U;
+
+    // No suffix at all — use compile-time default.
+    if (*afterCh == '\0')
+    {
+        return true;
+    }
+
+    if (*afterCh != ' ')
+    {
+        setErrorLocked("PULSE.fire: unexpected characters after channel letter");
+        return false;
+    }
+
+    const char* numStart = afterCh + 1U;
+
+    if (*numStart == '\0')
+    {
+        setErrorLocked("PULSE.fire: expected Nms after channel letter");
+        return false;
+    }
+
+    const char* msPtr = strstr(numStart, "ms");
+    if (msPtr == nullptr || msPtr == numStart)
+    {
+        setErrorLocked("PULSE.fire: duration must be in the form Nms (e.g. 500ms)");
+        return false;
+    }
+
+    const ptrdiff_t numLen = msPtr - numStart;
+    if (numLen <= 0 || numLen >= 16)
+    {
+        setErrorLocked("PULSE.fire: duration value too long");
+        return false;
+    }
+
+    char numBuf[16] = {};
+    memcpy(numBuf, numStart, static_cast<size_t>(numLen));
+    numBuf[static_cast<size_t>(numLen)] = '\0';
+
+    if (!parseUint(numBuf, out) || out == 0U)
+    {
+        setErrorLocked("PULSE.fire: duration must be a positive integer");
+        return false;
+    }
+
+    if (!isOnlyTrailingWhitespace(msPtr + 2U))
+    {
+        setErrorLocked("PULSE.fire: unexpected suffix after duration");
+        return false;
+    }
+
     return true;
 }
 

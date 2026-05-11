@@ -765,7 +765,8 @@ private:
     bool validateConstIdentifierLocked(const char* name);
     bool ensureConstDoesNotConflictLocked(const char* name);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
-    bool parsePulseFireLineLocked(const char* line, StateDef& st);  ///< AMS-4.17: parse "PULSE.fire A[/B] [Nms]".
+    bool parsePulseFireLineLocked(const char* line, StateDef& st);            ///< AMS-4.17: parse "PULSE.fire A[/B] [Nms]".
+    bool parsePulseDurationSuffixLocked(const char* afterCh, uint32_t& out); ///< Parse optional " Nms" suffix; called by parsePulseFireLineLocked.
     bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
     bool ensureSetVariableExistsLocked(const char* varName);
     bool parseCalibrateSetActionLocked(const char* rhsBuf, SetAction& out);
