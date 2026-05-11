@@ -130,6 +130,9 @@ Boot restore integration:
   - restored tuple is exactly: `running=1`, `executionEnabled=1`, `status=RUNNING`
 3. If accepted, AMS continues from the persisted state/timers and rewrites checkpoint immediately
 4. If rejected, checkpoint is discarded and AMS remains non-running
+5. If the restore succeeds **and** the MCU reset cause is abnormal (panic, WDT, brownout —
+   see AMS-4.6.4), `TC.RESET_ABNORMAL` is automatically injected before the first tick
+   so the active AMS state can respond to the unexpected reboot
 
 ---
 
@@ -162,6 +165,7 @@ state FLIGHT:
 
 Allowed statements inside a state:
 - `on_enter:`
+- `on_exit:`
 - `EVENT.info|warning|error "text"`
 - `conditions:`
 - `<LHS> <OP> <RHS>` (inside `conditions:`)
@@ -294,7 +298,7 @@ Where each `<COND>` may be one of:
 
 | Form | Meaning |
 |---|---|
-| `TC.command == LAUNCH\|ABORT\|RESET` | TC one-shot gate |
+| `TC.command == LAUNCH\|ABORT\|RESET\|RESET_ABNORMAL` | TC one-shot gate |
 | `BARO.alt < x` / `BARO.alt > x` | Absolute sensor threshold |
 | `BARO.temp < x` / `BARO.pressure < x` | (and any other BARO/GPS/IMU field) |
 | `ALIAS.field delta < x` | Inter-sample delta < x (AMS-4.6.2) |
@@ -303,7 +307,7 @@ Where each `<COND>` may be one of:
 | `ALIAS.field rising` | Sugar: delta > 0 |
 
 Supported fields for standard comparisons:
-- `TC.command == LAUNCH|ABORT|RESET`
+- `TC.command == LAUNCH|ABORT|RESET|RESET_ABNORMAL`
 - `BARO.alt < x`, `BARO.alt > x`
 - `BARO.temp < x`, `BARO.temp > x`
 - `BARO.pressure < x`, `BARO.pressure > x`
@@ -384,6 +388,90 @@ Rules:
 - `for Nms` applies to the **compound result**: the compound must stay true
   for the full window.
 - Single-condition transitions remain fully backward-compatible.
+
+### AMS-4.6.4 TC.RESET_ABNORMAL — Abnormal Boot Detection
+
+`TC.RESET_ABNORMAL` is a firmware-injected TC token that fires automatically on
+the **first tick** after a successful checkpoint restore following an abnormal
+MCU reset.  It allows the AMS script to react to in-flight crashes, watchdog
+faults, or brownout events without any ground-station intervention.
+
+#### Trigger conditions
+
+The token is injected when **all** of the following are true at boot:
+
+1. A valid checkpoint is restored (`status == RUNNING`, `executionEnabled == 1`).
+2. The MCU reset cause (from `esp_reset_reason()`) is one of:
+
+| Cause | Description |
+|---|---|
+| `ESP_RST_PANIC` | Software exception / assertion failure |
+| `ESP_RST_INT_WDT` | Interrupt watchdog timeout |
+| `ESP_RST_TASK_WDT` | Task watchdog timeout |
+| `ESP_RST_WDT` | Other watchdog timeout |
+| `ESP_RST_BROWNOUT` | Power supply brownout |
+
+Normal reboots (`ESP_RST_POWERON`, `ESP_RST_SW`) are **not** treated as abnormal
+and never trigger this TC.
+
+#### Syntax
+
+```ams
+transition to <STATE> when TC.command == RESET_ABNORMAL
+```
+
+Shorthand is identical to other TC tokens:
+
+```ams
+transition to EMERGENCY_RECOVERY on TC.RESET_ABNORMAL
+```
+
+> Currently `on TC.*` is not distinct syntax — use the `TC.command ==` form.
+
+#### Semantics
+
+- `TC.RESET_ABNORMAL` is a **one-shot** gate: it is consumed the first time a
+  matching transition fires.  If no transition in the active state tests for it,
+  the token is discarded on the next tick.
+- The `for Nms` hold modifier is **ignored** for `TC.RESET_ABNORMAL` (same rule
+  as all TC tokens — AMS-4.6.1).
+- The token may appear in compound conditions (`and` / `or`) — see AMS-4.6.3.
+- A `LOG_W` entry is written to the system log at boot when the token is injected.
+
+#### Recommended usage pattern
+
+```ams
+state ASCENT:
+  every 500ms:
+    HK.report { baro_alt: BARO.alt  imu_az: IMU.accel_z }
+  transition to EMERGENCY_RECOVERY when TC.command == RESET_ABNORMAL
+  transition to APOGEE             when BARO.alt delta < 0 for 500ms
+  transition to SAFE               when TC.command == ABORT
+
+state EMERGENCY_RECOVERY:
+  on_enter:
+    EVENT.error "Abnormal reset during flight — deploying drogue"
+  every 2000ms:
+    HK.report { baro_alt: BARO.alt  gps_lat: GPS.lat  gps_lon: GPS.lon }
+  // No conditions: block — engine must not halt during recovery
+```
+
+#### Interaction with checkpoint restore
+
+The checkpoint mechanism (AMS-2) guarantees the engine resumes in the same
+state it occupied before the reset, with the same timers and variables.  The
+`TC.RESET_ABNORMAL` token is injected **after** the restore completes, so the
+transition is evaluated with the fully-restored context on the first tick.
+
+#### Safety consideration
+
+If the recovery state itself crashes the MCU again (e.g. due to a hardware
+fault), the checkpoint will be rewritten when the engine enters the new state.
+On the next boot the engine will resume in the recovery state; `TC.RESET_ABNORMAL`
+will fire again if the reset cause is still abnormal.  Design recovery states to
+be minimal and fault-tolerant (no `conditions:` block, no complex sensor expressions).
+
+---
 
 ### AMS-4.7 Guard Conditions and on_error
 
@@ -627,7 +715,8 @@ Tick execution order:
 4. If `for Nms` is active and the compound is true: arm/check hold timer; proceed
    only when the window has fully elapsed (AMS-4.6.1).  If compound drops false,
    reset the hold timer.
-5. If transition fires: consume TC token (if any), enter next state, end tick.
+5. If transition fires: execute on_exit set actions and EVENT for the current
+   state (AMS-4.16); consume TC token (if any); enter next state; end tick.
 6. Evaluate guard conditions (`conditions:`)
 7. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
 8. Otherwise, evaluate due actions and run arbitration
@@ -640,6 +729,20 @@ It is consumed by arbitration as an EVENT due action.
 > **Note (AMS-4.8):** `set` actions execute before the event is queued.
 > The variable value is therefore available to the arbitration tick that
 > dispatches the event.
+
+### AMS-5.8 On-Exit Dispatch Order
+
+`on_exit:` set actions and EVENT are executed **synchronously and immediately**
+(not queued) inside `exitStateLocked()`, which runs **before**
+`enterStateLocked()` of the incoming state.  The ordering guarantee is:
+
+```
+exitStateLocked(old)  →  enterStateLocked(new)  →  [queued on_enter event]
+```
+
+This means the `on_exit:` EVENT frame is transmitted on the bus before the
+new state's `on_enter:` event is queued, which in turn fires on the next
+arbitration cycle.
 
 ### AMS-5.7 Variable NaN Guard
 
@@ -723,6 +826,9 @@ state SAFE:
 
 Rules for fault-tolerant AMS missions:
 - Every state that can fail must have `transition to SAFE when TC.command == ABORT`.
+- Add `transition to SAFE when TC.command == RESET_ABNORMAL` in every critical
+  state to handle automatic recovery from in-flight crashes or watchdog faults
+  (see AMS-4.6.4).
 - The `SAFE`/`RECOVERY` state must have **no** `conditions:` block so the
   engine never stops while waiting for ground intervention.
 - Use `EVENT.error` in `on_error:` to alert the ground station.
@@ -1087,4 +1193,65 @@ the script load to fail.
 | Missing `=` or missing value      | Parse error; script rejected          |
 | `radio.config` in a state block   | Parse error; script rejected          |
 | More than 6 directives            | Last one per param wins; no error     |
+
+---
+
+## AMS-4.16 On-Exit Handler
+
+An `on_exit:` block defines actions to execute synchronously when the engine
+leaves a state via **any** transition — normal, fallback, or error-recovery.
+It provides a symmetric counterpart to `on_enter:` for farewell telemetry,
+variable snapshots, or state-departure audit events.
+
+### AMS-4.16.1 Syntax
+
+```ams
+state FLIGHT:
+  on_exit:
+    set landing_alt = BARO.alt          -- optional set action(s)
+    EVENT.info "Leaving FLIGHT"         -- optional departure event
+```
+
+Allowed inside `on_exit:`:
+- `set VARNAME = EXPR` — same forms as `on_enter:` (AMS-4.8.2).  Up to
+  `AMS_MAX_SET_ACTIONS` (4) set actions per block.
+- `EVENT.info|warning|error "text"` — exactly zero or one event per block.
+- `transition to` inside `on_exit:` is a **parse error**.
+
+### AMS-4.16.2 Semantics
+
+Execution order when a transition fires:
+1. Execute `on_exit:` set actions (bounded loop, PO10-2).
+2. Dispatch `on_exit:` EVENT synchronously (not queued — arrives on the bus
+   before the new state's `on_enter:` event).
+3. Enter the new state (`enterStateLocked`), which executes `on_enter:` set
+   actions and queues the `on_enter:` event.
+
+The `on_exit:` handler fires in all of the following transition sites:
+| Transition type | Fires? |
+|---|---|
+| Normal condition-based transition | ✅ Yes |
+| Fallback timeout transition (AMS-4.9.2) | ✅ Yes |
+| Error-recovery transition (`on_error: transition to`) | ✅ Yes |
+| Initial `activateLocked` (no previous state) | ❌ No |
+| `deactivate()` | ❌ No |
+| Engine enters ERROR with no recovery transition | ❌ No |
+| Checkpoint restore (`RESET_ABNORMAL`) | ❌ No |
+
+### AMS-4.16.3 Compliance
+
+| Constraint | Implementation |
+|---|---|
+| PO10-2 Bounded loops | `for` loop iterates at most `AMS_MAX_SET_ACTIONS` (4) |
+| PO10-3 No dynamic allocation | Static `onExitSetActions[]` array in `StateDef` |
+| RTOS-4 Mutex-protected state | Called under `mutex_` inside `exitStateLocked` |
+
+### AMS-4.16.4 Error conditions
+
+| Condition | Error |
+|---|---|
+| `transition to` inside `on_exit:` | Parse error |
+| More than one `EVENT.*` per block | Parse error |
+| More than `AMS_MAX_SET_ACTIONS` set actions | Parse error |
+| Unknown EVENT verb | Parse error |
 

@@ -128,6 +128,29 @@ state FLIGHT:
     GPS.speed < 250
   on_error:
     EVENT.error "FLIGHT guard violated"
+
+### 2.6 on_exit Handler
+
+Use `on_exit:` to run set actions and/or emit a farewell EVENT synchronously
+when the engine **leaves** a state.  It fires on every transition type:
+normal, fallback, and error-recovery.
+
+```ams
+state FLIGHT:
+  on_exit:
+    set landing_alt = BARO.alt     -- snapshot sensor at departure
+    EVENT.info "Leaving FLIGHT"    -- emitted before on_enter of next state
+```
+
+Allowed inside `on_exit:`:
+- Zero or more `set` actions (up to 4).
+- Zero or one `EVENT.*` line.
+- `transition to` is **not allowed** inside `on_exit:` (parse error).
+
+The `on_exit:` EVENT is dispatched **immediately** (not queued) and appears on
+the radio bus before the incoming state's `on_enter:` event.  Variables set in
+`on_exit:` are available to the new state's `on_enter:` set actions and to
+transition conditions on subsequent ticks.
 ```
 
 Current profile notes:
@@ -362,7 +385,122 @@ Runtime behavior:
 
 ---
 
-## 5.7 Global Variables and Calibration (AMS-4.8)
+### 5.7 TC.RESET\_ABNORMAL — Abnormal Boot Detection
+
+`TC.RESET_ABNORMAL` is a TC token that the firmware **automatically injects** on
+the first tick after a checkpoint restore that follows an abnormal MCU reset.
+Use it to give every in-flight state a safe escape route when the vehicle
+reboots unexpectedly mid-mission (crash, watchdog, brownout).
+
+```ams
+state ASCENT:
+  transition to EMERGENCY_RECOVERY when TC.command == RESET_ABNORMAL
+  transition to DESCENT            when BARO.alt delta < 0 for 500ms
+  transition to SAFE               when TC.command == ABORT
+```
+
+#### Trigger conditions (firmware-automatic)
+
+| MCU reset cause | Description |
+|---|---|
+| `ESP_RST_PANIC` | Software exception / assertion failure |
+| `ESP_RST_INT_WDT` | Interrupt watchdog timeout |
+| `ESP_RST_TASK_WDT` | Task watchdog timeout |
+| `ESP_RST_WDT` | Other watchdog timeout |
+| `ESP_RST_BROWNOUT` | Power supply voltage drop |
+
+Normal reboots (`ESP_RST_POWERON`, `ESP_RST_SW`) are **not** treated as
+abnormal and never trigger this TC.
+
+#### Manual injection (testing)
+
+```
+POST /api/mission/command {"command":"RESET_ABNORMAL"}
+```
+
+Use this to simulate an abnormal reboot in integration testing without
+physically cycling the MCU.  The token behaves identically to the
+firmware-injected version.
+
+#### Behaviour rules
+
+- **One-shot**: consumed on the first matching transition.  If no transition
+  in the active state tests for `RESET_ABNORMAL`, the token is silently
+  discarded on the next tick.
+- **`for Nms` ignored** — same rule as all TC tokens (AMS-4.6.1).
+- **Compound conditions**: may appear combined with sensor conditions using
+  `or` / `and` (AMS-4.6.3).
+- **System log**: a `LOG_W` warning with the exact reset cause code is written
+  to the debug log at boot whenever the token is injected.
+
+#### Recovery state guidelines
+
+- Recovery states must have **no** `conditions:` block — the engine must not
+  halt during recovery.
+- Keep recovery state actions minimal: one HK slot (slow cadence), one LOG slot.
+- Pair with a `fallback transition` in case a sensor stall prevents the next
+  regular transition from firing.
+
+#### Complete example
+
+```ams
+include BMP280 as BARO retry=3
+include BN220  as GPS  retry=2
+include LORA   as COM
+
+pus.apid = 1
+pus.service 3 as HK
+pus.service 5 as EVENT
+pus.service 1 as TC
+
+state WAIT:
+  on_enter:
+    EVENT.info "Awaiting launch command"
+  transition to ASCENT when TC.command == LAUNCH
+
+state ASCENT:
+  on_enter:
+    EVENT.info "ASCENT"
+  every 500ms:
+    HK.report { baro_alt: BARO.alt  imu_az: IMU.accel_z }
+  transition to EMERGENCY_RECOVERY when TC.command == RESET_ABNORMAL
+  transition to DESCENT            when BARO.alt delta < 0 for 500ms
+  transition to SAFE               when TC.command == ABORT
+
+state DESCENT:
+  on_enter:
+    EVENT.info "DESCENT"
+  every 1000ms:
+    HK.report { baro_alt: BARO.alt  gps_lat: GPS.lat  gps_lon: GPS.lon }
+  transition to EMERGENCY_RECOVERY when TC.command == RESET_ABNORMAL
+  transition to LANDED             when GPS.speed < 1
+  transition to SAFE               when TC.command == ABORT
+
+state EMERGENCY_RECOVERY:
+  on_enter:
+    EVENT.error "Abnormal reset during flight — entering emergency recovery"
+  // No conditions: block — engine must never halt here
+  every 2000ms:
+    HK.report { baro_alt: BARO.alt  gps_lat: GPS.lat  gps_lon: GPS.lon }
+  log_every 500ms:
+    LOG.report { baro_alt: BARO.alt  gps_lat: GPS.lat  gps_lon: GPS.lon }
+
+state SAFE:
+  on_enter:
+    EVENT.warning "SAFE mode — awaiting operator"
+  every 5000ms:
+    HK.report { baro_alt: BARO.alt  gps_lat: GPS.lat  gps_lon: GPS.lon }
+
+state LANDED:
+  on_enter:
+    EVENT.info "LANDED"
+  every 10000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  baro_alt: BARO.alt }
+```
+
+---
+
+## 5.8 Global Variables and Calibration (AMS-4.8)
 
 Global variables allow a mission script to capture sensor readings at runtime
 and use them as dynamic thresholds in subsequent transitions or guard conditions.
@@ -627,8 +765,11 @@ Resume flow after reboot:
 1. On boot, AMS attempts to restore `/missions/.ams_resume.chk`.
 2. Restore is accepted only for a valid in-flight snapshot (`running=1`, `executionEnabled=1`, `status=RUNNING`).
 3. If accepted, mission state index and elapsed timers are recovered, and execution continues automatically.
-4. Main startup mirrors this in API mode by setting FLIGHT when restored status is RUNNING.
-5. If checkpoint is invalid/corrupt/stale, it is discarded and AMS remains non-running.
+4. If the MCU reset cause was abnormal (panic, WDT, brownout), `TC.RESET_ABNORMAL` is injected
+   automatically before the first tick.  The active state can react via a `TC.command == RESET_ABNORMAL`
+   transition (see §5.7).
+5. Main startup mirrors this in API mode by setting FLIGHT when restored status is RUNNING.
+6. If checkpoint is invalid/corrupt/stale, it is discarded and AMS remains non-running.
 
 Checkpoint cadence details:
 - Forced checkpoint when entering a new state.
@@ -682,6 +823,15 @@ Check:
 - Prefer barometer for short-term phase transitions, GPS for geo context
 - Keep event priority highest in flight-critical phases
 - Keep local LOG below HK priority in nominal PUS-oriented operation
+- Add `transition to SAFE when TC.command == ABORT` to every in-flight state
+- Add `transition to EMERGENCY_RECOVERY when TC.command == RESET_ABNORMAL` to
+  every in-flight state so a watchdog, panic, or brownout event triggers graceful
+  recovery instead of silently resuming a potentially-faulted state (§5.7)
+- Recovery states (`EMERGENCY_RECOVERY`, `SAFE`) must never have a `conditions:` block
+- Use `on_exit:` to snapshot sensor values or emit audit events when leaving
+  flight-critical states — the farewell EVENT arrives on the bus before the
+  incoming state's `on_enter:` event, giving the ground a clean before/after
+  boundary in the telemetry stream
 
 ---
 

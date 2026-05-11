@@ -250,9 +250,10 @@ bool MissionScriptEngine::parseTcCommand(const char* text, TcCommand& out)
 {
     if (text == nullptr) { return false; }
 
-    if (strcmp(text, "LAUNCH") == 0) { out = TcCommand::LAUNCH; return true; }
-    if (strcmp(text, "ABORT")  == 0) { out = TcCommand::ABORT;  return true; }
-    if (strcmp(text, "RESET")  == 0) { out = TcCommand::RESET;  return true; }
+    if (strcmp(text, "LAUNCH")          == 0) { out = TcCommand::LAUNCH;          return true; }
+    if (strcmp(text, "ABORT")           == 0) { out = TcCommand::ABORT;           return true; }
+    if (strcmp(text, "RESET")           == 0) { out = TcCommand::RESET;           return true; }
+    if (strcmp(text, "RESET_ABNORMAL")  == 0) { out = TcCommand::RESET_ABNORMAL;  return true; }
 
     return false;
 }

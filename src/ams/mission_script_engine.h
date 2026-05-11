@@ -54,13 +54,14 @@ enum class EngineStatus : uint8_t
  */
 enum class TcCommand : uint8_t
 {
-    NONE   = 0,   ///< No pending command.
-    LAUNCH = 1,   ///< Launch command — triggers LAUNCH transitions.
-    ABORT  = 2,   ///< Abort command — triggers ABORT transitions.
-    RESET  = 3,   ///< Reset command — triggers RESET transitions.
+    NONE             = 0,   ///< No pending command.
+    LAUNCH           = 1,   ///< Launch command — triggers LAUNCH transitions.
+    ABORT            = 2,   ///< Abort command — triggers ABORT transitions.
+    RESET            = 3,   ///< Reset command — triggers RESET transitions.
+    RESET_ABNORMAL   = 4,   ///< Injected on boot after abnormal reset (panic/WDT/brownout) while in-flight.
 
     FIRST = NONE,  // CERT-6.1 — range validation sentinels
-    LAST  = RESET,
+    LAST  = RESET_ABNORMAL,
 };
 
 /**
@@ -279,6 +280,7 @@ private:
         TASK       = 6,  ///< Inside a task: block header (before first if-rule) (AMS-11).
         TASK_IF    = 7,  ///< Inside an if COND: block within a task (AMS-11).
         ASSERT     = 8,  ///< Inside an assert: block (AMS-15).
+        ON_EXIT    = 9,  ///< Inside an on_exit: block (EVENT.* and set actions).
     };
 
     // ── Peripheral kind ──────────────────────────────────────────────────────
@@ -613,6 +615,16 @@ private:
         // ── on_enter set actions (AMS-4.8) ──────────────────
         uint8_t   setActionCount = 0;
         SetAction setActions[ares::AMS_MAX_SET_ACTIONS] = {};
+
+        // ── on_exit handler (AMS-4.9) ────────────────────────
+        // Executed synchronously when leaving this state via any transition
+        // (normal, fallback, or error-recovery). Does NOT fire on deactivate()
+        // or when entering ERROR without a recovery transition.
+        bool      hasOnExitEvent = false;
+        EventVerb onExitVerb     = EventVerb::INFO;
+        char      onExitText[ares::AMS_MAX_EVENT_TEXT] = {};
+        uint8_t   onExitSetCount = 0;
+        SetAction onExitSetActions[ares::AMS_MAX_SET_ACTIONS] = {};
     };
 
     /**
@@ -732,6 +744,7 @@ private:
                                     const char* d5, int32_t nd, CondExpr& out);
     bool parseConditionScopedLineLocked(const char* line, StateDef& st);
     bool parseOnErrorEventLineLocked(const char* line, StateDef& st);
+    bool parseOnExitEventLineLocked(const char* line, StateDef& st);
     bool parseVarLineLocked(const char* line);
     bool parseConstLineLocked(const char* line);
     bool validateConstIdentifierLocked(const char* name);
@@ -823,6 +836,7 @@ private:
     uint8_t findStateByNameLocked(const char* name) const;
 
     void setErrorLocked(const char* reason);
+    void exitStateLocked(uint8_t stateIndex, uint32_t nowMs);
     void enterStateLocked(uint8_t stateIndex, uint32_t nowMs);
     bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint32_t nowMs);
     bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
@@ -939,6 +953,8 @@ private:
 
     bool saveResumePointLocked(uint32_t nowMs, bool force);
     bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
+    void appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
+    void appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint32_t nowMs) const;
     bool tryRestoreResumePointLocked(uint32_t nowMs);
     bool applyCheckpointStateLocked(uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
                                      uint32_t running, uint32_t status, uint32_t seq,

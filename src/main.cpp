@@ -33,6 +33,9 @@
 #include <Arduino.h>
 #include <freertos/task.h>
 #include <Wire.h>
+#include <esp_system.h>
+
+#include "debug/ares_log.h"
 
 // ── Peripherals (static allocation, no heap) ───────────────
 // Concrete drivers are created here and exposed below as
@@ -131,11 +134,30 @@ void setup()
     // REST API server — start after AMS is ready to avoid init race
     (void)apiServer.begin();
 
+    // Classify the reset cause before acting on the restored checkpoint.
+    // Abnormal causes (panic, WDT, brownout) while in-flight trigger TC.RESET_ABNORMAL
+    // so the user's AMS script can decide how to respond (e.g. deploy parachute).
+    const esp_reset_reason_t resetCause = esp_reset_reason();
+    const bool abnormalReset =
+        (resetCause == ESP_RST_PANIC    ||
+         resetCause == ESP_RST_INT_WDT  ||
+         resetCause == ESP_RST_TASK_WDT ||
+         resetCause == ESP_RST_WDT      ||
+         resetCause == ESP_RST_BROWNOUT);
+
     // If AMS restored an in-flight checkpoint after reboot, reflect it in API mode.
     ares::ams::EngineSnapshot bootSnap = {};
     missionEngine.getSnapshot(bootSnap);
     if (bootSnap.status == ares::ams::EngineStatus::RUNNING)
     {
+        if (abnormalReset)
+        {
+            // In-flight + abnormal reset: inject TC so the script handles recovery.
+            // The TC is consumed on the first tick — zero latency penalty.
+            LOG_W("BOOT", "Abnormal reset during flight (cause=%d) — injecting TC.RESET_ABNORMAL",
+                  static_cast<int>(resetCause));
+            (void)missionEngine.injectTcCommand("RESET_ABNORMAL");
+        }
         apiServer.notifyMissionResumed();
     }
     else

@@ -416,6 +416,7 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
                   state.name,
                   program_.states[state.fallbackTargetIdx].name,
                   elapsed);
+            exitStateLocked(currentState_, nowMs);
             enterStateLocked(state.fallbackTargetIdx, nowMs);
             return;
         }
@@ -679,6 +680,7 @@ bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
           state.name,
           program_.states[tr.targetIndex].name,
           nowMs);
+    exitStateLocked(currentState_, nowMs);
     enterStateLocked(tr.targetIndex, nowMs);
     return true;
 }
@@ -1013,6 +1015,7 @@ bool MissionScriptEngine::applyGuardErrorLocked(const StateDef& state,
               "Error recovery: '%s' -> '%s' (guard violated)",
               state.name,
               program_.states[state.onErrorTransitionIdx].name);
+        exitStateLocked(currentState_, nowMs);
         enterStateLocked(state.onErrorTransitionIdx, nowMs);
         return true;
     }
@@ -1117,6 +1120,40 @@ void MissionScriptEngine::setErrorLocked(const char* reason)
 }
 
 /**
+ * @brief Execute on_exit: handler of the state being left (AMS-4.9).
+ *
+ * Runs set actions then dispatches the optional EVENT synchronously.  Called
+ * immediately before enterStateLocked() at every transition site so the
+ * farewell event is visible on the bus before the new state's on_enter event.
+ * Does NOT fire on deactivate() or when the engine enters ERROR without a
+ * recovery transition.
+ *
+ * @param[in] stateIndex  Index of the departing state in program_.states[].
+ * @param[in] nowMs       Current system time in milliseconds.
+ * @pre  mutex_ is held by the caller.
+ */
+void MissionScriptEngine::exitStateLocked(uint8_t stateIndex, uint32_t nowMs)
+{
+    if (stateIndex >= program_.stateCount) { return; }
+    StateDef& st = program_.states[stateIndex];
+
+    // AMS-4.9: execute on_exit set actions synchronously before leaving state.
+    for (uint8_t i = 0U; i < st.onExitSetCount; ++i)  // PO10-2: bounded
+    {
+        executeOneSetActionLocked(st.onExitSetActions[i], nowMs);
+    }
+
+    // AMS-4.9: dispatch on_exit EVENT immediately — deterministic ordering
+    // guarantees it fires before on_enter of the incoming state.
+    if (st.hasOnExitEvent)
+    {
+        sendEventLocked(st.onExitVerb,
+                        inferEventId(st.onExitVerb),
+                        st.onExitText, nowMs);
+    }
+}
+
+/**
  * @brief Enter a new state: update index, reset all timers, queue on-enter event.
  *
  * Updates currentState_, resets stateEnterMs_, lastHkMs_, and lastLogMs_ to
@@ -1195,76 +1232,89 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
         return false;
     }
 
-    if (program_.varCount > 0U)
-    {
-        int32_t w2 = static_cast<int32_t>(snprintf(record + written, recSize - static_cast<size_t>(written),
-                          "|%" PRIu32, static_cast<uint32_t>(program_.varCount)));
-        if (w2 > 0) { written += w2; }
-
-        for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)
-        {
-            const VarEntry& v = program_.vars[vi];
-            char floatBuf[24] = {};
-            (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
-                           static_cast<double>(v.value));
-            const int32_t w3 = static_cast<int32_t>(snprintf(record + written,
-                                    recSize - static_cast<size_t>(written),
-                                    "|%s=%s=%u",
-                                    v.name, floatBuf, v.valid ? 1U : 0U));
-            if (w3 > 0 &&
-                (static_cast<size_t>(written) + static_cast<size_t>(w3)) < recSize)
-            {
-                written += w3;
-            }
-        }
-    }
-
-    // v3: per-slot HK/LOG elapsed timers (AMS-4.3.1).
-    // Format: |hkSlotCount|hkElap0|...|logSlotCount|logElap0|...
-    {
-        const StateDef& curSt = program_.states[currentState_];
-
-        const int32_t wHk = static_cast<int32_t>(snprintf(
-            record + written, recSize - static_cast<size_t>(written),
-            "|%" PRIu32, static_cast<uint32_t>(curSt.hkSlotCount)));
-        if (wHk > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wHk)) < recSize)
-        {
-            written += wHk;
-        }
-        for (uint8_t s = 0U; s < curSt.hkSlotCount && written > 0; s++)
-        {
-            const uint32_t slotElap = nowMs - lastHkSlotMs_[s];
-            const int32_t ws = static_cast<int32_t>(snprintf(
-                record + written, recSize - static_cast<size_t>(written),
-                "|%" PRIu32, slotElap));
-            if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
-            {
-                written += ws;
-            }
-        }
-
-        const int32_t wLog = static_cast<int32_t>(snprintf(
-            record + written, recSize - static_cast<size_t>(written),
-            "|%" PRIu32, static_cast<uint32_t>(curSt.logSlotCount)));
-        if (wLog > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wLog)) < recSize)
-        {
-            written += wLog;
-        }
-        for (uint8_t s = 0U; s < curSt.logSlotCount && written > 0; s++)
-        {
-            const uint32_t slotElap = nowMs - lastLogSlotMs_[s];
-            const int32_t ws = static_cast<int32_t>(snprintf(
-                record + written, recSize - static_cast<size_t>(written),
-                "|%" PRIu32, slotElap));
-            if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
-            {
-                written += ws;
-            }
-        }
-    }
+    appendVarsSectionLocked(record, recSize, written);
+    appendSlotTimersSectionLocked(record, recSize, written, nowMs);
 
     outWritten = written;
     return true;
+}
+
+void MissionScriptEngine::appendVarsSectionLocked(char*   record,
+                                                  size_t  recSize,
+                                                  int32_t& written) const
+{
+    if (program_.varCount == 0U || written <= 0) { return; }
+
+    int32_t w2 = static_cast<int32_t>(snprintf(record + written,
+                     recSize - static_cast<size_t>(written),
+                     "|%" PRIu32, static_cast<uint32_t>(program_.varCount)));
+    if (w2 > 0) { written += w2; }
+
+    for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)  // PO10-2
+    {
+        const VarEntry& v = program_.vars[vi];
+        char floatBuf[24] = {};
+        (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
+                       static_cast<double>(v.value));
+        const int32_t w3 = static_cast<int32_t>(snprintf(record + written,
+                                recSize - static_cast<size_t>(written),
+                                "|%s=%s=%u",
+                                v.name, floatBuf, v.valid ? 1U : 0U));
+        if (w3 > 0 &&
+            (static_cast<size_t>(written) + static_cast<size_t>(w3)) < recSize)
+        {
+            written += w3;
+        }
+    }
+}
+
+void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
+                                                        size_t   recSize,
+                                                        int32_t& written,
+                                                        uint32_t nowMs) const
+{
+    if (written <= 0 || currentState_ >= program_.stateCount) { return; }
+    const StateDef& curSt = program_.states[currentState_];
+
+    // HK slots: count then per-slot elapsed (AMS-4.3.1 v3 checkpoint).
+    const int32_t wHk = static_cast<int32_t>(snprintf(
+        record + written, recSize - static_cast<size_t>(written),
+        "|%" PRIu32, static_cast<uint32_t>(curSt.hkSlotCount)));
+    if (wHk > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wHk)) < recSize)
+    {
+        written += wHk;
+    }
+    for (uint8_t s = 0U; s < curSt.hkSlotCount && written > 0; s++)  // PO10-2
+    {
+        const uint32_t slotElap = nowMs - lastHkSlotMs_[s];
+        const int32_t ws = static_cast<int32_t>(snprintf(
+            record + written, recSize - static_cast<size_t>(written),
+            "|%" PRIu32, slotElap));
+        if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
+        {
+            written += ws;
+        }
+    }
+
+    // LOG slots: count then per-slot elapsed.
+    const int32_t wLog = static_cast<int32_t>(snprintf(
+        record + written, recSize - static_cast<size_t>(written),
+        "|%" PRIu32, static_cast<uint32_t>(curSt.logSlotCount)));
+    if (wLog > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wLog)) < recSize)
+    {
+        written += wLog;
+    }
+    for (uint8_t s = 0U; s < curSt.logSlotCount && written > 0; s++)  // PO10-2
+    {
+        const uint32_t slotElap = nowMs - lastLogSlotMs_[s];
+        const int32_t ws = static_cast<int32_t>(snprintf(
+            record + written, recSize - static_cast<size_t>(written),
+            "|%" PRIu32, slotElap));
+        if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
+        {
+            written += ws;
+        }
+    }
 }
 
 bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)

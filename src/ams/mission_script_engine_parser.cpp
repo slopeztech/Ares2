@@ -646,6 +646,7 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
 {
     handled = true;
     if (startsWith(line, "on_enter:"))   { blockType = BlockType::ON_ENTER;   return true; }
+    if (startsWith(line, "on_exit:"))    { blockType = BlockType::ON_EXIT;    return true; }
     if (startsWith(line, "on_error:"))   { blockType = BlockType::ON_ERROR;   return true; }
     if (startsWith(line, "conditions:")) { blockType = BlockType::CONDITIONS; return true; }
 
@@ -706,6 +707,36 @@ bool MissionScriptEngine::parseStateBlockContentLocked(const char* line, // NOLI
         if (startsWith(line, evtPrefix)) { return parseEventLineLocked(line, st); }
         if (startsWith(line, "set ")) { return parseSetActionLineLocked(line, st); }
         setErrorLocked("only EVENT.* and set are allowed inside on_enter");
+        return false;
+    }
+    if (blockType == BlockType::ON_EXIT)
+    {
+        char evtPrefix[20] = {};
+        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+        if (startsWith(line, evtPrefix))
+        {
+            return parseOnExitEventLineLocked(line, st);
+        }
+        if (startsWith(line, "set "))
+        {
+            if (st.onExitSetCount >= ares::AMS_MAX_SET_ACTIONS)
+            {
+                setErrorLocked("too many set actions in on_exit block");
+                return false;
+            }
+            if (!parseSetActionCoreLocked(line, st.onExitSetActions[st.onExitSetCount]))
+            {
+                return false;
+            }
+            st.onExitSetCount++;
+            return true;
+        }
+        if (startsWith(line, "transition to "))
+        {
+            setErrorLocked("transition is not allowed inside on_exit");
+            return false;
+        }
+        setErrorLocked("only EVENT.* and set are allowed inside on_exit");
         return false;
     }
     if (blockType == BlockType::HK)
@@ -1842,6 +1873,57 @@ bool MissionScriptEngine::parseOnErrorEventLineLocked(const char* line,
     if (strcmp(verb, "error")   == 0) { st.onErrorVerb = EventVerb::ERROR; return true; }
 
     setErrorLocked("unknown EVENT verb in on_error");
+    return false;
+}
+
+// ── parseOnExitEventLineLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Parse an @c EVENT.* directive inside an @c on_exit: block (AMS-4.9).
+ *
+ * At most one EVENT.* is permitted per on_exit block.
+ * Accepted verbs: @c info, @c warning, @c error.
+ *
+ * @param[in]  line  Script line starting with @c "EVENT.".
+ * @param[out] st    State to store the on-exit event configuration.
+ * @return @c true if the event directive was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseOnExitEventLineLocked(const char* line,
+                                                     StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.hasOnExitEvent)
+    {
+        setErrorLocked("only one EVENT.* allowed inside on_exit");
+        return false;
+    }
+
+    char verb[8] = {};
+    char text[ares::AMS_MAX_EVENT_TEXT] = {};
+    const char* dotPos = strchr(line, '.');
+    if (dotPos == nullptr)
+    {
+        setErrorLocked("invalid EVENT syntax in on_exit");
+        return false;
+    }
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
+    if (n != 2)
+    {
+        setErrorLocked("invalid EVENT syntax in on_exit");
+        return false;
+    }
+
+    st.hasOnExitEvent = true;
+    strncpy(st.onExitText, text, sizeof(st.onExitText) - 1U);
+    st.onExitText[sizeof(st.onExitText) - 1U] = '\0';
+
+    if (strcmp(verb, "info")    == 0) { st.onExitVerb = EventVerb::INFO;  return true; }
+    if (strcmp(verb, "warning") == 0) { st.onExitVerb = EventVerb::WARN;  return true; }
+    if (strcmp(verb, "error")   == 0) { st.onExitVerb = EventVerb::ERROR; return true; }
+
+    setErrorLocked("unknown EVENT verb in on_exit");
     return false;
 }
 
@@ -3101,11 +3183,6 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
             }
             else if (f.child == static_cast<uint8_t>(sd.transitionCount + 1U)
                      && sd.hasOnErrorTransition && sd.onErrorTransitionResolved)
-            {
-                suc = sd.onErrorTransitionIdx;
-            }
-            else if (f.child == 2U && sd.hasOnErrorTransition &&
-                     sd.onErrorTransitionResolved)
             {
                 suc = sd.onErrorTransitionIdx;
             }
