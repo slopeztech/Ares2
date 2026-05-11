@@ -20,10 +20,11 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 5. [Radio Telemetry](#radio-telemetry)
 6. [WiFi REST API](#wifi-rest-api)
 7. [Coding Standards](#coding-standards)
-8. [Build and Flash](#build-and-flash)
-9. [Testing](#testing)
-10. [Repository Structure](#repository-structure)
-11. [Future Work](#future-work)
+8. [Requirements Management](#requirements-management)
+9. [Build and Flash](#build-and-flash)
+10. [Testing](#testing)
+11. [Repository Structure](#repository-structure)
+12. [Future Work](#future-work)
 
 ---
 
@@ -466,6 +467,30 @@ Standards references:
 - [DO-178C standard](docs/standards/do178c_standard.md)
 - [PO10 standard](docs/standards/po10_standard.md)
 - [RTOS standard](docs/standards/rtos_standard.md)
+
+---
+
+## Requirements Management
+
+Software requirements are tracked in plain-text [StrictDoc](https://strictdoc.readthedocs.io/) format, which provides bidirectional traceability between requirements and source code, and can export to HTML or PDF.
+
+The initial SRS is derived from the coding standards and from the behaviour implemented in the current firmware (v0.1.0):
+
+- [docs/requirements/SRS.sdoc](docs/requirements/SRS.sdoc) — Software Requirements Specification
+
+**Viewing the requirements locally:**
+
+```bash
+pip install strictdoc
+strictdoc server docs/requirements/
+# Open http://127.0.0.1:5111 in your browser
+```
+
+**Exporting to static HTML:**
+
+```bash
+strictdoc export docs/requirements/ --output-dir docs/requirements/html/
+```
 
 ---
 

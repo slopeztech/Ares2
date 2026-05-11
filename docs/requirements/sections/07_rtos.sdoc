@@ -1,0 +1,65 @@
+[DOCUMENT]
+TITLE: 7. RTOS Task Structure
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-6000
+STATUS: Active
+TAGS: RTOS, Tasks
+STATEMENT: The firmware shall run the following FreeRTOS tasks with the specified stack sizes and priorities: COMMS (TASK_STACK_SIZE = 4096 B, priority TASK_PRIORITY_COMMS = 2), API (TASK_STACK_SIZE_API = 12288 B, priority TASK_PRIORITY_API = 1), LED (TASK_STACK_SIZE_LED = 2048 B, priority TASK_PRIORITY_LED = 1). AMS engine ticking and sensor reads shall execute in the Arduino loop() task.
+VERIFICATION: Inspection
+RATIONALE: config.h RTOS constants. Stack sizes are verified to accommodate worst-case ArduinoJson serialisation buffers, LittleFS I/O, and the radio driver UART ring buffer. The COMMS task has higher priority than API to prevent telemetry starvation during peak REST load.
+REFS: src/config.h TASK_STACK_SIZE, TASK_STACK_SIZE_API, TASK_STACK_SIZE_LED, TASK_PRIORITY_COMMS, TASK_PRIORITY_API
+
+[REQUIREMENT]
+UID: SRS-6001
+STATUS: Active
+TAGS: RTOS, Timing
+STATEMENT: Sensor data shall be read and aggregated at SENSOR_RATE_MS (10 ms, 100 Hz). The AMS engine tick and flight logic shall execute at FLIGHT_RATE_MS (20 ms, 50 Hz). Log file writes shall occur at LOG_RATE_MS (100 ms, 10 Hz). Each rate shall be maintained using vTaskDelayUntil() or an equivalent deadline-tracking mechanism; accumulated drift shall not exceed one period per minute.
+VERIFICATION: Analysis
+RATIONALE: config.h. Rates chosen to balance sensor latency (10 ms gives IMU resolution for apogee detection), AMS tick responsiveness (20 ms for transition evaluation), and LittleFS wear (10 Hz write rate).
+REFS: src/config.h SENSOR_RATE_MS, FLIGHT_RATE_MS, LOG_RATE_MS
+
+[REQUIREMENT]
+UID: SRS-6002
+STATUS: Active
+TAGS: RTOS, Blocking, Safety
+STATEMENT: No RTOS task shall block on a mutex, semaphore, or queue without a finite timeout. The timeout shall be in the range [1 ms, AMS_MUTEX_TIMEOUT_MS]. A task that fails to acquire a resource within the timeout shall log a debug warning, release any partially acquired resources, and return without modifying shared state.
+VERIFICATION: Inspection
+RATIONALE: RTOS-8 / PO10-2. Infinite blocking calls create deadlock risk and prevent the task watchdog from being fed, triggering an unintended WDT reset in flight.
+REFS: docs/standards/rtos_standard.md RTOS-8, src/config.h AMS_MUTEX_TIMEOUT_MS
+
+[REQUIREMENT]
+UID: SRS-6003
+STATUS: Active
+TAGS: RTOS, Blocking, Safety
+STATEMENT: No task shall use busy-wait polling constructs such as delay(), while(!flag) without a blocking primitive, or repeated read-modify-check loops on shared memory. All inter-task synchronisation shall use FreeRTOS primitives (mutex, semaphore, queue, task notification) with finite timeouts.
+VERIFICATION: Inspection
+RATIONALE: PO10-2 / RTOS-7. Busy-wait wastes CPU cycles on a dual-core system, prevents lower-priority tasks from executing, and makes timing analysis of higher-priority tasks impossible.
+REFS: docs/standards/po10_standard.md PO10-2, docs/standards/rtos_standard.md RTOS-7
+

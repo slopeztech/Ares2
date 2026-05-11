@@ -1,0 +1,65 @@
+[DOCUMENT]
+TITLE: 2. Boot Sequence
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-1000
+STATUS: Active
+TAGS: Boot
+STATEMENT: On power-on reset, the firmware shall initialise subsystems in the following strict order: (1) USB serial, (2) I2C baro bus at 400 kHz (I2C_FREQ), (3) I2C IMU bus at 50 kHz (I2C_FREQ_IMU), (4) BMP280 barometer, (5) BN-220 GPS on UART1, (6) ADXL375 + MPU-6050 IMU, (7) DX-LR03 LoRa on UART2 at 9600 baud, (8) LittleFS filesystem, (9) WiFi soft-AP, (10) REST API HTTP server.
+VERIFICATION: Inspection
+RATIONALE: This order ensures hardware dependencies are satisfied before dependent subsystems start. I2C buses must be active before BMP280/IMU register reads; LittleFS must be mounted before any AMS checkpoint restore or log write.
+REFS: src/main.cpp, src/config.h I2C_FREQ, I2C_FREQ_IMU
+
+[REQUIREMENT]
+UID: SRS-1001
+STATUS: Active
+TAGS: Boot, Safety, AMS
+STATEMENT: If the MCU reset cause is detected as abnormal (panic, task watchdog timeout, or brownout reset), the firmware shall inject the TC command RESET_ABNORMAL into the AMS engine before executing the first tick cycle. A normal (power-on or software) reset shall not inject this command.
+VERIFICATION: Test
+RATIONALE: AMS-4.6.4. Enables deterministic in-flight crash detection: a mission can define a guard such as "transition to SAFE when TC.command == RESET_ABNORMAL" to trigger pyro inhibit or parachute arming.
+REFS: docs/standards/ams_standard.md AMS-4.6.4, src/main.cpp
+
+[REQUIREMENT]
+UID: SRS-1002
+STATUS: Active
+TAGS: Boot, Storage, AMS
+STATEMENT: On boot, if a checkpoint file exists at AMS_RESUME_PATH (/missions/.ams_resume.chk) and passes format validation, the firmware shall restore the previous engine state — active script name, state index, executionEnabled flag, elapsed timers, global variable values and validity flags, and per-slot HK/LOG elapsed timers — before processing any TC command or starting the tick loop.
+VERIFICATION: Test
+RATIONALE: AMS-2. Mission continuity across power-cycle or in-flight crash events is required for multi-stage flight profiles that span power-off events (e.g. drogue deploy then board reset).
+REFS: docs/standards/ams_standard.md AMS-2, src/config.h AMS_RESUME_PATH
+
+[REQUIREMENT]
+UID: SRS-1003
+STATUS: Active
+TAGS: Boot, Safety
+STATEMENT: If any peripheral (BMP280, BN-220, ADXL375, MPU-6050, or DX-LR03) fails to initialise at boot, the failure shall be reflected in the corresponding health flag returned by GET /api/status. The boot sequence shall continue to completion; a peripheral failure shall not prevent the system from reaching the IDLE operational state.
+VERIFICATION: Test
+RATIONALE: Fail-open boot allows the ground operator to diagnose sensor failures via the REST API before launch. Blocking boot on a sensor failure would prevent all operations including arming inhibit and safe mode.
+REFS: docs/api/wifi_api_endpoints.md GET /api/status
+

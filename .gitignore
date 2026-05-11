@@ -5,6 +5,7 @@
 .vscode/ipch
 .tools
 .venv
+output
 ams_examples
 ares_code_lint/
 evidence
@@ -12,3 +13,4 @@ compile_commands.json
 scripts/downloads/
 scripts/_pycache__/
 docs/doxygen/
+docs/requirements/html

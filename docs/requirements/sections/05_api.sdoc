@@ -1,0 +1,92 @@
+[DOCUMENT]
+TITLE: 5. WiFi REST API
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-4000
+STATUS: Active
+TAGS: API, WiFi, Network
+STATEMENT: The firmware shall operate a WiFi 802.11 b/g/n soft-AP with SSID "ARES-XXXX" (last 2 MAC address bytes in hex), WPA2-PSK authentication, and at most WIFI_AP_MAX_CLIENTS (4) simultaneous client connections. The AP shall listen on WIFI_API_PORT (80) for HTTP/1.1 requests.
+VERIFICATION: Test
+RATIONALE: config.h / apirest_standard.md. Dedicated AP eliminates router dependency on the launch pad. WPA2-PSK prevents unauthorised command injection from bystanders' devices.
+REFS: docs/standards/apirest_standard.md REST-2, src/config.h WIFI_AP_MAX_CLIENTS, WIFI_API_PORT
+
+[REQUIREMENT]
+UID: SRS-4001
+STATUS: Active
+TAGS: API, Security, InputValidation
+STATEMENT: The REST API shall reject any request with a body larger than API_MAX_REQUEST_BODY (1024 bytes) with HTTP 413 Content Too Large. Response bodies shall not exceed API_MAX_RESPONSE_BODY (2048 bytes); if a response would exceed this limit, it shall be truncated and a truncation flag added to the JSON payload.
+VERIFICATION: Test
+RATIONALE: REST-3 / CERT-INT32. Prevents oversized payloads from exhausting the static JSON buffer (ArduinoJson). The 1024-byte request limit is sufficient for the largest expected payload (AMS script, which has its own 4096-byte limit enforced separately).
+REFS: docs/standards/apirest_standard.md REST-3, src/config.h API_MAX_REQUEST_BODY, API_MAX_RESPONSE_BODY
+
+[REQUIREMENT]
+UID: SRS-4002
+STATUS: Active
+TAGS: API, Security, FlightLock
+STATEMENT: The following endpoints shall return HTTP 409 Conflict with body {"error":"operation locked during flight"} while the system is in FLIGHT or RECOVERY mode: PUT /api/config, POST /api/mode, POST /api/mission/activate, POST /api/mission/deactivate. Log file download (GET /api/storage/download) shall also be locked unless the AMS status is "complete".
+VERIFICATION: Test
+RATIONALE: REST-6 / apirest_standard.md. Configuration changes during flight risk corrupting the active mission state or inadvertently changing radio parameters. The exception for "complete" allows post-flight log extraction without requiring a mode change.
+REFS: docs/standards/apirest_standard.md REST-6
+
+[REQUIREMENT]
+UID: SRS-4003
+STATUS: Active
+TAGS: API, WiFi, FlightSafety
+STATEMENT: When the system transitions to FLIGHT mode, the WiFi AP driver shall be stopped (WIFI_DISABLE_IN_FLIGHT = true). The AP shall not restart automatically on any subsequent mode transition; only an explicit POST /api/mode call to a non-flight mode followed by a board reset shall re-enable it.
+VERIFICATION: Test
+RATIONALE: REST-13.3 / config.h. Eliminates RF interference from the 2.4 GHz WiFi transmitter during the flight phase, which would degrade LoRa receive sensitivity on co-located ground stations.
+REFS: docs/standards/apirest_standard.md REST-13.3, src/config.h WIFI_DISABLE_IN_FLIGHT
+
+[REQUIREMENT]
+UID: SRS-4004
+STATUS: Active
+TAGS: API, Concurrency, RTOS
+STATEMENT: All REST API handlers that access AMS engine state or config state shall acquire the relevant mutex with a timeout of at most AMS_MUTEX_TIMEOUT_MS (250 ms) for engine state, or API_CFG_MUTEX_TIMEOUT_MS (50 ms) for config state. A handler that fails to acquire the mutex within the timeout shall return HTTP 503 Service Unavailable.
+VERIFICATION: Inspection
+RATIONALE: RTOS-4 / REST-8. Prevents the API task from blocking the main loop (which owns the engine mutex) indefinitely. HTTP 503 signals the ground station to retry rather than hang waiting.
+REFS: docs/standards/rtos_standard.md RTOS-4, docs/standards/apirest_standard.md REST-8
+
+[REQUIREMENT]
+UID: SRS-4005
+STATUS: Active
+TAGS: API, Security, HTTP
+STATEMENT: GET /api/status shall not be subject to any flight lock. It shall return a valid JSON response in all operational modes (IDLE, TEST, FLIGHT, RECOVERY, ERROR), including when the WiFi AP is in the process of being disabled.
+VERIFICATION: Test
+RATIONALE: REST-5.1. Status is the primary health-monitoring endpoint; making it unconditionally accessible ensures the ground operator can always observe system state even during anomalous conditions.
+REFS: docs/standards/apirest_standard.md REST-5.1
+
+[REQUIREMENT]
+UID: SRS-4006
+STATUS: Active
+TAGS: API, HTTP, ContentType
+STATEMENT: All API responses shall include the header ``Content-Type: application/json`` except for file download responses (GET /api/storage/download), which shall use ``Content-Type: text/plain`` with ``Content-Disposition: attachment; filename=<name>``. All responses shall include ``Access-Control-Allow-Origin: *``.
+VERIFICATION: Test
+RATIONALE: REST-4 / CORS policy. Consistent Content-Type allows ground station tools to parse responses without content-sniffing. CORS headers allow browser-based ground station UIs to work without a proxy.
+REFS: docs/standards/apirest_standard.md REST-4
+

@@ -1,0 +1,83 @@
+[DOCUMENT]
+TITLE: 4. Radio Telemetry (APUS)
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-3000
+STATUS: Active
+TAGS: Radio, APUS, Physical
+STATEMENT: The firmware shall communicate over a DX-LR03-433T30D LoRa module at 433.125 MHz (LORA_FREQ_MHZ), 20 dBm TX power (LORA_TX_POWER), via UART2 at 9600 baud. The physical channel configuration shall be loaded from the active radio config at boot and persisted in flash.
+VERIFICATION: Inspection
+RATIONALE: APUS-1 / config.h. Physical link parameters are fixed for the current hardware revision. 433 MHz band provides adequate range for typical amateur rocket altitudes (< 3 km).
+REFS: docs/standards/apus_standard.md APUS-1, src/config.h LORA_FREQ_MHZ, LORA_TX_POWER
+
+[REQUIREMENT]
+UID: SRS-3001
+STATUS: Active
+TAGS: Radio, APUS, Framing
+STATEMENT: Every transmitted ARES Radio Protocol frame shall begin with the 4-byte sync word 0xAE 0x55 0xC3 0x1A. A receiver shall only begin frame parsing after detecting this exact sync sequence. Frames not preceded by the sync word shall be silently discarded.
+VERIFICATION: Test
+RATIONALE: APUS-2. The sync word provides frame alignment after link startup or mid-frame corruption. The 32-bit sequence was chosen for low probability of false-positive occurrence in arbitrary byte streams.
+REFS: docs/standards/apus_standard.md APUS-2, docs/architecture/ares_radio_protocol.md
+
+[REQUIREMENT]
+UID: SRS-3002
+STATUS: Active
+TAGS: Radio, APUS, CRC
+STATEMENT: Every transmitted frame shall include a CRC-32 field computed over bytes [4 .. 9+LEN] (excluding the sync word). Received frames whose CRC-32 does not match shall be silently discarded at the driver level. No corrupted data shall reach application logic.
+VERIFICATION: Test
+RATIONALE: APUS-2. The RF channel is noisy; bit-flip protection is mandatory. CRC-32 (Ethernet polynomial) provides a Hamming distance of 4 for frames up to 512 bytes.
+REFS: docs/standards/apus_standard.md APUS-2, docs/architecture/ares_radio_protocol.md
+
+[REQUIREMENT]
+UID: SRS-3003
+STATUS: Active
+TAGS: Radio, APUS, Priority
+STATEMENT: The radio dispatcher shall schedule frame transmission in priority order: EVENT (PUS ST[5]) > HK report (PUS ST[3]) > LOG. Within the same priority class, scheduling shall be round-robin across pending slots. A single dispatching cycle shall transmit at most one frame.
+VERIFICATION: Inspection
+RATIONALE: APUS-19. Safety-critical events (anomaly detection, state transitions) must not be starved by high-rate housekeeping telemetry.
+REFS: docs/standards/apus_standard.md APUS-19
+
+[REQUIREMENT]
+UID: SRS-3004
+STATUS: Active
+TAGS: Radio, APUS, Payload
+STATEMENT: A single ARES Radio Protocol frame payload shall not exceed 255 bytes. The HK telemetry payload shall be a fixed 38-byte struct (APUS-3.6). Scripts that would produce an oversized HK payload due to too many fields shall be rejected at parse time with a descriptive error.
+VERIFICATION: Test
+RATIONALE: APUS-15. The LoRa module MTU and protocol LEN field (1 byte) limit payload to 255 bytes. Oversized frames would be silently truncated by the driver, corrupting the HK struct alignment.
+REFS: docs/standards/apus_standard.md APUS-15, APUS-3.6
+
+[REQUIREMENT]
+UID: SRS-3005
+STATUS: Active
+TAGS: Radio, APUS, NodeID
+STATEMENT: The transmitting node ID field in each frame shall be an unsigned byte in the range NODE_ID_MIN (1) to NODE_ID_MAX (253). Node ID 0 is reserved for broadcast; node IDs 254–255 are reserved for ground station addresses. The firmware's own node ID shall be configurable via PUT /api/config and persisted in flash.
+VERIFICATION: Test
+RATIONALE: APUS-10. Fixed node ID assignments prevent frame collision when multiple ARES units operate in the same RF band during a launch event.
+REFS: docs/standards/apus_standard.md APUS-10, src/config.h NODE_ID_MIN, NODE_ID_MAX
+

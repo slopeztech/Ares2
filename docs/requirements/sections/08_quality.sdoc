@@ -1,0 +1,83 @@
+[DOCUMENT]
+TITLE: 8. Static Analysis and Code Quality
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-7000
+STATUS: Active
+TAGS: Quality, Build
+STATEMENT: Every commit that modifies firmware source (src/) shall produce a clean PlatformIO build with zero compiler errors and zero compiler warnings under -Wall -Wextra -Werror. A failing build shall block merge.
+VERIFICATION: Test
+RATIONALE: DO-178C DO-1. A warning-free build is the minimum gate for safety-critical software. -Werror converts latent issues (implicit conversions, unused parameters, sign mismatches) into hard failures.
+REFS: docs/standards/do178c_standard.md DO-1, platformio.ini build_flags
+
+[REQUIREMENT]
+UID: SRS-7001
+STATUS: Active
+TAGS: Quality, StaticAnalysis, Cppcheck
+STATEMENT: The codebase shall produce zero cppcheck findings of severity "error" or "warning" when analysed with the configuration in .vscode/scripts/run_cppcheck_practical.ps1. Findings of severity "style" or "performance" shall be reviewed and either fixed or formally suppressed with an inline comment citing the rule and justification.
+VERIFICATION: Review
+RATIONALE: ares_coding_standard.md. cppcheck finds memory errors, null-pointer dereferences, and use-after-scope issues that compilers do not always catch at -Wall -Wextra level.
+REFS: docs/standards/ares_coding_standard.md, .vscode/scripts/run_cppcheck_practical.ps1
+
+[REQUIREMENT]
+UID: SRS-7002
+STATUS: Active
+TAGS: Quality, StaticAnalysis, MISRA
+STATEMENT: MISRA C++ rule violations reported by the cppcheck MISRA addon shall be documented with a formal deviation comment at the point of use. The comment shall cite the violated rule ID, a justification for the deviation, and a mitigating measure. Undocumented MISRA violations are treated as defects.
+VERIFICATION: Review
+RATIONALE: misra_standard.md / DO-178C DO-5. MISRA deviations without justification are indistinguishable from unintentional violations. The deviation log is evidence for safety reviews.
+REFS: docs/standards/misra_standard.md, docs/development/misra_cpp_review_profile.md
+
+[REQUIREMENT]
+UID: SRS-7003
+STATUS: Active
+TAGS: Quality, StaticAnalysis, ClangTidy
+STATEMENT: The codebase shall produce zero clang-tidy findings in the ``[bugprone-*]`` check category when analysed with the project .clang-tidy configuration. ``[readability-function-size]`` findings shall be resolved by extracting helper functions before merge. All other categories shall be reviewed per the static analysis standard.
+VERIFICATION: Review
+RATIONALE: ares_coding_standard.md. bugprone checks encode proven defect patterns (branch cloning, integer overflow, incorrect use of move semantics). Function size limits enforce reviewability and testability.
+REFS: docs/standards/ares_coding_standard.md, docs/development/static_analysis.md
+
+[REQUIREMENT]
+UID: SRS-7004
+STATUS: Active
+TAGS: Quality, Documentation, Doxygen
+STATEMENT: Every public class, public method, and non-trivial named constant shall have a Doxygen /// comment block with at minimum a @brief description. Functions accessible across translation units shall additionally document @param and @return. Functions with preconditions shall document them with @pre. The Doxyfile shall generate HTML without errors.
+VERIFICATION: Review
+RATIONALE: dox_standard.md DOX-1 / DOX-3. Machine-readable documentation enables Doxygen HTML generation as a release evidence artefact and allows IDE tooling to surface parameter contracts at call sites.
+REFS: docs/standards/dox_standard.md DOX-1, DOX-3, Doxyfile
+
+[REQUIREMENT]
+UID: SRS-7005
+STATUS: Active
+TAGS: Quality, Evidence
+STATEMENT: Each release shall include static analysis evidence artefacts in the evidence/ directory, timestamped with the analysis date: (a) cppcheck MISRA addon output (.txt), (b) cppcheck practical XML report (.xml), (c) clang-tidy output (.txt). Evidence files shall be committed to the repository as part of the release process and shall not be regenerated retroactively.
+VERIFICATION: Inspection
+RATIONALE: DO-178C DO-7. Evidence traceability requires that analysis outputs are preserved at the time of analysis, not reconstructed later. Timestamped filenames prevent overwriting evidence from prior analyses.
+REFS: docs/standards/do178c_standard.md DO-7, evidence/
+

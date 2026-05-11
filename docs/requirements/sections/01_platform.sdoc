@@ -1,0 +1,92 @@
+[DOCUMENT]
+TITLE: 1. Platform and Memory Model
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-0001
+STATUS: Active
+TAGS: Platform
+STATEMENT: The firmware shall execute on an ESP32-S3 dual-core Xtensa LX7 MCU clocked at 240 MHz, running IDF FreeRTOS v10.5.1 SMP with symmetric multiprocessing enabled across both cores.
+VERIFICATION: Inspection
+RATIONALE: Target hardware is fixed; all timing, stack, and memory budgets are derived from this platform. Dual-core SMP is exploited for concurrent task execution.
+REFS: docs/standards/ares_coding_standard.md §1, src/config.h BOARD_NAME
+
+[REQUIREMENT]
+UID: SRS-0002
+STATUS: Active
+TAGS: Platform, Memory
+STATEMENT: The firmware shall not invoke dynamic memory allocation (malloc, new, heap_caps_malloc, or pvPortMalloc) after system initialisation returns. All data structures shall be statically allocated with fixed, compile-time sizes.
+VERIFICATION: Analysis
+RATIONALE: PO10-3 / MISRA-9. Dynamic allocation on a 512 KB embedded target causes non-deterministic heap fragmentation and unpredictable worst-case latency. Free heap at boot is ~245 KB and shall remain constant throughout flight.
+REFS: docs/standards/po10_standard.md PO10-3, docs/standards/misra_standard.md MISRA-9
+
+[REQUIREMENT]
+UID: SRS-0003
+STATUS: Active
+TAGS: Platform, Safety
+STATEMENT: Every loop in flight-path code shall have an iteration count that is provably bounded at compile time or by a named constant defined in config.h. Open-ended loops (while(true) without a finite exit condition, unbounded do-while, iterator loops over dynamically sized containers) are forbidden in application code.
+VERIFICATION: Inspection
+RATIONALE: PO10-2. Unbounded loops prevent worst-case execution time (WCET) analysis and can cause FreeRTOS task starvation on safety-critical paths.
+REFS: docs/standards/po10_standard.md PO10-2
+
+[REQUIREMENT]
+UID: SRS-0004
+STATUS: Active
+TAGS: Platform, Types
+STATEMENT: All numeric types in firmware source shall use fixed-width types from ``<cstdint>`` (uint8_t, int8_t, uint16_t, int16_t, uint32_t, int32_t) or single-precision float. Plain int, long, double, and unsigned without explicit width are forbidden.
+VERIFICATION: Inspection
+RATIONALE: MISRA-1 / MISRA-7. The ESP32-S3 has no double-precision FPU; double is software-emulated and incurs hidden performance penalties. Fixed-width types eliminate platform-dependent integer promotion surprises and enable cross-platform unit test compilation.
+REFS: docs/standards/misra_standard.md MISRA-1, MISRA-7
+
+[REQUIREMENT]
+UID: SRS-0005
+STATUS: Active
+TAGS: Platform, RTOS, Concurrency
+STATEMENT: Every access to state shared across FreeRTOS tasks shall be protected by a mutex acquired with a finite timeout not exceeding AMS_MUTEX_TIMEOUT_MS (250 ms). Use of portMAX_DELAY as a mutex timeout is forbidden.
+VERIFICATION: Inspection
+RATIONALE: RTOS-4. A finite timeout guarantees forward progress even if the owning task has faulted. Infinite waits can deadlock the entire flight computer.
+REFS: docs/standards/rtos_standard.md RTOS-4, src/config.h AMS_MUTEX_TIMEOUT_MS
+
+[REQUIREMENT]
+UID: SRS-0006
+STATUS: Active
+TAGS: Platform, Language
+STATEMENT: The firmware shall be compiled as C++17 with -fno-exceptions and -fno-rtti. C++ exception handling (try, catch, throw) and dynamic_cast are forbidden. No RTTI overhead shall be present in the final binary.
+VERIFICATION: Inspection
+RATIONALE: PO10-1. Exceptions introduce hidden control-flow paths and require runtime support tables that consume flash. RTTI adds hidden vtable overhead and precludes WCET analysis.
+REFS: docs/standards/po10_standard.md PO10-1, platformio.ini build_flags
+
+[REQUIREMENT]
+UID: SRS-0007
+STATUS: Active
+TAGS: Platform, Safety
+STATEMENT: The hardware task watchdog timer (TWDT) shall be configured with a 5-second timeout. Every FreeRTOS task shall reset (feed) the watchdog at least once per task cycle. A missed feed shall trigger a hardware reset, logging the faulting task name via the reset-cause mechanism.
+VERIFICATION: Test
+RATIONALE: DO-178C DO-12. The watchdog provides last-resort recovery from software hangs. The reset-cause register feeds SRS-1001 (RESET_ABNORMAL injection) to enable in-flight crash recovery.
+REFS: docs/standards/do178c_standard.md DO-12, src/main.cpp
+

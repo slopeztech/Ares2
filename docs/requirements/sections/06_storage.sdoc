@@ -1,0 +1,65 @@
+[DOCUMENT]
+TITLE: 6. Storage (LittleFS)
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[REQUIREMENT]
+UID: SRS-5000
+STATUS: Active
+TAGS: Storage, Logs
+STATEMENT: The firmware shall write mission log entries to ``/logs/mission_<script_name>.txt`` at a rate not exceeding 1 entry per LOG_RATE_MS (100 ms). Each entry shall be a single line in the format: ``t_ms=<elapsed>,state=<name>,<field>=<value>,...``  Log entries shall be appended; existing log files shall not be truncated on activation of the same script.
+VERIFICATION: Test
+RATIONALE: AMS-2 / config.h LOG_RATE_MS. A bounded write rate limits LittleFS flash wear and prevents log file growth from consuming the entire filesystem partition during long missions.
+REFS: docs/standards/ams_standard.md AMS-2, src/config.h LOG_RATE_MS, LOG_DIR
+
+[REQUIREMENT]
+UID: SRS-5001
+STATUS: Active
+TAGS: Storage, API, Download
+STATEMENT: Mission log file download via GET /api/storage/download shall stream file content in chunks not exceeding DOWNLOAD_CHUNK_SIZE (512 bytes) without loading the entire file into SRAM. The endpoint shall support the "file" query parameter specifying the filename within /logs/.
+VERIFICATION: Test
+RATIONALE: REST-12.2 / config.h. Chunked streaming avoids allocating a static buffer large enough for the whole log file, which could overflow the 512 KB SRAM on long missions.
+REFS: docs/standards/apirest_standard.md REST-12.2, src/config.h DOWNLOAD_CHUNK_SIZE
+
+[REQUIREMENT]
+UID: SRS-5002
+STATUS: Active
+TAGS: Storage, Security
+STATEMENT: The REST API shall not construct any LittleFS file path by directly concatenating a user-supplied URL parameter. All file access shall go through an allowlist of base directories (/missions, /logs) and an explicit filename validation step that rejects ".." sequences, leading slashes, and non-printable characters.
+VERIFICATION: Inspection
+RATIONALE: CERT-11 / REST-11. Prevents path traversal attacks that could expose or overwrite the checkpoint file, mission scripts, or other firmware data.
+REFS: docs/standards/cert_standard.md CERT-11, docs/standards/apirest_standard.md REST-11
+
+[REQUIREMENT]
+UID: SRS-5003
+STATUS: Active
+TAGS: Storage, Boot, Health
+STATEMENT: At boot, LittleFS shall be mounted and a filesystem health check performed. If mount fails, the firmware shall attempt to format and re-mount the partition. If re-mount also fails, the storage health flag in GET /api/status shall be set to false and all storage-dependent operations (AMS, logging, checkpoint) shall be disabled for the session.
+VERIFICATION: Test
+RATIONALE: A corrupt filesystem must not cause undefined behaviour in file I/O calls. Graceful degradation to a storage-less mode allows the operator to inspect the failure via the REST API and decide whether to reflash.
+REFS: docs/api/wifi_api_endpoints.md GET /api/status
+

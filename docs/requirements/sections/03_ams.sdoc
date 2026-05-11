@@ -1,0 +1,384 @@
+[DOCUMENT]
+TITLE: 3. AMS — Mission Script Engine
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[[SECTION]]
+TITLE: 3.1 Script Lifecycle
+
+[REQUIREMENT]
+UID: SRS-2000
+STATUS: Active
+TAGS: AMS, Lifecycle
+STATEMENT: The engine shall hold at most one active AMS script at a time. Activating a new script while one is already active shall deactivate the current script first, discarding its runtime state.
+VERIFICATION: Inspection
+RATIONALE: AMS-1. Single-script constraint eliminates ambiguous state ownership and ensures deterministic resource use.
+REFS: docs/standards/ams_standard.md AMS-1
+
+[REQUIREMENT]
+UID: SRS-2001
+STATUS: Active
+TAGS: AMS, Lifecycle, Storage
+STATEMENT: AMS scripts shall be stored as UTF-8 plain-text files with extension .ams in the LittleFS directory /missions. The engine shall reject any script larger than AMS_MAX_SCRIPT_BYTES (4096 bytes) with a parse error. No partial loading is permitted.
+VERIFICATION: Test
+RATIONALE: AMS-2 / config.h AMS_MAX_SCRIPT_BYTES. Bounding script size ensures worst-case flash read time and line-buffer usage remain predictable.
+REFS: docs/standards/ams_standard.md AMS-2, src/config.h AMS_MAX_SCRIPT_BYTES
+
+[REQUIREMENT]
+UID: SRS-2002
+STATUS: Active
+TAGS: AMS, Lifecycle, Security
+STATEMENT: AMS script filenames accepted by POST /api/mission/activate shall contain only characters from ``[a-zA-Z0-9_\-.]``, shall not contain the sequence "..", and shall not exceed MISSION_FILENAME_MAX (32) characters including the .ams extension. Filenames violating these constraints shall be rejected with HTTP 400.
+VERIFICATION: Test
+RATIONALE: AMS-2 / CERT-11. Prevents path traversal attacks on the LittleFS volume and ensures cross-platform filename compatibility.
+REFS: docs/standards/ams_standard.md AMS-2, docs/standards/cert_standard.md CERT-11, src/config.h MISSION_FILENAME_MAX
+
+[REQUIREMENT]
+UID: SRS-2003
+STATUS: Active
+TAGS: AMS, Lifecycle
+STATEMENT: The engine lifecycle shall progress through the states IDLE → LOADED (after activate) → RUNNING (after arm) → IDLE or ERROR. Transitions between lifecycle states shall only occur via the defined API methods: activate(), arm(), deactivate(), and tick(). External code shall not modify lifecycle state directly.
+VERIFICATION: Inspection
+RATIONALE: AMS-1. Enforces a deterministic FSM for engine lifecycle management and prevents race conditions from concurrent API calls.
+REFS: docs/standards/ams_standard.md AMS-1
+
+[REQUIREMENT]
+UID: SRS-2004
+STATUS: Active
+TAGS: AMS, Lifecycle, Storage, Security
+STATEMENT: The path used to open an AMS script file shall be constructed by concatenating MISSION_DIR ("/missions/") with the validated script name. The engine shall never call LittleFS open() with a path derived directly from an unvalidated user-supplied string.
+VERIFICATION: Inspection
+RATIONALE: CERT-11. Defence-in-depth measure: even if SRS-2002 validation is bypassed, path construction from a known prefix prevents directory traversal outside /missions.
+REFS: docs/standards/cert_standard.md CERT-11, src/config.h MISSION_DIR
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.2 State Machine
+
+[REQUIREMENT]
+UID: SRS-2100
+STATUS: Active
+TAGS: AMS, StateMachine
+STATEMENT: A single AMS script shall define at most AMS_MAX_STATES (10) states. Each state name shall be at most AMS_MAX_STATE_NAME-1 (15) characters (excluding the NUL terminator). A script that violates either bound shall be rejected at parse time.
+VERIFICATION: Test
+RATIONALE: config.h constants. Bounds StateDef array size; ensures state names fit in checkpoint records and telemetry EVENT text without truncation.
+REFS: src/config.h AMS_MAX_STATES, AMS_MAX_STATE_NAME
+
+[REQUIREMENT]
+UID: SRS-2101
+STATUS: Active
+TAGS: AMS, StateMachine, Transitions
+STATEMENT: Each state shall declare at most AMS_MAX_TRANSITIONS (4) transitions. Each transition shall evaluate at most AMS_MAX_TRANSITION_CONDS (4) sub-conditions joined by AND semantics. Transitions shall be evaluated every tick in declaration order; the first matching transition fires and the tick evaluation for that state ends immediately.
+VERIFICATION: Test
+RATIONALE: AMS-4.6. Declaration-order priority is deterministic and verifiable at review time. Bounded transition count ensures O(1) evaluation per tick.
+REFS: docs/standards/ams_standard.md AMS-4.6, src/config.h AMS_MAX_TRANSITIONS, AMS_MAX_TRANSITION_CONDS
+
+[REQUIREMENT]
+UID: SRS-2102
+STATUS: Active
+TAGS: AMS, StateMachine, Transitions
+STATEMENT: When a transition fires (normal, fallback, or error-recovery), the engine shall execute exitStateLocked() for the departing state — which runs on_exit: set actions synchronously then dispatches the on_exit: EVENT immediately — before calling enterStateLocked() for the new state.
+VERIFICATION: Inspection
+RATIONALE: AMS-4.16 / AMS-5.8. Guarantees the farewell telemetry event arrives on the radio bus before the on_enter: event of the new state, preserving chronological event ordering for ground operators.
+REFS: docs/standards/ams_standard.md AMS-4.16, AMS-5.8
+
+[REQUIREMENT]
+UID: SRS-2103
+STATUS: Active
+TAGS: AMS, StateMachine, Transitions
+STATEMENT: A transition condition qualified with "for Nms" shall not fire until the compound condition has been continuously true for at least N milliseconds, measured from the last state entry or last time the condition became false. The hold timer shall reset to zero whenever any sub-condition in the compound becomes false.
+VERIFICATION: Test
+RATIONALE: AMS-4.6.1. Prevents spurious transitions triggered by transient sensor noise spikes shorter than N ms.
+REFS: docs/standards/ams_standard.md AMS-4.6.1
+
+[REQUIREMENT]
+UID: SRS-2104
+STATUS: Active
+TAGS: AMS, StateMachine, TC
+STATEMENT: A TC.command transition condition shall consume the pending TC token atomically at the moment the transition fires. A consumed token shall not satisfy any subsequent TC.command condition within the same tick or any later tick until a new TC command is injected.
+VERIFICATION: Test
+RATIONALE: AMS-5.3. Prevents double-execution of one-shot commands such as LAUNCH or ABORT, which could cause unintended pyro firing.
+REFS: docs/standards/ams_standard.md AMS-5.3
+
+[REQUIREMENT]
+UID: SRS-2105
+STATUS: Active
+TAGS: AMS, StateMachine, Fallback
+STATEMENT: If a state declares "fallback transition to STATE after Nms" and no regular transition has fired within N milliseconds of state entry, the fallback transition shall fire unconditionally, bypassing all guard conditions and TC checks. This is the mechanism of last resort for stuck states.
+VERIFICATION: Test
+RATIONALE: AMS-4.9.2. Prevents permanent state traps when sensors are unavailable or TC commands are lost in the RF link.
+REFS: docs/standards/ams_standard.md AMS-4.9.2
+
+[REQUIREMENT]
+UID: SRS-2106
+STATUS: Active
+TAGS: AMS, StateMachine, RTOS
+STATEMENT: The engine tick() method shall be non-reentrant. It shall be called exclusively from the main loop() task. No other RTOS task shall call tick() directly or indirectly. API handlers that need engine state shall use the mutex-protected snapshot methods.
+VERIFICATION: Inspection
+RATIONALE: RTOS-4 / AMS-5.1. The tick FSM is not designed for concurrent invocation; re-entrant calls would corrupt transition history, hold-timers, and HK slot counters.
+REFS: docs/standards/rtos_standard.md RTOS-4, docs/standards/ams_standard.md AMS-5.1
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.3 Guard Conditions and Error Handling
+
+[REQUIREMENT]
+UID: SRS-2200
+STATUS: Active
+TAGS: AMS, Guards
+STATEMENT: Each state shall declare at most AMS_MAX_CONDITIONS (4) guard conditions. All declared guard conditions shall be evaluated on every tick, after transition evaluation. If one or more conditions are violated in the same tick, all violations shall be logged before the on_error: handler fires.
+VERIFICATION: Test
+RATIONALE: AMS-4.7 / AMS-5.2. Reporting all violations per tick rather than only the first enables the operator to diagnose the complete failure envelope from a single EVENT frame.
+REFS: docs/standards/ams_standard.md AMS-4.7, AMS-5.2, src/config.h AMS_MAX_CONDITIONS
+
+[REQUIREMENT]
+UID: SRS-2201
+STATUS: Active
+TAGS: AMS, Guards, SensorFault
+STATEMENT: If a sensor referenced in a guard or transition condition cannot be read due to a driver failure, I2C timeout, or GPS loss-of-fix, the condition shall evaluate as "holds" (no violation raised). The engine shall NOT enter ERROR state due to a transient sensor read failure.
+VERIFICATION: Test
+RATIONALE: AMS-4.9 / AMS-5.6. Fail-safe default: sensor absence is not itself a mission fault. False alarms from sensor glitches would trigger unintended recovery sequences.
+REFS: docs/standards/ams_standard.md AMS-4.9, AMS-5.6
+
+[REQUIREMENT]
+UID: SRS-2202
+STATUS: Active
+TAGS: AMS, Guards, ErrorRecovery
+STATEMENT: If an on_error: block declares "transition to STATE", the engine shall execute that transition (including the departing state's on_exit: handler) instead of halting when a guard condition is violated. The engine shall only enter ERROR status if on_error: provides no recovery transition.
+VERIFICATION: Test
+RATIONALE: AMS-4.10.2. Explicit recovery paths from guard failures allow scripted safe-mode transitions without requiring operator TC input.
+REFS: docs/standards/ams_standard.md AMS-4.10.2
+
+[REQUIREMENT]
+UID: SRS-2203
+STATUS: Active
+TAGS: AMS, Guards, Assertions
+STATEMENT: A script shall declare at most AMS_MAX_ASSERTS (8) assert directives. An assert condition is evaluated every tick regardless of the active state. If an assert fires it shall dispatch an EVENT.error frame and immediately transition the engine to ERROR status. An assert violation cannot be recovered by on_error.
+VERIFICATION: Test
+RATIONALE: AMS-15. Asserts encode invariants that must hold across all states (e.g. "BARO.alt < 15000"). Violations indicate a hardware or calibration anomaly severe enough to halt the mission.
+REFS: docs/standards/ams_standard.md AMS-15, src/config.h AMS_MAX_ASSERTS
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.4 On-Enter and On-Exit Handlers
+
+[REQUIREMENT]
+UID: SRS-2300
+STATUS: Active
+TAGS: AMS, OnEnter
+STATEMENT: On state entry, the engine shall execute on_enter: set actions synchronously (before the next tick evaluates transitions), then queue the on_enter: EVENT for dispatch on the first available arbitration slot. Set actions shall complete before any HK telemetry for the new state is generated.
+VERIFICATION: Test
+RATIONALE: AMS-4.8 / AMS-5.2. Synchronous set-action execution ensures global variables are populated before telemetry reads them. Queued EVENT dispatch prevents the on_enter: event from blocking the transition that caused the entry.
+REFS: docs/standards/ams_standard.md AMS-4.8, AMS-5.2
+
+[REQUIREMENT]
+UID: SRS-2301
+STATUS: Active
+TAGS: AMS, OnExit
+STATEMENT: On state departure (normal transition, fallback, or error-recovery), the engine shall execute on_exit: set actions synchronously, then dispatch the on_exit: EVENT immediately (not queued), before calling enterStateLocked() for the new state. The on_exit: EVENT shall be the last action of the departing state.
+VERIFICATION: Test
+RATIONALE: AMS-4.16 / AMS-5.8. Deterministic ordering: exit-event byte stream is committed to the radio FIFO before the enter-event, preserving chronological event sequence on the ground station.
+REFS: docs/standards/ams_standard.md AMS-4.16, AMS-5.8
+
+[REQUIREMENT]
+UID: SRS-2302
+STATUS: Active
+TAGS: AMS, OnExit, Limits
+STATEMENT: An on_exit: block shall accept at most AMS_MAX_SET_ACTIONS (4) set actions and at most one EVENT directive. A "transition to" directive inside on_exit: shall be a parse error, reported immediately and the script shall not be activated.
+VERIFICATION: Test
+RATIONALE: AMS-4.16.2 / AMS-4.16.4 / PO10-3. Bounded resources prevent on_exit from becoming unbounded work. Transitions from on_exit would create ambiguous state-machine semantics: which state "owns" the transition?
+REFS: docs/standards/ams_standard.md AMS-4.16.2, AMS-4.16.4
+
+[REQUIREMENT]
+UID: SRS-2303
+STATUS: Active
+TAGS: AMS, OnExit
+STATEMENT: The on_exit: handler shall NOT fire in the following situations: (a) deactivate() is called on a running engine, (b) the engine transitions to ERROR status without a recovery transition, (c) checkpoint restore overwrites the current state index without a runtime transition.
+VERIFICATION: Inspection
+RATIONALE: AMS-4.16.2. These paths do not represent a normal state departure where an exit audit event is meaningful. Firing on_exit in these cases would produce spurious telemetry events that confuse the ground operator.
+REFS: docs/standards/ams_standard.md AMS-4.16.2
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.5 Global Variables and Set Actions
+
+[REQUIREMENT]
+UID: SRS-2400
+STATUS: Active
+TAGS: AMS, Variables
+STATEMENT: A script shall declare at most AMS_MAX_VARS (8) global variables using the "var NAME" directive and at most AMS_MAX_CONSTS (8) named constants using "const NAME = VALUE". Variable names shall be at most AMS_VAR_NAME_LEN-1 (15) characters. Both var and const declarations are global to the script, not scoped to a state.
+VERIFICATION: Test
+RATIONALE: AMS-4.8.1 / config.h. Bounded counts ensure the VarEntry[] and ConstEntry[] arrays fit in static SRAM. Global scope allows set actions in one state to produce values consumed by guard conditions in another.
+REFS: docs/standards/ams_standard.md AMS-4.8.1, src/config.h AMS_MAX_VARS, AMS_MAX_CONSTS, AMS_VAR_NAME_LEN
+
+[REQUIREMENT]
+UID: SRS-2401
+STATUS: Active
+TAGS: AMS, Variables, SetActions
+STATEMENT: A set action shall support the following five forms: (1) direct snapshot (ALIAS.field), (2) calibrated average over N samples (CALIBRATE(ALIAS.field, N), N ≤ AMS_MAX_SENSOR_RETRY), (3) inter-sample delta (current minus previous reading), (4) running maximum across state lifetime (max(ALIAS.field)), (5) running minimum across state lifetime (min(ALIAS.field)). Any other form shall be a parse error.
+VERIFICATION: Test
+RATIONALE: AMS-4.8.2. Covers the five derived-variable forms implemented in parseSetActionCoreLocked. Closed form list prevents unbounded parser growth.
+REFS: docs/standards/ams_standard.md AMS-4.8.2, src/config.h AMS_MAX_SENSOR_RETRY
+
+[REQUIREMENT]
+UID: SRS-2402
+STATUS: Active
+TAGS: AMS, Variables, SensorFault
+STATEMENT: If a set action or CALIBRATE call fails to produce a valid reading (sensor driver returns error or loss-of-fix), the target variable shall retain its previous value unchanged. The engine shall emit an EVENT.warning frame describing the failed field and shall NOT enter ERROR state.
+VERIFICATION: Test
+RATIONALE: AMS-5.7. Sensor faults during set actions must not halt the mission. Retaining the previous value preserves the last known good measurement in HK telemetry.
+REFS: docs/standards/ams_standard.md AMS-5.7
+
+[REQUIREMENT]
+UID: SRS-2403
+STATUS: Active
+TAGS: AMS, Variables
+STATEMENT: A named constant declared with "const NAME = VALUE" shall be immutable at runtime. Any AMS directive that attempts to modify a const (e.g. a set action targeting a const name) shall be a parse error detected at activation time, before the script begins executing.
+VERIFICATION: Test
+RATIONALE: AMS-4.12. Constants represent physical thresholds (e.g. apogee altitude, max g-load) that must not drift during a mission. Immutability is enforced at parse time to eliminate the runtime check overhead.
+REFS: docs/standards/ams_standard.md AMS-4.12
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.6 Scheduled Telemetry (HK / LOG)
+
+[REQUIREMENT]
+UID: SRS-2500
+STATUS: Active
+TAGS: AMS, Telemetry, HK
+STATEMENT: Each state shall support at most AMS_MAX_HK_SLOTS (4) independent "every Nms: HK.report" blocks and at most AMS_MAX_HK_SLOTS (4) independent "log_every Nms: LOG.report" blocks. Each slot shall maintain its own independent elapsed timer, reset to zero on state entry. Slots do not share timers.
+VERIFICATION: Test
+RATIONALE: AMS-4.3.1. Independent cadences allow different HK field groups to be transmitted at different rates (e.g. GPS every 2 s, IMU every 500 ms) without inter-slot coupling.
+REFS: docs/standards/ams_standard.md AMS-4.3.1, src/config.h AMS_MAX_HK_SLOTS
+
+[REQUIREMENT]
+UID: SRS-2501
+STATUS: Active
+TAGS: AMS, Telemetry, Limits
+STATEMENT: The telemetry interval N in every Nms and log_every Nms directives shall satisfy TELEMETRY_INTERVAL_MIN ≤ N ≤ TELEMETRY_INTERVAL_MAX (100 ms ≤ N ≤ 60000 ms). Values outside this range shall be a parse error.
+VERIFICATION: Test
+RATIONALE: config.h bounds. Minimum 100 ms prevents overloading the LoRa link (2.4 kbps air rate); maximum 60 s prevents excessively stale telemetry from hiding in-flight anomalies.
+REFS: src/config.h TELEMETRY_INTERVAL_MIN, TELEMETRY_INTERVAL_MAX
+
+[REQUIREMENT]
+UID: SRS-2502
+STATUS: Active
+TAGS: AMS, Telemetry, Arbitration
+STATEMENT: The action arbitrator shall dispatch at most "budget" pending actions per tick, where budget is configured by the "priorities" directive (default 1, clamped to 1–3). Priority order within one tick shall be: EVENT > HK.report > LOG.report. Actions not dispatched in one tick shall remain pending for the next tick.
+VERIFICATION: Test
+RATIONALE: APUS-19.2. Bounding actions per tick limits per-tick radio TX time and prevents the AMS engine from monopolising the LoRa UART during peak telemetry load.
+REFS: docs/standards/apus_standard.md APUS-19.2
+
+[REQUIREMENT]
+UID: SRS-2503
+STATUS: Active
+TAGS: AMS, Telemetry, HK
+STATEMENT: An HK.report block shall include at most AMS_MAX_HK_FIELDS (16) named fields. Each field shall reference a sensor token (e.g. BARO.alt) or a global variable. Fields that reference an unknown token or undeclared variable shall be a parse error.
+VERIFICATION: Test
+RATIONALE: AMS-4.3 / APUS-15. Bounded field count ensures the serialised HK payload remains within the 255-byte maximum ARES Radio Protocol frame size (SRS-3003).
+REFS: docs/standards/ams_standard.md AMS-4.3, src/config.h AMS_MAX_HK_FIELDS
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.7 Checkpoint Persistence
+
+[REQUIREMENT]
+UID: SRS-2600
+STATUS: Active
+TAGS: AMS, Checkpoint
+STATEMENT: The engine shall write a checkpoint to AMS_RESUME_PATH on every state entry, on every execution enable/disable change, and periodically while in RUNNING status at an interval not exceeding AMS_CHECKPOINT_INTERVAL_MS (1000 ms). The checkpoint shall be written atomically: if the write fails, the previous valid checkpoint shall be preserved.
+VERIFICATION: Test
+RATIONALE: AMS-2. Frequent checkpointing maximises the recovery window after an in-flight crash. Atomic write prevents a partial checkpoint from replacing a valid one.
+REFS: docs/standards/ams_standard.md AMS-2, src/config.h AMS_CHECKPOINT_INTERVAL_MS, AMS_RESUME_PATH
+
+[REQUIREMENT]
+UID: SRS-2601
+STATUS: Active
+TAGS: AMS, Checkpoint
+STATEMENT: The checkpoint record (format v3) shall encode: format version tag, script filename, state index, executionEnabled flag, running flag, engine status, sequence counter, state elapsed time, per-slot HK elapsed times, per-slot LOG elapsed times, global variable values (float representation), and global variable validity flags.
+VERIFICATION: Inspection
+RATIONALE: AMS-2. All fields necessary to reconstruct engine runtime state exactly are captured. The validity flag distinguishes an uninitialised variable from a variable whose last read happened to be 0.0.
+REFS: docs/standards/ams_standard.md AMS-2
+
+[REQUIREMENT]
+UID: SRS-2602
+STATUS: Active
+TAGS: AMS, Checkpoint, Compatibility
+STATEMENT: The engine shall accept checkpoint records in formats v1, v2, and v3 on restore. An unrecognised format version tag, a truncated record, or a record whose script filename does not match the currently active script shall be silently discarded. The engine shall then start from the WAIT state without error.
+VERIFICATION: Test
+RATIONALE: AMS-2. Backward compatibility with older firmware versions ensures field upgrades do not require manual checkpoint deletion. Corrupt or mismatched checkpoints must not prevent boot.
+REFS: docs/standards/ams_standard.md AMS-2
+
+[REQUIREMENT]
+UID: SRS-2603
+STATUS: Active
+TAGS: AMS, Checkpoint, Storage
+STATEMENT: The checkpoint write operation shall be performed under the AMS engine mutex. No other task shall be able to read a partially written checkpoint file via the REST API while a write is in progress.
+VERIFICATION: Inspection
+RATIONALE: RTOS-4 / CERT-POSIX. A partial checkpoint seen by the restore path would produce undefined engine state. The mutex guarantees the LittleFS write completes or fails entirely before the file becomes visible to readers.
+REFS: docs/standards/rtos_standard.md RTOS-4
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.8 Telecommand (TC) Processing
+
+[REQUIREMENT]
+UID: SRS-2700
+STATUS: Active
+TAGS: AMS, TC
+STATEMENT: The engine shall recognise the following TC tokens as valid transition condition operands: LAUNCH, ABORT, RESET, RESET_ABNORMAL. Each token, once set, is consumed atomically when a matching TC.command condition fires (SRS-2104). The pending TC slot holds at most one token at a time; injecting a second token before the first is consumed overwrites the first.
+VERIFICATION: Test
+RATIONALE: AMS-4.6 / AMS-5.3. Derived from the TcCommand enum. Single-token semantics prevent accidental ABORT being suppressed by a queued LAUNCH.
+REFS: docs/standards/ams_standard.md AMS-4.6, AMS-5.3
+
+[REQUIREMENT]
+UID: SRS-2701
+STATUS: Active
+TAGS: AMS, TC, Debounce
+STATEMENT: A TC condition qualified with "confirm N" (where 2 ≤ N ≤ 10) shall fire only after N injections of the same command are counted within the current state, without any intervening injection of a different command. A TC condition with no qualifier fires on the first injection.
+VERIFICATION: Test
+RATIONALE: AMS-4.11.3. Protects against spurious LoRa packet repetition triggering safety-critical commands such as ABORT.
+REFS: docs/standards/ams_standard.md AMS-4.11.3
+
+[REQUIREMENT]
+UID: SRS-2702
+STATUS: Active
+TAGS: AMS, TC, RTOS
+STATEMENT: The injectTc() method shall be callable from any RTOS task (API handler, radio dispatcher) and shall be protected by the AMS mutex with a finite timeout. It shall never be called from an ISR context.
+VERIFICATION: Inspection
+RATIONALE: RTOS-4 / CERT-SIG30. TC injection from the REST API runs on the API task; from radio on the comms task. Mutex protection prevents concurrent modification of the TC pending slot. ISR calls would violate FreeRTOS mutex semantics.
+REFS: docs/standards/rtos_standard.md RTOS-4
+
+[[/SECTION]]
+

@@ -1,0 +1,86 @@
+[DOCUMENT]
+TITLE: Software Requirements Specification — ARES v0.1.0
+VERSION: 0.1.0
+DATE: 2026-05-11
+
+[GRAMMAR]
+ELEMENTS:
+- TAG: REQUIREMENT
+  FIELDS:
+  - TITLE: UID
+    TYPE: String
+    REQUIRED: True
+  - TITLE: STATUS
+    TYPE: SingleChoice(Draft, Active, Deprecated)
+    REQUIRED: True
+  - TITLE: TAGS
+    TYPE: Tag
+    REQUIRED: False
+  - TITLE: STATEMENT
+    TYPE: String
+    REQUIRED: True
+  - TITLE: VERIFICATION
+    TYPE: SingleChoice(Test, Inspection, Analysis, Review)
+    REQUIRED: False
+  - TITLE: RATIONALE
+    TYPE: String
+    REQUIRED: False
+  - TITLE: REFS
+    TYPE: String
+    REQUIRED: False
+
+[TEXT]
+STATEMENT: >>>
+ARES (Amateur Rocket Embedded System) is avionics firmware for amateur rockets
+running on an ESP32-S3 (dual-core Xtensa LX7, 240 MHz, IDF FreeRTOS).  This
+document captures verifiable software requirements derived from the implemented
+coding standards (AMS, RTOS, PO10, MISRA, CERT, APUS, REST) and from the
+behaviour observable in the current firmware source (v0.1.0).
+
+Requirement UIDs follow the pattern SRS-NNNN (zero-padded 4 digits, blocks of 1000):
+
+  Range       Subsystem
+  0001–0999   Platform and memory model
+  1000–1999   Boot sequence
+  2000–2999   AMS mission script engine
+  3000–3999   Radio telemetry (APUS / LoRa)
+  4000–4999   WiFi REST API
+  5000–5999   Storage (LittleFS)
+  6000–6999   RTOS task structure
+  7000–7999   Static analysis and code quality
+
+VERIFICATION methods:
+  Test        — Automated or manual functional test
+  Inspection  — Code review / static audit
+  Analysis    — WCET, memory, or mathematical proof
+  Review      — Standards compliance walkthrough or document review
+
+Status values: Active | Draft | Deprecated
+<<<
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/01_platform.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/02_boot.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/03_ams.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/04_radio.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/05_api.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/06_storage.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/07_rtos.sdoc
+
+[DOCUMENT_FROM_FILE]
+FILE: sections/08_quality.sdoc
+
+
+
