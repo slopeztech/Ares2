@@ -256,6 +256,9 @@ Supported expressions in both HK and LOG blocks:
 - `GPS.lat`
 - `GPS.lon`
 - `GPS.alt`
+- `GPS.speed` — ground speed (km/h)
+- `GPS.sats` — satellites in use (integer, compared as float)
+- `GPS.hdop` — horizontal dilution of precision (dimensionless; lower is better)
 - `BARO.alt`
 - `BARO.temp`
 - `BARO.pressure`
@@ -314,6 +317,8 @@ Supported fields for standard comparisons:
 - `BARO.pressure < x`, `BARO.pressure > x`
 - `GPS.alt < x`, `GPS.alt > x`
 - `GPS.speed < x`, `GPS.speed > x`
+- `GPS.sats > x` — satellite count (integer compared as float; e.g. `GPS.sats > 6`)
+- `GPS.hdop < x` — horizontal dilution of precision (e.g. `GPS.hdop < 2.0`)
 - `IMU.accel_x < x`, `IMU.accel_x > x`
 - `IMU.accel_y < x`, `IMU.accel_y > x`
 - `IMU.accel_z < x`, `IMU.accel_z > x`
@@ -498,6 +503,8 @@ Rules:
   - `BARO.pressure < x`, `BARO.pressure > x`
   - `GPS.alt < x`, `GPS.alt > x`
   - `GPS.speed < x`, `GPS.speed > x`
+  - `GPS.sats > x` — pre-arm fix quality check (satellite count)
+  - `GPS.hdop < x` — pre-arm fix quality check (HDOP)
   - `TIME.elapsed > x`
   - Variable RHS forms: `BARO.alt < varname`, `BARO.alt < (varname + offset)` (AMS-4.8).
 - `TC.command` is not valid inside `conditions:`.

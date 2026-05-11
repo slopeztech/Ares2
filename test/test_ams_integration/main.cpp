@@ -67,6 +67,18 @@ extern void test_pulse_fire_duration_override();
 extern void test_pulse_fire_only_when_execution_enabled();
 extern void test_pulse_fire_no_driver_no_crash();
 
+// ── test_ams_gps_conditions.cpp ────────────────────────────────────────────────
+
+extern void test_gps_sats_transition_fires_above_threshold();
+extern void test_gps_hdop_transition_fires_below_threshold();
+extern void test_gps_sats_blocks_when_below_threshold();
+extern void test_gps_hdop_blocks_when_above_threshold();
+
+// ── test_ams_on_exit_set.cpp ────────────────────────────────────────────────────
+
+extern void test_on_exit_set_script_parses_successfully();
+extern void test_on_exit_set_variable_used_in_next_state_condition();
+
 int main()
 {
     UNITY_BEGIN();
@@ -122,6 +134,16 @@ int main()
     RUN_TEST(test_pulse_fire_duration_override);
     RUN_TEST(test_pulse_fire_only_when_execution_enabled);
     RUN_TEST(test_pulse_fire_no_driver_no_crash);
+
+    // GPS sensor conditions — GPS.sats and GPS.hdop (AMS-4.5)
+    RUN_TEST(test_gps_sats_transition_fires_above_threshold);
+    RUN_TEST(test_gps_hdop_transition_fires_below_threshold);
+    RUN_TEST(test_gps_sats_blocks_when_below_threshold);
+    RUN_TEST(test_gps_hdop_blocks_when_above_threshold);
+
+    // on_exit: set actions (AMS-4.9)
+    RUN_TEST(test_on_exit_set_script_parses_successfully);
+    RUN_TEST(test_on_exit_set_variable_used_in_next_state_condition);
 
     return UNITY_END();
 }

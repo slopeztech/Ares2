@@ -45,6 +45,7 @@ struct FlightSample
     float gpsLonDeg   = 0.0f;     ///< Longitude in decimal degrees.
     float gpsAltM     = 0.0f;     ///< MSL altitude in metres.
     float gpsSpeedKmh = 0.0f;     ///< Ground speed in km/h.
+    float gpsHdop     = 1.0f;     ///< Horizontal dilution of precision.
     uint8_t gpsSats   = 0U;       ///< Satellites in use.
     bool    gpsFix    = false;    ///< True if a valid 3-D fix is available.
 

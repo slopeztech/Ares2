@@ -152,6 +152,40 @@ the radio bus before the incoming state's `on_enter:` event.  Variables set in
 `on_exit:` are available to the new state's `on_enter:` set actions and to
 transition conditions on subsequent ticks.
 
+### 2.6.1 GPS Fix Quality — GPS.sats and GPS.hdop
+
+Two GPS fields are available as transition (and guard) condition operands to
+verify fix quality before arming or entering flight-critical states:
+
+| Field | Type | Semantics |
+|---|---|---|
+| `GPS.sats` | integer (float comparison) | Number of satellites in use |
+| `GPS.hdop` | float | Horizontal dilution of precision (< 1 = excellent, < 2 = good) |
+
+Only `<` and `>` operators are supported (same as other sensor fields).
+
+**Pre-arm fix quality example:**
+
+```ams
+state PRE_ARM:
+  on_enter:
+    EVENT.info "Waiting for GPS fix"
+  transition to WAIT when GPS.sats > 6 and GPS.hdop < 2.0
+
+state WAIT:
+  on_enter:
+    EVENT.info "GPS OK — ready for launch TC"
+  transition to FLIGHT when TC.command == LAUNCH
+```
+
+Rules:
+- `GPS.sats` is stored as `uint8_t` in `GpsReading` but compared as `float`
+  (e.g. `GPS.sats > 6` is `static_cast<float>(r.satellites) > 6.0f`).
+- `GPS.hdop` maps directly to `GpsReading::hdop`.
+- A failed GPS read (driver error or `NO_FIX`) causes the condition to evaluate
+  to `false`, keeping the engine in the current state.
+- Both fields support variable RHS: `GPS.sats > min_sats` (AMS-4.8).
+
 ### 2.7 on_timeout Handler
 
 Use `on_timeout Nms:` to force a transition out of a state if no regular
@@ -624,6 +658,8 @@ Valid expressions for HK.report and LOG.report:
 - `GPS.lon`
 - `GPS.alt`
 - `GPS.speed` — ground speed (km/h)
+- `GPS.sats` — satellites in use (integer, compared as float; e.g. `GPS.sats > 6`)
+- `GPS.hdop` — horizontal dilution of precision (dimensionless; lower = better; e.g. `GPS.hdop < 2.0`)
 - `BARO.alt`
 - `BARO.temp`
 - `BARO.pressure`

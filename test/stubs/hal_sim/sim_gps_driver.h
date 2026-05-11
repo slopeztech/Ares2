@@ -63,7 +63,7 @@ public:
         out.altitudeM   = sample.gpsAltM;
         out.speedKmh    = sample.gpsSpeedKmh;
         out.courseDeg   = 0.0f;
-        out.hdop        = 1.0f;
+        out.hdop        = sample.gpsHdop;
         out.timestampMs = clock::nowMs();
         out.satellites  = sample.gpsSats;
         out.fixType     = sample.gpsFix ? GpsFixType::FIX_3D : GpsFixType::NONE;

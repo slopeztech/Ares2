@@ -78,7 +78,7 @@ bool MissionScriptEngine::splitAliasDotField(const char* expr,
  * @brief Map a field name string to its @c SensorField enumerator.
  *
  * Valid field names depend on @p kind:
- *   - GPS:  @c lat, @c lon, @c alt, @c speed
+ *   - GPS:  @c lat, @c lon, @c alt, @c speed, @c sats, @c hdop
  *   - BARO: @c alt, @c temp, @c pressure
  *   - IMU:  @c accel_x/y/z, @c accel_mag, @c gyro_x/y/z, @c temp
  *   - COM:  (no readable float fields — always returns @c false)
@@ -110,6 +110,8 @@ bool MissionScriptEngine::parseGpsSensorField(const char* fieldStr, SensorField&
     if (strcmp(fieldStr, "lon") == 0)   { out = SensorField::LON;   return true; }
     if (strcmp(fieldStr, "alt") == 0)   { out = SensorField::ALT;   return true; }
     if (strcmp(fieldStr, "speed") == 0) { out = SensorField::SPEED; return true; }
+    if (strcmp(fieldStr, "sats") == 0)  { out = SensorField::SATS;  return true; }
+    if (strcmp(fieldStr, "hdop") == 0)  { out = SensorField::HDOP;  return true; }
     return false;
 }
 
@@ -209,11 +211,13 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
         {
             switch (field)
             {
-            case SensorField::LAT:   outVal = r.latitude;  return true;
-            case SensorField::LON:   outVal = r.longitude; return true;
-            case SensorField::ALT:   outVal = r.altitudeM; return true;
-            case SensorField::SPEED: outVal = r.speedKmh;  return true;
-            default:                                        return false;
+            case SensorField::LAT:   outVal = r.latitude;                        return true;
+            case SensorField::LON:   outVal = r.longitude;                       return true;
+            case SensorField::ALT:   outVal = r.altitudeM;                       return true;
+            case SensorField::SPEED: outVal = r.speedKmh;                        return true;
+            case SensorField::SATS:  outVal = static_cast<float>(r.satellites);  return true;
+            case SensorField::HDOP:  outVal = r.hdop;                            return true;
+            default:                                                              return false;
             }
         }
     }

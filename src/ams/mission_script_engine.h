@@ -317,6 +317,8 @@ private:
         GYRO_Y    = 11, ///< IMU: gyro Y (deg/s)
         GYRO_Z    = 12, ///< IMU: gyro Z (deg/s)
         IMU_TEMP  = 13, ///< IMU: die temperature (°C)
+        SATS      = 14, ///< GPS: satellites in use (integer, compared as float)
+        HDOP      = 15, ///< GPS: horizontal dilution of precision (dimensionless)
     };
 
     // ── Unified condition kind ─────────────────────────────────────────────

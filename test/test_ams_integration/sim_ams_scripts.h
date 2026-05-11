@@ -434,5 +434,138 @@ static const char kScriptPulseDuration[] =
     "    PULSE.fire A 500ms\n"
     "    EVENT.info \"FIRED\"\n";
 
+// ── AMS Feature: GPS.sats and GPS.hdop in transition conditions ──────────────
+
+/**
+ * Script that transitions from WAIT to ARMED when GPS.sats exceeds a
+ * threshold (AMS-4.5 / AMS-4.6).
+ *
+ * Flow:  WAIT --(GPS.sats > 6)--> ARMED
+ *
+ * The SIM_GPS driver returns gpsSats from the flight profile (default 9).
+ * The condition evaluates immediately on the first tick after arm().
+ */
+static const char kScriptGpsSats[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING\"\n"
+    "  transition to ARMED when GPS.sats > 6\n"
+    "\n"
+    "state ARMED:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"ARMED\"\n";
+
+/**
+ * Script that transitions from WAIT to ARMED when GPS.hdop drops below a
+ * maximum acceptable threshold (AMS-4.5 / AMS-4.6).
+ *
+ * Flow:  WAIT --(GPS.hdop < 2.0)--> ARMED
+ *
+ * The SIM_GPS driver returns gpsHdop from the flight profile (default 1.0).
+ * The condition evaluates immediately on the first tick after arm().
+ */
+static const char kScriptGpsHdop[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING\"\n"
+    "  transition to ARMED when GPS.hdop < 2.0\n"
+    "\n"
+    "state ARMED:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"ARMED\"\n";
+
+/**
+ * Script used to verify that GPS.sats blocks a transition while the count
+ * remains at or below the threshold.
+ *
+ * Profile is constructed in the test to have gpsSats = 4 initially so that
+ * the > 6 condition does NOT fire during the first ticks. The test uses a
+ * custom single-sample profile with low sat count to confirm the block.
+ */
+static const char kScriptGpsSatsBlock[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING\"\n"
+    "  transition to ARMED when GPS.sats > 6\n"
+    "\n"
+    "state ARMED:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"ARMED\"\n";
+
+// ── on_exit: set action script ───────────────────────────────────────────────
+
+/**
+ * Script that uses a `set` action inside an `on_exit:` block (AMS-4.9).
+ *
+ * Flow:  WAIT --(TC LAUNCH)--> FLIGHT
+ * WAIT on_exit: sets var `exit_alt` to BARO.alt before leaving.
+ * FLIGHT transition condition uses `BARO.alt > exit_alt` (variable RHS).
+ *
+ * This verifies that set executes in on_exit and the variable is readable
+ * by a subsequent condition evaluation in the next state.
+ */
+static const char kScriptOnExitSet[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "var exit_alt = 0.0\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING\"\n"
+    "  on_exit:\n"
+    "    set exit_alt = BARO.alt\n"
+    "  transition to FLIGHT when TC.command == LAUNCH\n"
+    "\n"
+    "state FLIGHT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"FLIGHT\"\n"
+    "  transition to END when BARO.alt > exit_alt\n"
+    "\n"
+    "state END:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"END\"\n";
+
 } // namespace sim
 } // namespace ares
