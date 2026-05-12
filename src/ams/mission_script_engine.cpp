@@ -185,6 +185,16 @@ void MissionScriptEngine::deactivateLocked()
     parseCurrentTask_     = 0xFFU;
     parseCurrentTaskRule_ = 0xFFU;
 
+    // Reset per-alias sensor read caches.
+    memset(baroCachedReadings_, 0, sizeof(baroCachedReadings_));
+    memset(baroCacheTsMs_,      0, sizeof(baroCacheTsMs_));
+    memset(baroCacheValid_,     0, sizeof(baroCacheValid_));
+    memset(gpsCachedReadings_,  0, sizeof(gpsCachedReadings_));
+    memset(gpsCacheTsMs_,       0, sizeof(gpsCacheTsMs_));
+    memset(gpsCacheValid_,      0, sizeof(gpsCacheValid_));
+    imuCacheValid_ = false;
+    imuCacheTsMs_  = 0U;
+
     // Reset telemetry-derived state so a fresh activation starts clean.
     hasPrevAlt_     = false;
     prevAltM_       = 0.0f;
@@ -385,6 +395,84 @@ void MissionScriptEngine::notifyPulseFired(uint8_t channel)
     if (channel == 0U) { pulseAFired_ = true; }
     else if (channel == 1U) { pulseBFired_ = true; }
     else { /* invalid channel — ignore */ }
+}
+
+// ── nextWakeupMs ─────────────────────────────────────────────────────────────
+
+uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
+{
+    // Fast-path: engine not running — keep full tick rate.
+    if (!running_ || status_ != EngineStatus::RUNNING)
+    {
+        return nowMs + ares::SENSOR_RATE_MS;
+    }
+
+    // Pending on-enter event must be emitted promptly.
+    if (pendingOnEnterEvent_)
+    {
+        return nowMs + ares::SENSOR_RATE_MS;
+    }
+
+    const StateDef& s = program_.states[currentState_];
+
+    // Active transition or guard conditions require fresh sensor data every tick.
+    if (s.transitionCount > 0U || s.conditionCount > 0U)
+    {
+        return nowMs + ares::SENSOR_RATE_MS;
+    }
+
+    // No conditions: compute the next time something actually needs to happen.
+    // Start from the radio-cap so TC commands (LAUNCH/ABORT) are never delayed
+    // more than kRadioMaxSleepMs even in pure reporting states.
+    uint32_t next = nowMs + kRadioMaxSleepMs;
+
+    for (uint8_t i = 0U; i < s.hkSlotCount; ++i)
+    {
+        if (s.hkSlots[i].everyMs > 0U)
+        {
+            const uint32_t due = lastHkSlotMs_[i] + s.hkSlots[i].everyMs;
+            if (due < next) { next = due; }
+        }
+    }
+    for (uint8_t i = 0U; i < s.logSlotCount; ++i)
+    {
+        if (s.logSlots[i].everyMs > 0U)
+        {
+            const uint32_t due = lastLogSlotMs_[i] + s.logSlots[i].everyMs;
+            if (due < next) { next = due; }
+        }
+    }
+    for (uint8_t t = 0U; t < program_.taskCount; ++t)
+    {
+        const TaskDef& td = program_.tasks[t];
+        if (td.everyMs == 0U) { continue; }
+        bool active = true;
+        if (td.hasStateFilter && td.stateIndicesResolved)
+        {
+            active = false;
+            for (uint8_t si = 0U; si < td.activeStateCount; ++si)
+            {
+                if (td.activeStateIndices[si] == currentState_) { active = true; break; }
+            }
+        }
+        if (active)
+        {
+            const uint32_t due = taskLastTickMs_[t] + td.everyMs;
+            if (due < next) { next = due; }
+        }
+    }
+    if (s.hasOnTimeout)
+    {
+        const uint32_t due = stateEnterMs_ + s.onTimeoutMs;
+        if (due < next) { next = due; }
+    }
+    if (s.hasFallback)
+    {
+        const uint32_t due = stateEnterMs_ + s.fallbackAfterMs;
+        if (due < next) { next = due; }
+    }
+
+    return (next > nowMs) ? next : (nowMs + 1U);
 }
 
 void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-size)
