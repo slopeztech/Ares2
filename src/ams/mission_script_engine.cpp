@@ -21,6 +21,7 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <cinttypes>
+#include <iterator>
 #include <cstdio>
 #include <cstring>
 
