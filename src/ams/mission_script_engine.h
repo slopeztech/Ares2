@@ -1105,8 +1105,10 @@ private:
     static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = 5U;
 
     // GPS: per-alias cache.  GPS sentences update at 1–10 Hz; a 5 ms TTL
-    // avoids redundant UART reads for multi-field HK slots without introducing
-    // staleness for condition evaluation (option A: conditions always read fresh).
+    // amortises redundant UART reads for multi-field HK slots.  The TTL is
+    // shorter than SENSOR_RATE_MS so the cache expires between ticks; at
+    // normal tick rate, transition conditions therefore read fresh data on
+    // their first field access each tick.
     mutable GpsReading  gpsCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
     mutable uint32_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        gpsCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
