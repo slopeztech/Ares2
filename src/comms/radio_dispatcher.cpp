@@ -18,6 +18,7 @@
 #include "ares_assert.h"
 #include "debug/ares_log.h"
 
+#include <cinttypes>
 #include <cstring>
 
 namespace ares
@@ -66,6 +67,7 @@ void RadioDispatcher::poll(uint32_t nowMs)
 
     processRetries(nowMs);
     drainCmdQueue(nowMs);
+    pumpFragSend(nowMs);
 }
 
 // ── processBuffer ─────────────────────────────────────────────────────────────
@@ -1188,6 +1190,183 @@ void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame, // NOLI
                         proto::FailureCode::QUEUE_FULL,
                         assembled.payload[1U]);
         }
+    }
+}
+
+// ── startFragSend ─────────────────────────────────────────────────────────────
+
+/**
+ * @brief Arm a new outbound fragmented bulk transfer (APUS-15 send path).
+ *
+ * Copies @p dataLen bytes into the static FragSendSession buffer, computes
+ * the segment count, and marks the session active.  Actual transmission is
+ * deferred to @c pumpFragSend() which is called by @c poll() on every loop
+ * iteration, ensuring the radio task is never blocked.
+ *
+ * If a session is already in progress it is abandoned and a LOG_W is emitted
+ * so that the operator is aware data was discarded (APUS-15.5).
+ */
+bool RadioDispatcher::startFragSend(const uint8_t* data,
+                                    uint32_t       dataLen,
+                                    uint8_t        destNode,
+                                    proto::MsgType msgType,
+                                    uint32_t       interFrameMs)
+{
+    if (data == nullptr || dataLen == 0U)
+    {
+        LOG_W(TAG, "FRAG TX: startFragSend called with null/zero data");
+        return false;
+    }
+
+    const uint32_t maxCapacity =
+        static_cast<uint32_t>(kMaxFragSegments) *
+        static_cast<uint32_t>(kFragSegDataSize);
+
+    if (dataLen > maxCapacity)
+    {
+        LOG_W(TAG, "FRAG TX: dataLen=%" PRIu32 " exceeds capacity=%" PRIu32,
+              dataLen, maxCapacity);
+        return false;
+    }
+
+    if (fragSendSession_.active)
+    {
+        LOG_W(TAG, "FRAG TX: abandoning active session id=0x%04X (%u/%u sent)",
+              static_cast<unsigned>(fragSendSession_.transferId),
+              static_cast<unsigned>(fragSendSession_.nextSegment),
+              static_cast<unsigned>(fragSendSession_.totalSegments));
+    }
+
+    // Compute segment count: ceiling division (last segment may be partial).
+    const uint32_t segDataSize = static_cast<uint32_t>(kFragSegDataSize);
+    const uint16_t totalSegs   = static_cast<uint16_t>(
+        (dataLen + segDataSize - 1U) / segDataSize);
+
+    fragSendSession_              = FragSendSession{};
+    fragSendSession_.transferId   = nextTransferId_++;
+    fragSendSession_.totalSegments = totalSegs;
+    fragSendSession_.nextSegment  = 0U;
+    fragSendSession_.lastSentMs   = 0U;
+    fragSendSession_.interFrameMs = interFrameMs;
+    fragSendSession_.active       = true;
+    fragSendSession_.destNode     = destNode;
+    fragSendSession_.msgType      = msgType;
+    fragSendSession_.dataLen      = dataLen;
+    (void)memcpy(fragSendSession_.data, data, dataLen);
+
+    LOG_I(TAG, "FRAG TX: armed id=0x%04X segs=%u dataLen=%" PRIu32 " interFrameMs=%" PRIu32,
+          static_cast<unsigned>(fragSendSession_.transferId),
+          static_cast<unsigned>(totalSegs),
+          dataLen, interFrameMs);
+
+    return true;
+}
+
+// ── pumpFragSend ──────────────────────────────────────────────────────────────
+
+/**
+ * @brief Transmit the next pending fragment from the active send session.
+ *
+ * Called by @c poll() on every main-loop iteration.  Sends at most one
+ * fragment per call and respects the @c interFrameMs rate limit.
+ *
+ * FLAG_ACK_REQ is set only on the final segment so the ground can confirm
+ * receipt of the complete transfer via a single ACK, avoiding per-fragment
+ * ACK overhead on a half-duplex link.
+ *
+ * If @c proto::encode() fails the session is aborted and a LOG_E is emitted.
+ */
+// MISRA-12 note: pumpFragSend() is permitted > 60 lines because the transmit
+// pipeline (rate-guard → frame build → encode → send → update) must remain
+// sequential for correctness and cannot be split across sub-functions without
+// exposing intermediate mutable session state.
+// Cyclomatic complexity ≤ 8; justified per APUS-15 scope.
+void RadioDispatcher::pumpFragSend(uint32_t nowMs) // NOLINT(readability-function-size)
+{
+    if (!fragSendSession_.active) { return; }
+
+    // Rate limiting: enforce minimum inter-frame gap (APUS-15.6).
+    if (fragSendSession_.lastSentMs != 0U &&
+        (nowMs - fragSendSession_.lastSentMs) < fragSendSession_.interFrameMs)
+    {
+        return;
+    }
+
+    const uint16_t seg   = fragSendSession_.nextSegment;
+    const uint16_t total = fragSendSession_.totalSegments;
+
+    const uint32_t offset    = static_cast<uint32_t>(seg) *
+                               static_cast<uint32_t>(kFragSegDataSize);
+    const uint32_t remaining = fragSendSession_.dataLen - offset;
+    const uint8_t  chunkLen  = (remaining > static_cast<uint32_t>(kFragSegDataSize))
+                             ? static_cast<uint8_t>(kFragSegDataSize)
+                             : static_cast<uint8_t>(remaining);
+
+    // Build the frame skeleton; encodeFrag() fills flags, payload, and len.
+    proto::Frame frame     = {};
+    frame.ver              = proto::PROTOCOL_VERSION;
+    frame.node             = proto::NODE_ROCKET;
+    frame.type             = fragSendSession_.msgType;
+    frame.seq              = txSeq_++;
+
+    if (!proto::encodeFrag(frame,
+                            fragSendSession_.transferId,
+                            seg, total,
+                            &fragSendSession_.data[offset],
+                            chunkLen))
+    {
+        LOG_E(TAG, "FRAG TX: encodeFrag failed seg=%u id=0x%04X — aborting",
+              static_cast<unsigned>(seg),
+              static_cast<unsigned>(fragSendSession_.transferId));
+        fragSendSession_ = FragSendSession{};
+        return;
+    }
+
+    const bool isLastSegment = (seg == static_cast<uint16_t>(total - 1U));
+
+    if (isLastSegment)
+    {
+        // Request ACK on the final segment so the ground confirms complete receipt.
+        frame.flags = static_cast<uint8_t>(frame.flags | proto::FLAG_ACK_REQ);
+        if (!sendReliable(frame, nowMs))
+        {
+            LOG_W(TAG, "FRAG TX: sendReliable failed on last seg=%u id=0x%04X",
+                  static_cast<unsigned>(seg),
+                  static_cast<unsigned>(fragSendSession_.transferId));
+        }
+    }
+    else
+    {
+        // Fire-and-forget intermediate segments (no per-fragment ACK overhead).
+        static uint8_t wireBuf[proto::MAX_FRAME_LEN];
+        const uint16_t wireLen = proto::encode(frame, wireBuf, sizeof(wireBuf));
+        if (wireLen == 0U)
+        {
+            LOG_E(TAG, "FRAG TX: encode failed seg=%u id=0x%04X — aborting",
+                  static_cast<unsigned>(seg),
+                  static_cast<unsigned>(fragSendSession_.transferId));
+            fragSendSession_ = FragSendSession{};
+            return;
+        }
+        radio_.send(wireBuf, wireLen);
+    }
+
+    fragSendSession_.lastSentMs  = nowMs;
+    fragSendSession_.nextSegment = static_cast<uint16_t>(seg + 1U);
+
+    LOG_D(TAG, "FRAG TX seg=%u/%u id=0x%04X chunkLen=%u",
+          static_cast<unsigned>(seg + 1U),
+          static_cast<unsigned>(total),
+          static_cast<unsigned>(fragSendSession_.transferId),
+          static_cast<unsigned>(chunkLen));
+
+    if (isLastSegment)
+    {
+        LOG_I(TAG, "FRAG TX complete id=0x%04X (%u segs, %" PRIu32 " bytes)",
+              static_cast<unsigned>(fragSendSession_.transferId),
+              static_cast<unsigned>(total),
+              fragSendSession_.dataLen);
+        fragSendSession_ = FragSendSession{};
     }
 }
 

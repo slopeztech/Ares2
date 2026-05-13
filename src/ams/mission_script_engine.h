@@ -735,6 +735,8 @@ private:
                                      StateDef& st,
                                      BlockType& blockType,
                                      bool& handled);
+    bool parseStateRateDirectivesLocked(const char* line, StateDef& st,
+                                        BlockType& blockType, bool& matched);
     bool parseStateReportDirectivesLocked(const char* line, const StateDef& st,
                                           BlockType& blockType, bool& matched);
     bool parseStateBlockContentLocked(const char* line,

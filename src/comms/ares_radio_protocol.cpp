@@ -160,18 +160,19 @@ static void populateFrameFromBuffer(const uint8_t* buf,
 }
 
 // ── Decode ────────────────────────────────────────────────
-bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
+
+/// Validates all wire-frame preconditions before populating a Frame.
+/// On success *payloadLen and *rawType are set from the buffer.
+/// CERT-1: all inputs validated before use; no side-effects on failure.
+static bool validateDecodeHeader(const uint8_t* buf,
+                                 uint16_t       bufLen,
+                                 uint8_t&       payloadLen,
+                                 uint8_t&       rawType)
 {
-    if (buf == nullptr)           { return false; }
-    if (bufLen < MIN_FRAME_LEN)   { return false; }
-
     // Verify sync marker (APUS-4.3)
-    if (!hasValidSync(buf))
-    {
-        return false;
-    }
+    if (!hasValidSync(buf)) { return false; }
 
-    // Check protocol version (APUS-14.2: log every routing decision)
+    // Check protocol version (APUS-14.2)
     if (buf[4] != PROTOCOL_VERSION)
     {
         LOG_D(TAG_PROTO, "decode reject: version=0x%02X expected=0x%02X",
@@ -189,15 +190,14 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
     }
 
     // Validate NODE against the APID table (APUS-10.1, APUS-10.2)
-    const uint8_t inNode = buf[6];
-    if (!isKnownNode(inNode))
+    if (!isKnownNode(buf[6]))
     {
         LOG_D(TAG_PROTO, "decode reject: unknown node=0x%02X",
-              static_cast<unsigned>(inNode));
+              static_cast<unsigned>(buf[6]));
         return false;
     }
 
-    const uint8_t payloadLen = buf[9];
+    payloadLen = buf[9];
     if (payloadLen > MAX_PAYLOAD_LEN)
     {
         LOG_D(TAG_PROTO, "decode reject: payloadLen=%u > MAX=%u",
@@ -206,7 +206,7 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
         return false;
     }
 
-    const uint8_t rawType = buf[7];
+    rawType = buf[7];
     if (!isKnownMsgType(rawType))
     {
         LOG_D(TAG_PROTO, "decode reject: unknown type=0x%02X",
@@ -214,7 +214,19 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
         return false;
     }
 
-    if (!meetsMinPayloadLen(rawType, payloadLen))
+    // Fragmented frames carry FragHeader + segment data instead of the nominal
+    // type payload, so the type-specific minimum size does not apply (APUS-15.1).
+    const bool isFragment = ((buf[5] & FLAG_FRAGMENT) != 0U);
+    if (isFragment)
+    {
+        if (payloadLen < FRAG_HEADER_LEN)
+        {
+            LOG_D(TAG_PROTO, "decode reject: fragment payloadLen=%u < FRAG_HEADER_LEN",
+                  static_cast<unsigned>(payloadLen));
+            return false;
+        }
+    }
+    else if (!meetsMinPayloadLen(rawType, payloadLen))
     {
         LOG_D(TAG_PROTO, "decode reject: type=0x%02X payloadLen=%u below minimum",
               static_cast<unsigned>(rawType),
@@ -234,9 +246,54 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
         return false;
     }
 
+    return true;
+}
+
+bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame)
+{
+    if (buf == nullptr)         { return false; }
+    if (bufLen < MIN_FRAME_LEN) { return false; }
+
+    uint8_t payloadLen = 0U;
+    uint8_t rawType    = 0U;
+    if (!validateDecodeHeader(buf, bufLen, payloadLen, rawType)) { return false; }
+
     // Populate frame (APUS-3.5: static struct, no heap)
     populateFrameFromBuffer(buf, rawType, payloadLen, frame);
+    return true;
+}
 
+// ── Fragmentation sub-header encode (APUS-15) ────────────
+bool encodeFrag(Frame&         frame,
+                uint16_t       transferId,
+                uint16_t       segmentNum,
+                uint16_t       totalSegments,
+                const uint8_t* data,
+                uint8_t        dataLen)
+{
+    if (data == nullptr)              { return false; }
+    if (dataLen > MAX_FRAG_PAYLOAD)   { return false; }
+    if (totalSegments == 0U)          { return false; }
+    if (segmentNum >= totalSegments)  { return false; }
+
+    // Set FLAG_FRAGMENT (preserve any existing flags already set by caller).
+    frame.flags = static_cast<uint8_t>(frame.flags | FLAG_FRAGMENT);
+
+    // Write FragHeader in little-endian byte order (APUS-15).
+    frame.payload[0] = static_cast<uint8_t>(transferId        & 0xFFU);
+    frame.payload[1] = static_cast<uint8_t>(transferId   >> 8U);
+    frame.payload[2] = static_cast<uint8_t>(segmentNum        & 0xFFU);
+    frame.payload[3] = static_cast<uint8_t>(segmentNum   >> 8U);
+    frame.payload[4] = static_cast<uint8_t>(totalSegments     & 0xFFU);
+    frame.payload[5] = static_cast<uint8_t>(totalSegments >> 8U);
+
+    // Append segment data after the sub-header (safe: dataLen <= MAX_FRAG_PAYLOAD).
+    if (dataLen > 0U)
+    {
+        (void)memcpy(&frame.payload[FRAG_HEADER_LEN], data, dataLen);
+    }
+
+    frame.len = static_cast<uint8_t>(FRAG_HEADER_LEN + dataLen);
     return true;
 }
 

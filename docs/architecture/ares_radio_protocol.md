@@ -123,6 +123,31 @@ Constraints:
 - `fragIndex` must be < `fragTotal`
 - Max useful data per fragment: `MAX_FRAG_PAYLOAD` = 194 bytes (`MAX_PAYLOAD_LEN` − `FRAG_HEADER_LEN`)
 
+### Send path (rocket → ground)
+
+`RadioDispatcher::startFragSend()` slices an arbitrary byte buffer into
+`MAX_FRAG_PAYLOAD`-byte chunks, stores them in a static `FragSendSession`
+buffer, and marks the session active.  `poll()` calls `pumpFragSend()` on
+every main-loop iteration, which sends **one fragment per call** while
+respecting the configurable `interFrameMs` rate-limit.
+
+FLAG_ACK_REQ is set only on the **last** segment so the ground confirms receipt
+of the complete transfer with a single ACK, avoiding per-fragment ACK overhead
+on half-duplex links.
+
+| Limit | Value | Notes |
+|-------|-------|-------|
+| Max inline payload | 3 104 bytes | `kMaxFragSegments` × `kFragSegDataSize` (16 × 194) |
+| Max concurrent sends | 1 | New transfer silently abandons any in-progress session |
+| Session-abandon guard | LOG_W emitted | Operator-visible in debug output |
+
+### Receive path (ground → rocket)
+
+`RadioDispatcher::handleFragmentedCommand()` reassembles incoming fragments
+into a single `FragReceiveSession` buffer and passes the assembled payload
+to `enqueueCmd()` once all segments arrive.  A 30-second inactivity timeout
+(`kFragTimeoutMs`) discards stale sessions (APUS-15.4).
+
 ---
 
 ## Retransmission
@@ -146,18 +171,38 @@ uint16_t encode(const Frame& frame, uint8_t* buf, uint16_t bufLen);
 // Decode wire buffer → Frame. Returns true if valid.
 bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame);
 
-// Extract fragmentation header from payload.
+// Encode one outbound fragment into a Frame (APUS-15 send path).
+// Caller must set frame.ver, frame.node, frame.type, frame.seq first.
+// Returns false if data is nullptr, dataLen > MAX_FRAG_PAYLOAD,
+// totalSegments == 0, or segmentNum >= totalSegments.
+bool encodeFrag(Frame&         frame,
+                uint16_t       transferId,
+                uint16_t       segmentNum,
+                uint16_t       totalSegments,
+                const uint8_t* data,
+                uint8_t        dataLen);
+
+// Extract fragmentation header from a received fragment payload.
 bool decodeFrag(const Frame& frame, FragHeader& frag);
 
 // Check for duplicate sequence number.
 bool isDuplicate(uint8_t seq, uint8_t lastSeq);
+
+// ── RadioDispatcher (radio_dispatcher.h) ──────────────────────────────
+// Arm a new outbound fragmented transfer (non-blocking; pump via poll()).
+// dataLen max: kMaxFragSegments * kFragSegDataSize (currently 3 104 bytes).
+bool startFragSend(const uint8_t* data,
+                   uint32_t       dataLen,
+                   uint8_t        destNode,
+                   proto::MsgType msgType,
+                   uint32_t       interFrameMs);
 ```
 
 ---
 
 ## Testing
 
-The protocol has 30 unit tests running on the **native** platform
+The protocol has 41 unit tests running on the **native** platform
 (desktop, no hardware required):
 
 ```bash
@@ -172,6 +217,9 @@ Test categories:
 - Encode edge cases (null buffer, buffer too small, oversized payload,
   reserved flags)
 - Wire format verification (sync bytes, header field positions)
-- Fragmentation (valid, no flag, payload too short, index out of range,
-  total zero)
+- `decodeFrag()`: valid, no flag, payload too short, index out of range, total zero
+- `encodeFrag()`: null data, oversized data, zero totalSegments, out-of-range
+  segmentNum, FLAG_FRAGMENT set, flag preservation, little-endian header,
+  data placement, correct len, encode/decode round-trip, single segment,
+  max-payload segment
 - Duplicate detection (same seq, different seq, wraparound)

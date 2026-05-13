@@ -639,6 +639,33 @@ bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
     return true;
 }
 
+bool MissionScriptEngine::parseStateRateDirectivesLocked(const char* line,
+                                                          StateDef&   st,
+                                                          BlockType&  blockType,
+                                                          bool&       matched)
+{
+    matched = false;
+    if (startsWith(line, "every "))
+    {
+        blockType = BlockType::NONE;
+        matched   = true;
+        return parseEveryLineLocked(line, st);
+    }
+    if (startsWith(line, "log_every "))
+    {
+        blockType = BlockType::NONE;
+        matched   = true;
+        return parseLogEveryLineLocked(line, st);
+    }
+    if (startsWith(line, "priorities "))
+    {
+        blockType = BlockType::NONE;
+        matched   = true;
+        return parsePrioritiesLineLocked(line, st);
+    }
+    return true;
+}
+
 bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
                                                       StateDef&   st,
                                                       BlockType&  blockType,
@@ -651,21 +678,9 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
     if (startsWith(line, "on_timeout ")) { return parseOnTimeoutHeaderLocked(line, st, blockType); }
     if (startsWith(line, "conditions:")) { blockType = BlockType::CONDITIONS; return true; }
 
-    if (startsWith(line, "every "))
-    {
-        blockType = BlockType::NONE;
-        return parseEveryLineLocked(line, st);
-    }
-    if (startsWith(line, "log_every "))
-    {
-        blockType = BlockType::NONE;
-        return parseLogEveryLineLocked(line, st);
-    }
-    if (startsWith(line, "priorities "))
-    {
-        blockType = BlockType::NONE;
-        return parsePrioritiesLineLocked(line, st);
-    }
+    bool rateMatched = false;
+    if (!parseStateRateDirectivesLocked(line, st, blockType, rateMatched)) { return false; }
+    if (rateMatched) { return true; }
 
     bool reportMatched = false;
     if (!parseStateReportDirectivesLocked(line, st, blockType, reportMatched)) { return false; }

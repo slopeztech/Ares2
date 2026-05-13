@@ -305,6 +305,32 @@ bool decode(const uint8_t* buf, uint16_t bufLen, Frame& frame);
 bool decodeFrag(const Frame& frame, FragHeader& frag);
 
 /**
+ * Encode one outbound fragment into a Frame (APUS-15 send path).
+ *
+ * Sets FLAG_FRAGMENT, writes the 6-byte FragHeader in little-endian
+ * order, copies @p dataLen bytes of @p data after the header, and
+ * sets @c frame.len accordingly.  The caller is responsible for setting
+ * @c frame.ver, @c frame.node, @c frame.type, and @c frame.seq before
+ * calling this function.
+ *
+ * @param[out] frame          Destination frame (flags and payload are written).
+ * @param[in]  transferId     Session identifier (unique per bulk transfer).
+ * @param[in]  segmentNum     0-based index of this segment within the transfer.
+ * @param[in]  totalSegments  Total number of segments in this transfer.
+ * @param[in]  data           Pointer to the segment data bytes.
+ * @param[in]  dataLen        Bytes to embed (must be <= MAX_FRAG_PAYLOAD).
+ * @return true on success; false if data is nullptr or dataLen > MAX_FRAG_PAYLOAD.
+ * @pre  segmentNum < totalSegments.
+ * @pre  totalSegments >= 1.
+ */
+bool encodeFrag(Frame&         frame,
+                uint16_t       transferId,
+                uint16_t       segmentNum,
+                uint16_t       totalSegments,
+                const uint8_t* data,
+                uint8_t        dataLen);
+
+/**
  * Check if SEQ is a duplicate (same as lastSeq).
  * @return true if @p seq equals @p lastSeq.
  */

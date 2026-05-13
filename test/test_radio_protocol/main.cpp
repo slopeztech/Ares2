@@ -69,6 +69,18 @@ extern void test_decode_frag_rejects_short_payload();
 extern void test_decode_frag_rejects_zero_total_segments();
 extern void test_decode_frag_rejects_segment_out_of_bounds();
 extern void test_decode_frag_valid_header();
+extern void test_encode_frag_rejects_null_data();
+extern void test_encode_frag_rejects_oversized_data();
+extern void test_encode_frag_rejects_zero_total_segments();
+extern void test_encode_frag_rejects_segment_out_of_range();
+extern void test_encode_frag_sets_flag_fragment();
+extern void test_encode_frag_preserves_existing_flags();
+extern void test_encode_frag_header_little_endian();
+extern void test_encode_frag_data_placed_after_header();
+extern void test_encode_frag_sets_correct_len();
+extern void test_encode_frag_decode_frag_roundtrip();
+extern void test_encode_frag_single_segment();
+extern void test_encode_frag_max_payload_segment();
 
 // ── Runner ──────────────────────────────────────────────────
 
@@ -123,12 +135,26 @@ int main()
     RUN_TEST(test_is_duplicate_both_zero);
     RUN_TEST(test_is_duplicate_seq_max);
 
-    // decodeFrag (APUS-15)
+    // decodeFrag (APUS-15 receive path)
     RUN_TEST(test_decode_frag_rejects_no_flag);
     RUN_TEST(test_decode_frag_rejects_short_payload);
     RUN_TEST(test_decode_frag_rejects_zero_total_segments);
     RUN_TEST(test_decode_frag_rejects_segment_out_of_bounds);
     RUN_TEST(test_decode_frag_valid_header);
+
+    // encodeFrag (APUS-15 send path)
+    RUN_TEST(test_encode_frag_rejects_null_data);
+    RUN_TEST(test_encode_frag_rejects_oversized_data);
+    RUN_TEST(test_encode_frag_rejects_zero_total_segments);
+    RUN_TEST(test_encode_frag_rejects_segment_out_of_range);
+    RUN_TEST(test_encode_frag_sets_flag_fragment);
+    RUN_TEST(test_encode_frag_preserves_existing_flags);
+    RUN_TEST(test_encode_frag_header_little_endian);
+    RUN_TEST(test_encode_frag_data_placed_after_header);
+    RUN_TEST(test_encode_frag_sets_correct_len);
+    RUN_TEST(test_encode_frag_decode_frag_roundtrip);
+    RUN_TEST(test_encode_frag_single_segment);
+    RUN_TEST(test_encode_frag_max_payload_segment);
 
     return UNITY_END();
 }

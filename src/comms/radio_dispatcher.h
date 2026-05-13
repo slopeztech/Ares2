@@ -352,6 +352,52 @@ private:
     };
     FragReceiveSession fragSession_ = {};
 
+    // ── ST[13] fragmented transfer send session (APUS-15) ────────────────────
+
+    /**
+     * @brief Outbound fragmented-transfer session state (APUS-15 send path).
+     *
+     * Holds a copy of the full payload sliced into @c totalSegments chunks.
+     * @c pumpFragSend() drips one fragment per call while the session is active,
+     * respecting @c interFrameMs to avoid saturating the radio TX FIFO.
+     *
+     * Only one concurrent outbound session is supported.  If a new transfer is
+     * started while one is active the previous session is abandoned and a
+     * warning is logged.
+     *
+     * Memory: kMaxFragSegments × kFragSegDataSize = 3 104 bytes (static, PO10-3).
+     */
+    struct FragSendSession
+    {
+        uint16_t       transferId;                                 ///< Session identifier (rolling counter).
+        uint16_t       totalSegments;                              ///< Total fragments to transmit.
+        uint16_t       nextSegment;                                ///< Index of next fragment to send.
+        uint32_t       lastSentMs;                                 ///< Timestamp of the most recent fragment sent.
+        uint32_t       interFrameMs;                               ///< Minimum gap between consecutive fragments.
+        bool           active;                                     ///< True while transmission is in progress.
+        uint8_t        destNode;                                   ///< Destination node ID.
+        proto::MsgType msgType;                                    ///< Frame TYPE for outgoing fragments.
+        uint8_t        data[kMaxFragSegments * kFragSegDataSize];   ///< Inline payload buffer (3 104 bytes).
+        uint32_t       dataLen;                                    ///< Total bytes loaded into @c data.
+    };
+    FragSendSession fragSendSession_ = {};
+
+    /// Rolling transfer-ID counter — incremented for every new outbound session.
+    uint16_t nextTransferId_ = 1U;
+
+    /**
+     * @brief Pump the active outbound fragment session — call from poll().
+     *
+     * Sends at most one fragment per call, respecting @c fragSendSession_.interFrameMs.
+     * FLAG_ACK_REQ is set only on the final segment so that the ground station
+     * can confirm receipt of the complete transfer without per-fragment ACK overhead.
+     * The session is cleared automatically once the last segment is sent.
+     *
+     * @param[in] nowMs  Current millis() timestamp.
+     * @pre  No external lock required — must be called from the same task as poll().
+     */
+    void pumpFragSend(uint32_t nowMs);
+
 public:
     /**
      * @brief Encode and transmit a frame, registering it for retransmission
@@ -366,6 +412,35 @@ public:
      * @return true if the frame was successfully encoded and sent.
      */
     bool sendReliable(const proto::Frame& frame, uint32_t nowMs);
+
+    /**
+     * @brief Start an outbound fragmented bulk transfer (APUS-15 send path).
+     *
+     * Slices @p data into @c proto::MAX_FRAG_PAYLOAD-byte chunks, stores them
+     * in the internal @c FragSendSession buffer, and sets the session active.
+     * Fragments are drip-fed by @c poll() → @c pumpFragSend() — one per
+     * main-loop iteration — so this function is non-blocking.
+     *
+     * If a transfer is already in progress it is abandoned (with a warning)
+     * and the new one takes over.
+     *
+     * @param[in] data          Pointer to the bytes to send.  Must not be nullptr.
+     * @param[in] dataLen       Number of bytes to send.
+     *                          Maximum: @c kMaxFragSegments × @c kFragSegDataSize
+     *                          (currently 3 104 bytes).
+     * @param[in] destNode      Destination node (e.g. @c proto::NODE_GROUND).
+     * @param[in] msgType       Frame TYPE for all outgoing fragments
+     *                          (typically @c proto::MsgType::TELEMETRY).
+     * @param[in] interFrameMs  Minimum milliseconds between consecutive fragment
+     *                          transmissions.  Pass 0 to send as fast as possible.
+     * @return true if the session was armed; false if @p data is nullptr or
+     *         @p dataLen exceeds the reassembly-buffer capacity.
+     */
+    bool startFragSend(const uint8_t* data,
+                       uint32_t       dataLen,
+                       uint8_t        destNode,
+                       proto::MsgType msgType,
+                       uint32_t       interFrameMs);
 
 }; // class RadioDispatcher
 
