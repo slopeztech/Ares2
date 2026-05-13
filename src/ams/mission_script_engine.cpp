@@ -19,6 +19,7 @@
 #include "debug/ares_log.h"
 
 #include <Arduino.h>
+#include <algorithm>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
@@ -185,17 +186,27 @@ void MissionScriptEngine::deactivateLocked()
     parseCurrentTask_     = 0xFFU;
     parseCurrentTaskRule_ = 0xFFU;
 
-    // Reset per-alias sensor read caches.
-    memset(baroCachedReadings_, 0, sizeof(baroCachedReadings_));
+    resetSensorCachesLocked();
+    resetTelemetryStateLocked();
+    resetMonitorSlotsLocked();
+
+    clearResumePointLocked();
+}
+
+void MissionScriptEngine::resetSensorCachesLocked()
+{
+    std::fill(std::begin(baroCachedReadings_), std::end(baroCachedReadings_), BaroReading{});
     memset(baroCacheTsMs_,      0, sizeof(baroCacheTsMs_));
     memset(baroCacheValid_,     0, sizeof(baroCacheValid_));
-    memset(gpsCachedReadings_,  0, sizeof(gpsCachedReadings_));
+    std::fill(std::begin(gpsCachedReadings_),  std::end(gpsCachedReadings_),  GpsReading{});
     memset(gpsCacheTsMs_,       0, sizeof(gpsCacheTsMs_));
     memset(gpsCacheValid_,      0, sizeof(gpsCacheValid_));
     imuCacheValid_ = false;
     imuCacheTsMs_  = 0U;
+}
 
-    // Reset telemetry-derived state so a fresh activation starts clean.
+void MissionScriptEngine::resetTelemetryStateLocked()
+{
     hasPrevAlt_     = false;
     prevAltM_       = 0.0f;
     prevAltMs_      = 0U;
@@ -203,7 +214,10 @@ void MissionScriptEngine::deactivateLocked()
     deltaBaseAlt_   = 0.0f;
     deltaBasePress_ = 0.0f;
     hkTxCount_      = 0U;
+}
 
+void MissionScriptEngine::resetMonitorSlotsLocked()
+{
     // Reset ST[12] monitoring state (APUS-12) — counters and FSM states only;
     // definitions (limits) are preserved across deactivations.
     for (uint8_t i = 0U; i < kMaxMonitorSlots; ++i)
@@ -214,8 +228,6 @@ void MissionScriptEngine::deactivateLocked()
             monitorSlots_[i].state = ares::proto::MonitoringState::MON_ENABLED;
         }
     }
-
-    clearResumePointLocked();
 }
 
 void MissionScriptEngine::deactivate()
@@ -426,22 +438,52 @@ uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
     // more than kRadioMaxSleepMs even in pure reporting states.
     uint32_t next = nowMs + kRadioMaxSleepMs;
 
+    next = nextDueFromHkSlots(s, next);
+    next = nextDueFromLogSlots(s, next);
+    next = nextDueFromTasks(next);
+
+    if (s.hasOnTimeout)
+    {
+        const uint32_t due = stateEnterMs_ + s.onTimeoutMs;
+        if (due < next) { next = due; }
+    }
+    if (s.hasFallback)
+    {
+        const uint32_t due = stateEnterMs_ + s.fallbackAfterMs;
+        if (due < next) { next = due; }
+    }
+
+    return (next > nowMs) ? next : (nowMs + 1U);
+}
+
+uint32_t MissionScriptEngine::nextDueFromHkSlots(const StateDef& s, uint32_t cur) const
+{
     for (uint8_t i = 0U; i < s.hkSlotCount; ++i)
     {
         if (s.hkSlots[i].everyMs > 0U)
         {
             const uint32_t due = lastHkSlotMs_[i] + s.hkSlots[i].everyMs;
-            if (due < next) { next = due; }
+            if (due < cur) { cur = due; }
         }
     }
+    return cur;
+}
+
+uint32_t MissionScriptEngine::nextDueFromLogSlots(const StateDef& s, uint32_t cur) const
+{
     for (uint8_t i = 0U; i < s.logSlotCount; ++i)
     {
         if (s.logSlots[i].everyMs > 0U)
         {
             const uint32_t due = lastLogSlotMs_[i] + s.logSlots[i].everyMs;
-            if (due < next) { next = due; }
+            if (due < cur) { cur = due; }
         }
     }
+    return cur;
+}
+
+uint32_t MissionScriptEngine::nextDueFromTasks(uint32_t cur) const
+{
     for (uint8_t t = 0U; t < program_.taskCount; ++t)
     {
         const TaskDef& td = program_.tasks[t];
@@ -458,21 +500,10 @@ uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
         if (active)
         {
             const uint32_t due = taskLastTickMs_[t] + td.everyMs;
-            if (due < next) { next = due; }
+            if (due < cur) { cur = due; }
         }
     }
-    if (s.hasOnTimeout)
-    {
-        const uint32_t due = stateEnterMs_ + s.onTimeoutMs;
-        if (due < next) { next = due; }
-    }
-    if (s.hasFallback)
-    {
-        const uint32_t due = stateEnterMs_ + s.fallbackAfterMs;
-        if (due < next) { next = due; }
-    }
-
-    return (next > nowMs) ? next : (nowMs + 1U);
+    return cur;
 }
 
 void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-size)

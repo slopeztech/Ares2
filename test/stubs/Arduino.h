@@ -15,8 +15,16 @@
 #include <cstdint>
 #include <cstdio>
 
-/// Returns 0.  The logger uses it only for display, not for logic.
+/// Returns the current simulation time so sensor-cache age checks inside the
+/// AMS engine work correctly in SITL builds.  In other native test builds (no
+/// sim clock available) returns 0 — the logger is the only caller there and
+/// uses the value only for display, not for logic.
+#ifdef ARES_SITL
+#include "sim_clock.h"
+inline uint32_t millis() { return ares::sim::clock::nowMs(); }
+#else
 inline uint32_t millis() { return 0U; }
+#endif
 
 /// Minimal Serial stub: routes output to stdout so log lines are visible
 /// during a test run.

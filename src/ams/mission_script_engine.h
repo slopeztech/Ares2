@@ -1030,6 +1030,20 @@ private:
      */
     void deactivateLocked();
 
+    /** Reset per-alias baro/GPS/IMU sensor read caches. @pre mutex_ held. */
+    void resetSensorCachesLocked();
+    /** Reset telemetry-derived state (altitude delta, HK counter, etc.). @pre mutex_ held. */
+    void resetTelemetryStateLocked();
+    /** Reset ST[12] monitoring counters and FSM states. @pre mutex_ held. */
+    void resetMonitorSlotsLocked();
+
+    /** Compute earliest due time across active HK slots; returns updated @p cur. */
+    uint32_t nextDueFromHkSlots(const StateDef& s, uint32_t cur) const;
+    /** Compute earliest due time across active LOG slots; returns updated @p cur. */
+    uint32_t nextDueFromLogSlots(const StateDef& s, uint32_t cur) const;
+    /** Compute earliest due time across background tasks; returns updated @p cur. */
+    uint32_t nextDueFromTasks(uint32_t cur) const;
+
     StorageInterface&    storage_;
     const GpsEntry*      gpsDrivers_;
     uint8_t              gpsCount_;

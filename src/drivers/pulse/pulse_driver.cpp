@@ -166,7 +166,7 @@ bool PulseDriver::isFired(uint8_t channel) const
 void PulseDriver::timerCallback(TimerHandle_t xTimer)
 {
     // pvTimerGetTimerID returns the ChannelData pointer set at timer creation.
-    ChannelData* ch = static_cast<ChannelData*>(pvTimerGetTimerID(xTimer));
+    const ChannelData* ch = static_cast<const ChannelData*>(pvTimerGetTimerID(xTimer));
     if (ch != nullptr)
     {
         // Drive GPIO LOW to end the fire pulse.
