@@ -203,25 +203,36 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
     GpsInterface* gps = gpsDrivers_[ae.driverIdx].iface;
     if (gps == nullptr) { return false; }
 
-    const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
-    for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+    const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
+    const uint32_t nowMs    = static_cast<uint32_t>(millis());
+
+    if (!gpsCacheValid_[aliasIdx] || (nowMs - gpsCacheTsMs_[aliasIdx]) >= GPS_CACHE_MAX_AGE_MS)
     {
+        const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
         GpsReading r = {};
-        if (gps->read(r) == GpsStatus::OK)
+        bool ok = false;
+        for (uint8_t attempt = 0U; attempt < maxAttempts && !ok; attempt++)
         {
-            switch (field)
-            {
-            case SensorField::LAT:   outVal = r.latitude;                        return true;
-            case SensorField::LON:   outVal = r.longitude;                       return true;
-            case SensorField::ALT:   outVal = r.altitudeM;                       return true;
-            case SensorField::SPEED: outVal = r.speedKmh;                        return true;
-            case SensorField::SATS:  outVal = static_cast<float>(r.satellites);  return true;
-            case SensorField::HDOP:  outVal = r.hdop;                            return true;
-            default:                                                              return false;
-            }
+            ok = (gps->read(r) == GpsStatus::OK);
         }
+        gpsCacheTsMs_[aliasIdx]  = static_cast<uint32_t>(millis());
+        gpsCacheValid_[aliasIdx] = ok;
+        if (ok) { gpsCachedReadings_[aliasIdx] = r; }
+        else    { return false; }
     }
-    return false;
+
+    if (!gpsCacheValid_[aliasIdx]) { return false; }
+    const GpsReading& r = gpsCachedReadings_[aliasIdx];
+    switch (field)
+    {
+    case SensorField::LAT:   outVal = r.latitude;                        return true;
+    case SensorField::LON:   outVal = r.longitude;                       return true;
+    case SensorField::ALT:   outVal = r.altitudeM;                       return true;
+    case SensorField::SPEED: outVal = r.speedKmh;                        return true;
+    case SensorField::SATS:  outVal = static_cast<float>(r.satellites);  return true;
+    case SensorField::HDOP:  outVal = r.hdop;                            return true;
+    default:                                                              return false;
+    }
 }
 
 bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
@@ -232,22 +243,33 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
     BarometerInterface* baro = baroDrivers_[ae.driverIdx].iface;
     if (baro == nullptr) { return false; }
 
-    const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
-    for (uint8_t attempt = 0U; attempt < maxAttempts; attempt++)
+    const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
+    const uint32_t nowMs    = static_cast<uint32_t>(millis());
+
+    if (!baroCacheValid_[aliasIdx] || (nowMs - baroCacheTsMs_[aliasIdx]) >= BARO_CACHE_MAX_AGE_MS)
     {
+        const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
         BaroReading r = {};
-        if (baro->read(r) == BaroStatus::OK)
+        bool ok = false;
+        for (uint8_t attempt = 0U; attempt < maxAttempts && !ok; attempt++)
         {
-            switch (field)
-            {
-            case SensorField::ALT:      outVal = r.altitudeM;    return true;
-            case SensorField::TEMP:     outVal = r.temperatureC; return true;
-            case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
-            default:                                              return false;
-            }
+            ok = (baro->read(r) == BaroStatus::OK);
         }
+        baroCacheTsMs_[aliasIdx]  = static_cast<uint32_t>(millis());
+        baroCacheValid_[aliasIdx] = ok;
+        if (ok) { baroCachedReadings_[aliasIdx] = r; }
+        else    { return false; }
     }
-    return false;
+
+    if (!baroCacheValid_[aliasIdx]) { return false; }
+    const BaroReading& r = baroCachedReadings_[aliasIdx];
+    switch (field)
+    {
+    case SensorField::ALT:      outVal = r.altitudeM;    return true;
+    case SensorField::TEMP:     outVal = r.temperatureC; return true;
+    case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
+    default:                                              return false;
+    }
 }
 
 bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,

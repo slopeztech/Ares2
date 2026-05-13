@@ -203,6 +203,9 @@ void loop()
         }
     }
 
-    // Yield via RTOS delay (avoid Arduino delay() in RTOS task context).
-    vTaskDelay(pdMS_TO_TICKS(ares::SENSOR_RATE_MS));
+    // Adaptive sleep: wake up exactly when the next engine event is due.
+    // Falls back to SENSOR_RATE_MS for states with active conditions.
+    const uint32_t wakeupMs = missionEngine.nextWakeupMs(now);
+    const uint32_t sleepMs  = (wakeupMs > now) ? (wakeupMs - now) : 1U;
+    vTaskDelay(pdMS_TO_TICKS(sleepMs));
 }

@@ -1362,6 +1362,15 @@ Radio UART  →  RadioDispatcher::poll()          (called every loop() tick)
 `RadioDispatcher::poll()` is non-blocking (drains UART FIFO only) and is
 called from `loop()` **before** `missionEngine.tick()`.
 
+**TC command latency** — the engine uses adaptive tick scheduling
+(`nextWakeupMs()`).  States that have at least one `transition` or
+`conditions:` line tick at the full `SENSOR_RATE_MS` rate.  Pure
+HK/LOG-reporting states (no transitions, no conditions) may defer a tick by
+up to `kRadioMaxSleepMs` (50 ms).  If a state must respond to an `ABORT` or
+`LAUNCH` TC within less than 50 ms, add at least one transition condition to
+that state — even a `fallback transition` suffices to keep the engine on the
+fast path (AMS-5.9).
+
 ### 17.2 Command-to-engine mapping
 
 | APUS CommandId        | Engine call / action                                                  | Precondition check               |

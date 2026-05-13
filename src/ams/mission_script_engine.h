@@ -171,6 +171,25 @@ public:
     void tick(uint32_t nowMs);
 
     /**
+     * Compute the earliest timestamp at which the next engine event is due.
+     *
+     * For states with active transition or guard conditions, returns
+     * @p nowMs + SENSOR_RATE_MS so the main loop keeps ticking at full rate.
+     * For states with no conditions (e.g. pure HK-reporting or terminal states),
+     * returns the time of the next scheduled HK/LOG slot, background task, or
+     * timeout — capped to @p nowMs + kRadioMaxSleepMs for TC responsiveness.
+     *
+     * Intended use: the main loop calls this immediately after @c tick() to
+     * determine how long to sleep before the next @c tick() call.
+     *
+     * @note  Lock-free by design — this is a scheduling hint, not a correctness
+     *        path.  Reads of uint8_t/uint32_t members are atomic on Xtensa LX7.
+     * @param[in] nowMs  Current millis() timestamp.
+     * @return Absolute millis() timestamp for the next required wakeup.
+     */
+    uint32_t nextWakeupMs(uint32_t nowMs) const;
+
+    /**
      * Enable or disable runtime progression (state transitions and periodic actions).
      * @param[in] enabled  true to enable; false to pause without deactivating.
      */
@@ -1068,18 +1087,39 @@ private:
     bool logSlotHeaderWritten_[ares::AMS_MAX_HK_SLOTS] = {}; ///< Per-slot CSV header written flags (AMS-4.3.1).
     uint32_t lastCheckpointMs_ = 0;
 
-    // ── IMU read cache ────────────────────────────────────────────────────────
-    // When a LOG.report or HK.report contains multiple IMU fields, each field
-    // would otherwise trigger a separate I2C burst.  These mutable members
-    // cache the last successful burst so all fields in one report share a
-    // single read, reducing I2C traffic and eliminating the partial-nan pattern
-    // caused by each field independently succeeding or failing.
-    mutable ImuReading imuCachedReading_ = {};  ///< Last successful IMU burst.
-    mutable uint32_t   imuCacheTsMs_     = 0;   ///< millis() when last attempt was made.
+    // ── Per-alias sensor read caches ─────────────────────────────────────────
+    // When a HK/LOG slot contains multiple fields from the same peripheral,
+    // each field would otherwise trigger a separate I2C/UART transaction.
+    // The caches below amortise that cost: the first read in a tick stores
+    // the full sensor reading; subsequent field requests within the same tick
+    // return the cached value with zero hardware I/O.
+    //
+    // IMU: original per-engine cache (unchanged).
+    mutable ImuReading imuCachedReading_ = {};   ///< Last successful IMU burst.
+    mutable uint32_t   imuCacheTsMs_     = 0U;   ///< millis() when last attempt was made.
     mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
-    /// Max age (ms) before a new IMU read attempt is made.  Updated on both success
-    /// and failure so all fields in one report share a single attempt (no 8x timeout).
-    static constexpr uint32_t IMU_CACHE_MAX_AGE_MS = 5U;
+    static constexpr uint32_t IMU_CACHE_MAX_AGE_MS  = 5U; ///< Max cache age — one tick period.
+
+    // BARO: per-alias cache (one entry per 'include' alias, indexed by alias slot).
+    mutable BaroReading baroCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
+    mutable uint32_t    baroCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
+    mutable bool        baroCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
+    static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = 5U;
+
+    // GPS: per-alias cache.  GPS sentences update at 1–10 Hz; a 5 ms TTL
+    // amortises redundant UART reads for multi-field HK slots.  The TTL is
+    // shorter than SENSOR_RATE_MS so the cache expires between ticks; at
+    // normal tick rate, transition conditions therefore read fresh data on
+    // their first field access each tick.
+    mutable GpsReading  gpsCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
+    mutable uint32_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
+    mutable bool        gpsCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
+    static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = 5U;
+
+    // ── Adaptive tick scheduling ──────────────────────────────────────────────
+    /// Maximum time the main loop may sleep even when no sensor condition is
+    /// active.  Keeps TC command latency (LAUNCH/ABORT) within 50 ms.
+    static constexpr uint32_t kRadioMaxSleepMs = 50U;
 
     // ── Vertical velocity tracking (APUS-6) ───────────────────────────────────
     // Computed from consecutive baro altitude samples in every HK frame.

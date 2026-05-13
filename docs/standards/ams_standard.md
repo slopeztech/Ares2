@@ -799,6 +799,35 @@ If a `set` or `CALIBRATE` action fails to produce a valid reading:
 
 `TC.command` token is consumed once when a matching transition fires.
 
+### AMS-5.9 Adaptive Tick Scheduling
+
+The main loop calls `MissionScriptEngine::nextWakeupMs(nowMs)` immediately
+after each `tick()` to determine the next required wakeup timestamp, then
+sleeps for exactly that duration instead of a fixed period.
+
+Scheduling rules (evaluated in priority order):
+
+| Condition | Sleep duration |
+|---|---|
+| Engine not running or status ≠ `RUNNING` | `SENSOR_RATE_MS` |
+| `pendingOnEnterEvent_` set | `SENSOR_RATE_MS` |
+| Active state has transitions or guard conditions | `SENSOR_RATE_MS` |
+| Active state has no conditions | min(next HK/LOG slot, next task, `on_timeout`, `fallback`) capped at `kRadioMaxSleepMs` |
+
+`kRadioMaxSleepMs = 50 ms` — the absolute upper bound on sleep duration.
+This guarantees that a TC command (LAUNCH, ABORT) injected over radio is
+processed within 50 ms even in states that have no sensor conditions.
+
+**Normative implications for script authors:**
+- States with at least one `transition` or `conditions:` line always tick at
+  `SENSOR_RATE_MS` — latency for TC commands in those states is ≤ `SENSOR_RATE_MS`.
+- Pure HK/LOG reporting states (no transitions, no conditions) may defer a
+  tick by up to `kRadioMaxSleepMs`.  Scripts that require sub-50 ms ABORT
+  response must add at least one transition condition to the relevant state.
+- `nextWakeupMs()` is a scheduling hint — it does not affect correctness.
+  The engine evaluates all due actions on every `tick()` regardless of the
+  sleep duration actually used.
+
 ### AMS-5.4 HK Behavior
 
 `HK.report` builds a binary telemetry frame and sends through radio protocol
