@@ -275,7 +275,6 @@ bool MissionScriptEngine::injectTcCommand(const char* commandText)
 
 bool MissionScriptEngine::arm()
 {
-    bool armed = false;
     {
         ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
         if (!guard.acquired())
@@ -294,14 +293,10 @@ bool MissionScriptEngine::arm()
         LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
 
         (void)saveResumePointLocked(millis(), true);
-        armed = true;
     } // Mutex released; checkpoint staged.
 
-    if (armed)
-    {
-        flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
-    }
-    return armed;
+    flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
+    return true;
 }
 
 void MissionScriptEngine::setExecutionEnabled(bool enabled)
