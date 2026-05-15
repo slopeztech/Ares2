@@ -434,13 +434,8 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
         return;
     }
 
-    const StorageStatus stAppend = storage_.appendFile(
-        logPath_, reinterpret_cast<const uint8_t*>(line), len);
-    if (stAppend != StorageStatus::OK)
-    {
-        LOG_W(TAG, "append mission log failed: %u",
-              static_cast<uint32_t>(stAppend));
-    }
+    // Stage the append for deferred I/O outside the mutex (AMS-8.3).
+    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), len);
 }
 
 // ── appendLogReportSlotLocked ────────────────────────────────────────────────
@@ -487,8 +482,9 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs, // NOLI
             if (nl > 0)
             {
                 const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
-                storage_.appendFile(logPath_,
-                                    reinterpret_cast<const uint8_t*>(hLine), hTot);
+                // Stage header append for deferred I/O outside the mutex (AMS-8.3).
+                queueAppendLocked(logPath_,
+                                  reinterpret_cast<const uint8_t*>(hLine), hTot);
                 logSlotHeaderWritten_[slotIdx] = true;
             }
         }
@@ -516,14 +512,8 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs, // NOLI
     if (tail <= 0) { return; }
     const uint32_t totalLen = pos + static_cast<uint32_t>(tail);
 
-    const StorageStatus stAppend = storage_.appendFile(
-        logPath_, reinterpret_cast<const uint8_t*>(line), totalLen);
-    if (stAppend != StorageStatus::OK)
-    {
-        LOG_W(TAG, "append log slot %u failed: %u",
-              static_cast<uint32_t>(slotIdx),
-              static_cast<uint32_t>(stAppend));
-    }
+    // Stage the data row for deferred I/O outside the mutex (AMS-8.3).
+    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), totalLen);
 }
 
 bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
@@ -556,7 +546,8 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
     }
 
     const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
-    storage_.appendFile(logPath_, reinterpret_cast<const uint8_t*>(line), hTot);
+    // Stage header append for deferred I/O outside the mutex (AMS-8.3).
+    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), hTot);
     logHeaderWritten_ = true;
     return true;
 }

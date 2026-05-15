@@ -49,6 +49,7 @@ extern void test_notify_pulse_b_sets_status_bit();
 // ── test_ams_script_variants.cpp ──────────────────────────────────────────────
 
 extern void test_parser_error_on_empty_script();
+extern void test_parser_error_on_line_too_long();
 extern void test_fallback_transition_fires_on_timeout();
 extern void test_guard_violation_sets_error_status();
 extern void test_on_error_recovery_transition_replaces_halt();
@@ -118,6 +119,7 @@ int main()
 
     // Script variants
     RUN_TEST(test_parser_error_on_empty_script);
+    RUN_TEST(test_parser_error_on_line_too_long);
     RUN_TEST(test_fallback_transition_fires_on_timeout);
     RUN_TEST(test_guard_violation_sets_error_status);
     RUN_TEST(test_on_error_recovery_transition_replaces_halt);

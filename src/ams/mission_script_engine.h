@@ -456,9 +456,18 @@ private:
         char          alias[16]      = {};                    ///< Sensor peripheral alias.
         SensorField   field          = SensorField::ALT;      ///< Sensor field to read.
         SetActionKind kind           = SetActionKind::SIMPLE; ///< Computation kind.
-        uint8_t       calibSamples   = 1U;    ///< Samples to average (CALIBRATE form, 1-10).
+        uint8_t       calibSamples   = 1U;    ///< Samples to average (CALIBRATE form, 1–AMS_CALIBRATE_MAX_SAMPLES).
         float         deltaBaseline  = 0.0f;  ///< Previous sensor value (DELTA form).
         bool          deltaValid     = false; ///< Whether deltaBaseline has been set.
+
+        // ── Async CALIBRATE progress (AMS-4.8.2) ─────────────────────────────
+        // Reset by enterStateLocked() on every state entry; advanced one sample
+        // per tick by stepPendingCalibrationsLocked() until all calibSamples are
+        // collected.  Non-CALIBRATE set actions leave these fields unused.
+        float   calibSum        = 0.0f;   ///< Accumulated sum of valid samples.
+        uint8_t calibValidN     = 0U;     ///< Valid (non-failed) samples collected.
+        uint8_t calibCollected  = 0U;     ///< Total sample attempts so far.
+        bool    calibInProgress = false;  ///< True while async calibration is running.
     };
 
     /** Severity level for AMS on_enter and task rule events (AMS-4.7). */
@@ -912,6 +921,7 @@ private:
     void executeSetActionsLocked(StateDef& st, uint32_t nowMs);
     void executePulseActionsLocked(const StateDef& st);  ///< AMS-4.17: fire all PULSE.fire actions for state entry.
     void executeOneSetActionLocked(SetAction& act, uint32_t nowMs); ///< Execute a single set action (shared by state + task paths).
+    void stepPendingCalibrationsLocked(StateDef& st, uint32_t nowMs); ///< AMS-4.8.2: advance each in-progress CALIBRATE by one sample.
     void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint32_t nowMs);
     void executeDeltaSetActionLocked(SetAction& act, float& result, bool& gotReading);
     void executeMinMaxSetActionLocked(SetAction& act, const VarEntry* v, float& result, bool& gotReading);
@@ -1009,6 +1019,12 @@ private:
 
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
+    /// Stage a log-file append for deferred execution outside the mutex (AMS-8.3).
+    void queueAppendLocked(const char* path, const uint8_t* data, uint32_t len);
+    /// Flush all staged file I/O that was built under the mutex. Must be called
+    /// after the mutex is released. Idempotent if nothing is pending.
+    void flushPendingIoUnlocked();
+
     bool saveResumePointLocked(uint32_t nowMs, bool force);
     bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
     void appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
@@ -1100,6 +1116,36 @@ private:
     bool logHeaderWritten_ = false;
     bool logSlotHeaderWritten_[ares::AMS_MAX_HK_SLOTS] = {}; ///< Per-slot CSV header written flags (AMS-4.3.1).
     uint32_t lastCheckpointMs_ = 0;
+
+    // ── Deferred I/O staging (AMS-8.3) ───────────────────────────────────────
+    // Checkpoint writes and CSV log appends are assembled inside the mutex but
+    // executed by flushPendingIoUnlocked() after the lock is released.  This
+    // keeps blocking LittleFS latency out of the critical section so that
+    // injectTcCommand("ABORT") and other API callers cannot timeout on I/O.
+    //
+    // Worst-case pending appends per tick:
+    //   1 header + 1 data row per LOG slot = 2 × AMS_MAX_HK_SLOTS = 8,
+    //   plus 1 legacy header + 1 legacy data row = 10 entries total.
+    static constexpr uint8_t kMaxPendingAppends =
+        static_cast<uint8_t>(ares::AMS_MAX_HK_SLOTS * 2U + 2U);
+
+    struct PendingCheckpoint
+    {
+        char    buf[512];  ///< Serialised v3 checkpoint record.
+        int32_t len;       ///< Valid bytes in buf[]; 0 = nothing staged.
+        bool    pending;   ///< True iff buf[] holds an unflushed record.
+    };
+
+    struct PendingAppend
+    {
+        char     path[ares::STORAGE_MAX_PATH]; ///< Target LittleFS path.
+        uint8_t  data[256];                    ///< Serialised row bytes.
+        uint32_t len;                          ///< Valid bytes in data[].
+    };
+
+    PendingCheckpoint pendingCheckpoint_              = {};
+    PendingAppend     pendingAppends_[kMaxPendingAppends] = {};
+    uint8_t           pendingAppendCount_             = 0U;
 
     // ── Per-alias sensor read caches ─────────────────────────────────────────
     // When a HK/LOG slot contains multiple fields from the same peripheral,

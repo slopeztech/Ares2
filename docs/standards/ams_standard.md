@@ -537,7 +537,7 @@ on_enter:
   set ground_alt = BARO.alt
 ```
 
-Or using the calibration form (N-sample average, 1 ≤ N ≤ 10):
+Or using the calibration form (N-sample average, 1 ≤ N ≤ `AMS_CALIBRATE_MAX_SAMPLES`):
 
 ```ams
 on_enter:
@@ -547,13 +547,24 @@ on_enter:
 Rules:
 - The variable must be declared before its first use.
 - `ALIAS.field` must reference a declared alias and a valid field for that alias.
-- `set` actions execute synchronously at state entry, before the `on_enter` EVENT is dispatched.
+- Non-CALIBRATE `set` actions execute synchronously at state entry, before the `on_enter` EVENT is dispatched.
 - Up to `AMS_MAX_SET_ACTIONS` (4) set actions per `on_enter` block.
-- For `CALIBRATE(ALIAS.field, N)`: the engine reads the sensor N times and stores
-  the arithmetic mean of valid readings.  Sensors with firmware-level caching may
-  return the same sample on rapid successive reads.
+- **`CALIBRATE` is asynchronous (AMS-4.8.2 async mode):**  On state entry the
+  engine starts the accumulator and collects the first sample.  Each subsequent
+  `tick()` call collects one additional sample via `stepPendingCalibrationsLocked`.
+  After `N` tick-cycles the arithmetic mean of valid readings is written to the
+  variable.  The typical completion time is `N × SENSOR_RATE_MS` (e.g. 10 × 50 ms
+  = 500 ms for N = 10).  The engine continues evaluating transitions and guard
+  conditions during calibration; the calibrated variable remains unchanged (with
+  its previous value, or invalid) until all samples are gathered.  This design
+  bounds the per-tick mutex-hold time to a single sensor read (~25 ms) regardless
+  of N, satisfying AMS-8.3.
 - If all reads fail (sensor error / NaN): the variable is left unchanged, an
   `EVENT.warning` is queued, and execution continues (NaN guard — AMS-5.7).
+- `enterStateLocked()` resets the calibration accumulator on every state entry
+  (including re-entries), so CALIBRATE always restarts from scratch.
+- On state transitions the previous state's in-progress calibration is abandoned;
+  the new state's set actions start their own accumulation.
 
 ### AMS-4.8.3 Variable NaN Guard
 
@@ -947,7 +958,7 @@ Implemented endpoints:
 |---|---|
 | AMS-8.1 | Parser/runtime do not allocate from heap. |
 | AMS-8.2 | Parser/runtime loops are bounded by compile-time limits. |
-| AMS-8.3 | Runtime control APIs are mutex-protected with timeout. |
+| AMS-8.3 | Runtime control APIs are mutex-protected with timeout. File I/O (LittleFS checkpoint writes, CSV log appends) is staged inside the critical section and flushed via `flushPendingIoUnlocked()` after lock release, keeping blocking storage latency outside the mutex. `CALIBRATE` set actions are asynchronous (one sensor read per tick, via `stepPendingCalibrationsLocked`), so the per-tick mutex-hold time is bounded by a single sensor read (~25 ms). The `AMS_MUTEX_TIMEOUT_MS` value must exceed the worst-case non-I/O hold time (sensor reads only; CALIBRATE loop removed). |
 | AMS-8.4 | Parse errors or invalid transition targets force ERROR state. |
 | AMS-8.5 | Script/log buffers are bounded by configuration constants. |
 | AMS-8.6 | Script filenames are strictly validated before storage access. |

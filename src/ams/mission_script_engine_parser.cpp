@@ -156,6 +156,10 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
         {
             return false;
         }
+        // Invariant: sentinel byte must hold before any sscanf fires.
+        // readNextScriptLineLocked writes line[lineSize-1]=NUL; this assert
+        // catches any future refactor that might break that guarantee.
+        ARES_ASSERT(line[sizeof(line) - 1U] == '\0');
         trimInPlace(line);
 
         if (!parseLineLocked(line, currentState, blockType))
@@ -242,7 +246,14 @@ bool MissionScriptEngine::readNextScriptLineLocked(const char* script,
     ARES_ASSERT(line     != nullptr);
     ARES_ASSERT(lineSize  > 1U);
 
+    // AMS-8.5 / CERT-STR32: write the sentinel byte unconditionally so this
+    // function is safe regardless of whether the caller initialised the buffer.
+    // Any sscanf operating on 'line' after this call is guaranteed to find
+    // a NUL before reading past the end of the array.
+    line[lineSize - 1U] = '\0';
+
     uint32_t lineLen    = 0;
+    uint32_t totalLen   = 0;  // all chars on this line, including overflow
     bool     lineTooLong = false;
 
     while (offset < length && script[offset] != '\n')
@@ -256,6 +267,7 @@ bool MissionScriptEngine::readNextScriptLineLocked(const char* script,
         {
             lineTooLong = true;
         }
+        totalLen++;
         offset++;
     }
 
@@ -266,7 +278,14 @@ bool MissionScriptEngine::readNextScriptLineLocked(const char* script,
 
     if (lineTooLong)
     {
-        setErrorLocked("script line exceeds AMS_MAX_LINE_LEN");
+        // AMS-8.5: lines that exceed the buffer capacity are rejected at parse
+        // time with an explicit error so no directive is silently truncated.
+        static char errBuf[ares::AMS_MAX_ERROR_TEXT] = {};
+        snprintf(errBuf, sizeof(errBuf),
+                 "line too long: %u chars (max %u)",
+                 static_cast<unsigned>(totalLen),
+                 static_cast<unsigned>(lineSize - 1U));
+        setErrorLocked(errBuf);
         return false;
     }
 
@@ -2524,9 +2543,13 @@ bool MissionScriptEngine::parseCalibrateSetActionLocked(const char* rhsBuf,
     trimInPlace(nBuf);
 
     uint32_t samples = 0;
-    if (!parseUint(nBuf, samples) || samples == 0U || samples > 10U)
+    if (!parseUint(nBuf, samples) || samples == 0U || samples > static_cast<uint32_t>(ares::AMS_CALIBRATE_MAX_SAMPLES))
     {
-        setErrorLocked("CALIBRATE sample count must be 1-10");
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "CALIBRATE sample count must be 1-%u",
+                 static_cast<unsigned>(ares::AMS_CALIBRATE_MAX_SAMPLES));
+        setErrorLocked(msg);
         return false;
     }
 

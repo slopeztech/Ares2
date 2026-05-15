@@ -136,13 +136,14 @@ constexpr uint8_t     AMS_MAX_TASK_ACTIVE_STATES = 6U;  ///< Max states in a tas
 constexpr uint8_t     AMS_MAX_ASSERTS            = 8U;  ///< Max assert directives per script (AMS-15).
 constexpr uint8_t     AMS_VAR_NAME_LEN         = 16U;///< Max variable name length including NUL (AMS-4.8).
 constexpr uint8_t     AMS_MAX_SET_ACTIONS      = 4U; ///< Max set actions per on_enter block (AMS-4.8).
+constexpr uint8_t     AMS_CALIBRATE_MAX_SAMPLES = 10U; ///< Maximum N for CALIBRATE(ALIAS.field, N) (AMS-4.8.2). With async one-sample-per-tick execution, worst-case per-tick mutex hold = 1 sensor read (~25 ms).
 constexpr uint8_t     AMS_MAX_PULSE_ACTIONS    = 2U; ///< Max PULSE.fire actions per on_enter block (AMS-4.17).
 constexpr uint8_t     AMS_MAX_SENSOR_RETRY     = 5U; ///< Max sensor read retries declared in include (AMS-4.9.1).
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.
 constexpr uint8_t     AMS_MAX_INCLUDES     = 8U;           ///< Max 'include' alias registrations per script.
 constexpr uint16_t    AMS_DEFAULT_APID     = 0x01U;        ///< Default APID for mission runtime (APUS-10: rocket = 0x01).
-constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 250;          ///< Mutex timeout for API/runtime sync (must exceed LittleFS write latency ~100 ms).
+constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 500;          ///< Mutex timeout for API/runtime sync (AMS-8.3). Raised from 250 ms: LittleFS checkpoint writes and CSV log appends are now deferred outside the critical section; worst-case hold is a CALIBRATE sensor loop (~N×25 ms per read).
 constexpr const char* AMS_RESUME_PATH      = "/missions/.ams_resume.chk"; ///< Persistent AMS checkpoint file.
 constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS = 1000;   ///< Periodic checkpoint cadence while RUNNING.
 

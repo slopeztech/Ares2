@@ -14,6 +14,7 @@
  *   - Real parser use-cases: "500ms" vs "500"
  */
 #include <unity.h>
+#include <cstdlib>
 
 #include "ams/mission_script_engine_helpers.h"
 
@@ -63,11 +64,29 @@ void test_itw_numeric_with_suffix_returns_false()
     TEST_ASSERT_FALSE(isOnlyTrailingWhitespace("500ms"));
 }
 
-/// AMS parser use-case: "500" ends at the null terminator — must return true.
+/// AMS parser use-case: after strtoul("500", &end, 10), end points at the NUL
+/// terminator of the original string — the real residuo must return true.
 void test_itw_clean_numeric_remainder_returns_true()
 {
-    // After strtoul("500", &end, 10), *end == '\0'; this simulates that case.
-    TEST_ASSERT_TRUE(isOnlyTrailingWhitespace(""));
+    const char* s = "500";
+    char* end     = nullptr;
+    (void)strtoul(s, &end, 10);
+    // end now points at s[3] == '\0'; the actual remainder seen by the parser.
+    TEST_ASSERT_NOT_NULL(end);
+    TEST_ASSERT_TRUE(isOnlyTrailingWhitespace(end));
+}
+
+/// AMS parser use-case: after strtoul("500ms", &end, 10), end points at "ms"
+/// — a non-whitespace residuo must return false ("500ms" is a bad literal).
+void test_itw_strtoul_suffix_residuo_returns_false()
+{
+    const char* s = "500ms";
+    char* end     = nullptr;
+    (void)strtoul(s, &end, 10);
+    // end now points at s[3] == 'm'; this is what isOnlyTrailingWhitespace
+    // receives in the real parser when it rejects "500ms" as an interval.
+    TEST_ASSERT_NOT_NULL(end);
+    TEST_ASSERT_FALSE(isOnlyTrailingWhitespace(end));
 }
 
 /// A string with leading non-whitespace must return false regardless of trailing content.

@@ -275,56 +275,69 @@ bool MissionScriptEngine::injectTcCommand(const char* commandText)
 
 bool MissionScriptEngine::arm()
 {
-    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
-    if (!guard.acquired())
+    bool armed = false;
     {
-        return false;
-    }
+        ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+        if (!guard.acquired())
+        {
+            return false;
+        }
 
-    if (status_ != EngineStatus::LOADED)
+        if (status_ != EngineStatus::LOADED)
+        {
+            return false;
+        }
+
+        executionEnabled_ = true;
+        status_           = EngineStatus::RUNNING;
+        pendingTc_        = TcCommand::LAUNCH;
+        LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
+
+        (void)saveResumePointLocked(millis(), true);
+        armed = true;
+    } // Mutex released; checkpoint staged.
+
+    if (armed)
     {
-        return false;
+        flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
     }
-
-    executionEnabled_ = true;
-    status_           = EngineStatus::RUNNING;
-    pendingTc_        = TcCommand::LAUNCH;
-    LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
-
-    (void)saveResumePointLocked(millis(), true);
-    return true;
+    return armed;
 }
 
 void MissionScriptEngine::setExecutionEnabled(bool enabled)
 {
-    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
-    if (!guard.acquired())
     {
-        return;
-    }
-
-    executionEnabled_ = enabled;
-    // Transition status with execution enable/disable.
-    if (enabled && status_ == EngineStatus::LOADED)
-    {
-        status_ = EngineStatus::RUNNING;
-    }
-    else if (!enabled && status_ == EngineStatus::RUNNING)
-    {
-        status_ = EngineStatus::LOADED;
-
-        // Clear all per-transition hold windows so that a paused "for Nms"
-        // window cannot fire spuriously on the first tick after re-enabling
-        // (Bug #5: hold state must not accumulate during pause).
-        for (uint8_t ti = 0U; ti < ares::AMS_MAX_TRANSITIONS; ti++)
+        ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+        if (!guard.acquired())
         {
-            transitionCondHolding_[ti] = false;
-            transitionCondMetMs_[ti]   = 0U;
+            return;
         }
-    }
-    LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
 
-    (void)saveResumePointLocked(millis(), true);
+        executionEnabled_ = enabled;
+        // Transition status with execution enable/disable.
+        if (enabled && status_ == EngineStatus::LOADED)
+        {
+            status_ = EngineStatus::RUNNING;
+        }
+        else if (!enabled && status_ == EngineStatus::RUNNING)
+        {
+            status_ = EngineStatus::LOADED;
+
+            // Clear all per-transition hold windows so that a paused "for Nms"
+            // window cannot fire spuriously on the first tick after re-enabling
+            // (Bug #5: hold state must not accumulate during pause).
+            for (uint8_t ti = 0U; ti < ares::AMS_MAX_TRANSITIONS; ti++)
+            {
+                transitionCondHolding_[ti] = false;
+                transitionCondMetMs_[ti]   = 0U;
+            }
+        }
+        LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
+
+        (void)saveResumePointLocked(millis(), true);
+    } // Mutex released; checkpoint staged.
+
+    flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
 }
 
 bool MissionScriptEngine::requestTelemetry(uint32_t nowMs)
@@ -509,24 +522,39 @@ uint32_t MissionScriptEngine::nextDueFromTasks(uint32_t cur) const
 
 void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-size)
 {
-    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
-    if (!guard.acquired())
-    {
-        return;
-    }
+    // Reset staging buffers before every tick.  They are populated inside the
+    // mutex scope below and flushed by flushPendingIoUnlocked() after the lock
+    // is released, keeping LittleFS write latency out of the critical section
+    // so that injectTcCommand("ABORT") and other API callers cannot time out
+    // waiting for I/O (AMS-8.3).
+    pendingCheckpoint_.pending = false;
+    pendingAppendCount_        = 0U;
 
-    if (!running_ || status_ != EngineStatus::RUNNING || !executionEnabled_)
     {
-        return;
-    }
+        ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+        if (!guard.acquired())
+        {
+            return;
+        }
 
-    if (currentState_ >= program_.stateCount)
-    {
-        setErrorLocked("state index out of range");
-        return;
-    }
+        if (!running_ || status_ != EngineStatus::RUNNING || !executionEnabled_)
+        {
+            return;
+        }
+
+        if (currentState_ >= program_.stateCount)
+        {
+            setErrorLocked("state index out of range");
+            return;
+        }
 
     StateDef& state = program_.states[currentState_];
+
+    // AMS-4.8.2: advance any in-progress CALIBRATE actions by one sample before
+    // evaluating transitions, so that calibrated variables are current when
+    // conditions are checked this tick.
+    stepPendingCalibrationsLocked(state, nowMs);
+
     if (evaluateTransitionAndMaybeEnterLocked(state, nowMs)) { return; }
 
     if (checkOnTimeoutLocked(state, nowMs)) { return; }
@@ -594,6 +622,11 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
             clearResumePointLocked();
         }
     }
+    } // Mutex released; all staging complete.
+
+    // Perform deferred LittleFS writes (log appends + checkpoint) outside the
+    // critical section (AMS-8.3).
+    flushPendingIoUnlocked();
 }
 
 /**
@@ -1364,6 +1397,25 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     }
 
     LOG_I(TAG, "state -> %s", program_.states[stateIndex].name);
+
+    // AMS-4.8.2: reset async calibration progress for the entering state's set
+    // actions so that CALIBRATE always starts fresh on every state entry (including
+    // re-entries).  Also clear task-rule calibration progress so that a task firing
+    // in the new state does not resume a stale accumulator from a prior state.
+    StateDef& enteredState = program_.states[stateIndex];
+    for (uint8_t i = 0U; i < enteredState.setActionCount; i++)
+    {
+        enteredState.setActions[i].calibInProgress = false;
+        enteredState.setActions[i].calibCollected  = 0U;
+    }
+    for (uint8_t t = 0U; t < program_.taskCount; t++)
+    {
+        for (uint8_t r = 0U; r < program_.tasks[t].ruleCount; r++)
+        {
+            program_.tasks[t].rules[r].setAction.calibInProgress = false;
+        }
+    }
+
     sendOnEnterEventLocked(nowMs);
     (void)saveResumePointLocked(nowMs, true);
 }
@@ -1500,29 +1552,28 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     //   VERSION|file|state|exec|running|status|seq|stateElap|hkElap|logElap
     //   [|varCount|name1=value1=valid1|...|nameN=valueN=validN]
     //   |hkSlotCount|hkSlotElap0|...|logSlotCount|logSlotElap0|...
-    static char record[512] = {};
+    //
+    // Stage the record in pendingCheckpoint_.buf; the actual writeFile call is
+    // deferred to flushPendingIoUnlocked() after the mutex is released (AMS-8.3).
     int32_t written = 0;
-    if (!buildCheckpointRecordLocked(nowMs, record, sizeof(record), written))
+    if (!buildCheckpointRecordLocked(nowMs, pendingCheckpoint_.buf,
+                                     sizeof(pendingCheckpoint_.buf), written))
     {
         return false;
     }
 
-    const StorageStatus st = storage_.writeFile(
-        ares::AMS_RESUME_PATH,
-        reinterpret_cast<const uint8_t*>(record),
-        static_cast<uint32_t>(written));
-    if (st != StorageStatus::OK)
-    {
-        LOG_W(TAG, "checkpoint write failed: %u", static_cast<uint32_t>(st));
-        return false;
-    }
-
-    lastCheckpointMs_ = nowMs;
+    pendingCheckpoint_.len     = written;
+    pendingCheckpoint_.pending = true;
+    lastCheckpointMs_          = nowMs;
     return true;
 }
 
 void MissionScriptEngine::clearResumePointLocked()
 {
+    // Cancel any staged checkpoint write — the resume file is about to be removed
+    // so writing it afterwards would undo the clear (AMS-8.3).
+    pendingCheckpoint_.pending = false;
+
     bool exists = false;
     const StorageStatus stExists = storage_.exists(ares::AMS_RESUME_PATH, exists);
     if (stExists != StorageStatus::OK || !exists)
@@ -1534,6 +1585,88 @@ void MissionScriptEngine::clearResumePointLocked()
     if (stRemove != StorageStatus::OK && stRemove != StorageStatus::NOT_FOUND)
     {
         LOG_W(TAG, "checkpoint remove failed: %u", static_cast<uint32_t>(stRemove));
+    }
+}
+
+// ── queueAppendLocked ─────────────────────────────────────────────────────────
+
+/**
+ * @brief Stage a LittleFS append operation for deferred execution outside the mutex.
+ *
+ * Copies @p data into the next free @c pendingAppends_ slot so the actual
+ * @c appendFile call can be issued by @c flushPendingIoUnlocked() after the
+ * mutex has been released (AMS-8.3).  Drops the entry with a warning if the
+ * queue is full or the payload exceeds the slot buffer.
+ *
+ * @param[in] path  Destination file path (null-terminated, ≤ STORAGE_MAX_PATH).
+ * @param[in] data  Raw bytes to append.
+ * @param[in] len   Byte count.  Must satisfy 0 < len ≤ sizeof(PendingAppend::data).
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::queueAppendLocked(const char*    path,
+                                            const uint8_t* data,
+                                            uint32_t       len)
+{
+    if (pendingAppendCount_ >= kMaxPendingAppends)
+    {
+        LOG_W(TAG, "append queue full — row dropped (path=%s)", path);
+        return;
+    }
+    if (len == 0U || len > static_cast<uint32_t>(sizeof(PendingAppend::data)))
+    {
+        LOG_W(TAG, "queueAppend: invalid len %" PRIu32, len);
+        return;
+    }
+
+    PendingAppend& e = pendingAppends_[pendingAppendCount_];
+    strncpy(e.path, path, sizeof(e.path) - 1U);
+    e.path[sizeof(e.path) - 1U] = '\0';
+    memcpy(e.data, data, len);
+    e.len = len;
+    pendingAppendCount_++;
+}
+
+// ── flushPendingIoUnlocked ────────────────────────────────────────────────────
+
+/**
+ * @brief Execute all file I/O staged during the previous tick or API call.
+ *
+ * Must be called AFTER the engine mutex has been released.  Issues all
+ * @c appendFile and @c writeFile operations that were deferred by
+ * @c queueAppendLocked and @c saveResumePointLocked, keeping those operations
+ * outside the critical section (AMS-8.3).
+ *
+ * @post @c pendingAppendCount_ == 0 and @c pendingCheckpoint_.pending == false.
+ */
+void MissionScriptEngine::flushPendingIoUnlocked()
+{
+    // Flush staged log appends first (data rows before checkpoint update).
+    for (uint8_t i = 0U; i < pendingAppendCount_; i++)
+    {
+        const PendingAppend& e = pendingAppends_[i];
+        const StorageStatus st = storage_.appendFile(e.path, e.data, e.len);
+        if (st != StorageStatus::OK)
+        {
+            LOG_W(TAG, "deferred append [%u] to '%s' failed: %u",
+                  static_cast<unsigned>(i), e.path,
+                  static_cast<uint32_t>(st));
+        }
+    }
+    pendingAppendCount_ = 0U;
+
+    // Flush staged checkpoint write.
+    if (pendingCheckpoint_.pending && pendingCheckpoint_.len > 0)
+    {
+        const StorageStatus st = storage_.writeFile(
+            ares::AMS_RESUME_PATH,
+            reinterpret_cast<const uint8_t*>(pendingCheckpoint_.buf),
+            static_cast<uint32_t>(pendingCheckpoint_.len));
+        if (st != StorageStatus::OK)
+        {
+            LOG_W(TAG, "deferred checkpoint write failed: %u",
+                  static_cast<uint32_t>(st));
+        }
+        pendingCheckpoint_.pending = false;
     }
 }
 
@@ -1882,6 +2015,35 @@ void MissionScriptEngine::executeSetActionsLocked(StateDef& st,
     }
 }
 
+/**
+ * @brief Advance each in-progress CALIBRATE set action in @p st by one sample.
+ *
+ * Called at the start of every tick() before transition evaluation.  For each
+ * set action whose @c calibInProgress flag is true, delegates one sensor read
+ * to @c executeOneSetActionLocked, which internally calls
+ * @c executeCalibrateSetActionLocked.  When all @c calibSamples have been
+ * collected the accumulator is finalised and the target variable is updated.
+ *
+ * This distributes the N sensor reads of a CALIBRATE(ALIAS.field, N) form
+ * across N ticks, bounding the per-tick mutex-hold time to a single I²C read
+ * (~25 ms) regardless of the sample count (AMS-4.8.2).
+ *
+ * @param[in,out] st     Current state definition (set actions are mutable).
+ * @param[in]     nowMs  Current timestamp for event framing.
+ * @pre  mutex_ is held by the caller.
+ */
+void MissionScriptEngine::stepPendingCalibrationsLocked(StateDef& st, uint32_t nowMs)
+{
+    for (uint8_t i = 0U; i < st.setActionCount; i++)
+    {
+        SetAction& act = st.setActions[i];
+        if (act.kind == SetActionKind::CALIBRATE && act.calibInProgress)
+        {
+            executeOneSetActionLocked(act, nowMs);
+        }
+    }
+}
+
 // ── executeOneSetActionLocked ─────────────────────────────────────────────────
 
 /**
@@ -1899,26 +2061,56 @@ void MissionScriptEngine::executeCalibrateSetActionLocked(SetAction& act,
                                                           bool&      gotReading,
                                                           uint32_t   /*nowMs*/)
 {
-    float sum      = 0.0f;
-    uint8_t validN = 0;
-    for (uint8_t s = 0; s < act.calibSamples; s++)
+    // AMS-4.8.2 — Async CALIBRATE: one sensor read per tick.
+    //
+    // The first call (calibInProgress == false) initialises the accumulator;
+    // each subsequent call (calibInProgress == true) advances by one sample
+    // until calibSamples attempts have been made.  The variable is only
+    // written once all samples have been collected (gotReading = true).
+    // This keeps the per-tick mutex-hold time to a single I²C read (~25 ms)
+    // regardless of the sample count N, eliminating the previous N×25 ms
+    // blocking behaviour that violated AMS-8.3.
+
+    if (!act.calibInProgress)
     {
-        float sample = 0.0f;
-        if (readSensorFloatLocked(act.alias, act.field, sample))
+        // Fresh start: initialise accumulator.
+        act.calibSum       = 0.0f;
+        act.calibValidN    = 0U;
+        act.calibCollected = 0U;
+        act.calibInProgress = true;
+        LOG_I(TAG, "CALIBRATE '%s': starting async collection (%u samples)",
+              act.varName, static_cast<unsigned>(act.calibSamples));
+    }
+
+    // Collect exactly one sample this tick.
+    float sample = 0.0f;
+    if (readSensorFloatLocked(act.alias, act.field, sample))
+    {
+        act.calibSum    += sample;
+        act.calibValidN++;
+    }
+    act.calibCollected++;
+
+    // Finalise when all requested sample attempts have been made.
+    if (act.calibCollected >= act.calibSamples)
+    {
+        act.calibInProgress = false;
+
+        if (act.calibValidN > 0U)
         {
-            sum += sample;
-            validN++;
+            result     = act.calibSum / static_cast<float>(act.calibValidN);
+            gotReading = true;
+            LOG_I(TAG, "CALIBRATE '%s': complete — avg=%.3f (%u/%u valid, %u ticks)",
+                  act.varName,
+                  static_cast<double>(result),
+                  static_cast<unsigned>(act.calibValidN),
+                  static_cast<unsigned>(act.calibSamples),
+                  static_cast<unsigned>(act.calibSamples));
         }
+        // gotReading == false here: all reads failed; caller handles the failure.
     }
-    if (validN > 0U)
-    {
-        result     = sum / static_cast<float>(validN);
-        gotReading = true;
-        LOG_I(TAG, "CALIBRATE '%s': avg=%.3f (n=%u/%u)",
-              act.varName, static_cast<double>(result),
-              static_cast<unsigned>(validN),
-              static_cast<unsigned>(act.calibSamples));
-    }
+    // While calibCollected < calibSamples: gotReading stays false and
+    // calibInProgress stays true — caller skips the variable update.
 }
 
 void MissionScriptEngine::executeDeltaSetActionLocked(SetAction& act,
@@ -2007,6 +2199,11 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
     {
         v->value = result;
         v->valid = true;
+    }
+    else if (act.kind == SetActionKind::CALIBRATE && act.calibInProgress)
+    {
+        // AMS-4.8.2: async calibration in progress — variable will be updated
+        // on a future tick once all samples are gathered.  Not a failure.
     }
     else
     {

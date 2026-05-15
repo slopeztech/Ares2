@@ -329,3 +329,48 @@ void test_list_scripts_returns_ams_files()
     // Only the two .ams files must be returned; .txt is filtered out.
     TEST_ASSERT_EQUAL(2U, count);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Line-too-long: a script with a directive that exceeds AMS_MAX_LINE_LEN must
+// cause activate() to fail with an explicit parse error (AMS-8.5).
+// Regression for: "Líneas > AMS_MAX_LINE_LEN se truncan silenciosamente" (P0).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_parser_error_on_line_too_long()
+{
+    // Build a script whose third line exceeds AMS_MAX_LINE_LEN (128) chars.
+    // The var declaration below is 136 characters long (measured statically).
+    // readNextScriptLineLocked must detect this and call setErrorLocked before
+    // the directive content is ever parsed (AMS-8.5).
+    static const char kLongVarLine[] =
+        "var aaaa_bbbb_cccc_dddd_eeee_ffff_gggg_hhhh_iiii_jjjj_kkkk_llll_mmmm_nnnn_oooo_pppp_qqqq_rrrr_ssss_tttt_uuuu_vvvv_wwww_xxxx : float";
+    // 136 chars: "var "(4) + 124-char name + " : float"(8).
+    // Verify the invariant so a future editor notices immediately if they
+    // shorten the string.
+    static_assert(sizeof(kLongVarLine) - 1U > ares::AMS_MAX_LINE_LEN - 1U,
+                  "kLongVarLine must be longer than AMS_MAX_LINE_LEN");
+
+    static const char kLongLineScript[] =
+        "include SIM_BARO as BARO\n"
+        "pus.apid = 1\n"
+        "var aaaa_bbbb_cccc_dddd_eeee_ffff_gggg_hhhh_iiii_jjjj_kkkk_llll_mmmm_nnnn_oooo_pppp_qqqq_rrrr_ssss_tttt_uuuu_vvvv_wwww_xxxx : float\n"
+        "state IDLE:\n"
+        "  transition to END when TC == LAUNCH\n"
+        "state END:\n";
+
+    ScriptFixture f;
+    f.init("/missions/longline.ams", kLongLineScript);
+
+    // activate() must return false — the parser detects the oversized line.
+    const bool ok = f.engine.activate("longline.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    // Engine must be in ERROR, not IDLE.
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+
+    // lastError must contain "line too long" — not be empty or generic.
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+    TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "line too long"));
+}
