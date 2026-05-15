@@ -28,6 +28,7 @@
 #include "sys/storage/littlefs_storage.h"
 #include "api/api_server.h"
 #include "ams/mission_script_engine.h"
+#include "hal/millis64.h"
 #include "comms/ares_radio_protocol.h"
 #include "comms/radio_dispatcher.h"
 
@@ -175,7 +176,8 @@ void setup()
 // ═══════════════════════════════════════════════════════════
 void loop()
 {
-    const uint32_t now = millis();
+    const uint32_t now      = static_cast<uint32_t>(millis());  // radio dispatcher (stays uint32_t)
+    const uint64_t nowAms   = millis64();                        // AMS engine (uint64_t)
 
     // GPS bytes must be consumed every iteration to keep
     // the UART FIFO from overflowing (72-byte HW FIFO).
@@ -188,7 +190,7 @@ void loop()
     radioDispatcher.poll(now);
 
     // AMS script runtime tick (state machine + PUS emission).
-    missionEngine.tick(now);
+    missionEngine.tick(nowAms);
 
     // Auto-return to IDLE when the AMS mission finishes or faults.
     // Only act once per transition: check that we are currently in FLIGHT.
@@ -205,7 +207,8 @@ void loop()
 
     // Adaptive sleep: wake up exactly when the next engine event is due.
     // Falls back to SENSOR_RATE_MS for states with active conditions.
-    const uint32_t wakeupMs = missionEngine.nextWakeupMs(now);
-    const uint32_t sleepMs  = (wakeupMs > now) ? (wakeupMs - now) : 1U;
+    const uint64_t wakeupMs  = missionEngine.nextWakeupMs(nowAms);
+    const uint64_t sleepMs64 = (wakeupMs > nowAms) ? (wakeupMs - nowAms) : 1ULL;
+    const uint32_t sleepMs   = static_cast<uint32_t>(sleepMs64 > 60000ULL ? 60000ULL : sleepMs64);
     vTaskDelay(pdMS_TO_TICKS(sleepMs));
 }

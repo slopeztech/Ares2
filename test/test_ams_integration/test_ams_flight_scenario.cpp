@@ -277,3 +277,48 @@ void test_multiple_hk_frames_accumulate_correctly()
     // At least 3 HK frames should have been transmitted.
     TEST_ASSERT_GREATER_OR_EQUAL(3U, f.radio.sendCount());
 }
+
+void test_hk_slot_starvation_skips_samples()
+{
+    // AMS-4.4 starvation guard: a single catch-up tick after a 5-period gap
+    // must emit exactly ONE HK.report and ONE EVENT.warning (not 5 bursts).
+    FlightFixture f;
+    f.init("/missions/flight.ams", ares::sim::kScriptFlight);
+    (void)f.engine.activate("flight.ams");
+    (void)f.engine.arm();  // pre-injects LAUNCH TC
+
+    ares::sim::clock::reset();
+
+    // t=0: consume LAUNCH TC → WAIT → FLIGHT (on_enter event queued).
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_STRING("FLIGHT", snap.stateName);
+
+    // t=1: drain the deferred on_enter LIFTOFF event so the radio counter
+    // starts clean before the starvation tick.
+    ares::sim::clock::advanceMs(1U);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    // Clear counters so only the starvation tick is measured.
+    f.radio.resetCapture();
+
+    // Jump 3 000 ms (= 3× the 1 000 ms HK period) in a single tick.
+    // The kScriptFlight TIME.elapsed > 5 000 ms transition must NOT fire
+    // here (3001 ms < 5000 ms), leaving the engine in FLIGHT.
+    // Without the guard this leaves the timer 2 000 ms behind and produces
+    // 2 extra burst HK frames on subsequent ticks.
+    ares::sim::clock::advanceMs(3000U);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    // Guard: 1 HK frame + 1 EVENT.warning (skipped 2 samples).
+    TEST_ASSERT_EQUAL(2U, f.radio.sendCount());
+
+    // After the reset the next regular tick must produce exactly 1 HK frame
+    // and no further warnings.
+    f.radio.resetCapture();
+    ares::sim::clock::advanceMs(1000U);
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_EQUAL(1U, f.radio.sendCount());
+}

@@ -125,7 +125,7 @@ bool MissionScriptEngine::loadFromStorageLocked(const char* fileName)
  * @pre  Caller holds the engine mutex.  @p script != nullptr.
  * @post @c program_ is fully populated on success.
  */
-bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length) // NOLINT(readability-function-size)
+bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
 {
     ARES_ASSERT(script != nullptr);
     ARES_ASSERT(length <= ares::AMS_MAX_SCRIPT_BYTES);
@@ -141,6 +141,7 @@ bool MissionScriptEngine::parseScriptLocked(const char* script, uint32_t length)
     parseCurrentTaskRule_ = 0xFFU;
     parseCurrentHkSlot_   = 0xFFU;
     parseCurrentLogSlot_  = 0xFFU;
+    parseSeenState_       = false;
 
     BlockType blockType   = BlockType::NONE;
     uint8_t currentState  = ares::AMS_MAX_STATES;
@@ -527,10 +528,26 @@ bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
         blockType = BlockType::NONE;
         return true;
     }
-    if (startsWith(line, "include ")) { return parseIncludeLineLocked(line); }
-    if (startsWith(line, "radio.config ")) { return parseRadioConfigLineLocked(line); }
-    if (startsWith(line, "pus.service ")) { return parsePusServiceDirectiveLocked(line); }
-    if (startsWith(line, "pus.apid")) { return parsePusApidDirectiveLocked(line); }
+    if (startsWith(line, "include "))
+    {
+        if (parseSeenState_) { setErrorLocked("'include' must appear before any state block"); return false; }
+        return parseIncludeLineLocked(line);
+    }
+    if (startsWith(line, "radio.config "))
+    {
+        if (parseSeenState_) { setErrorLocked("'radio.config' must appear before any state block"); return false; }
+        return parseRadioConfigLineLocked(line);
+    }
+    if (startsWith(line, "pus.service "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pus.service' must appear before any state block"); return false; }
+        return parsePusServiceDirectiveLocked(line);
+    }
+    if (startsWith(line, "pus.apid"))
+    {
+        if (parseSeenState_) { setErrorLocked("'pus.apid' must appear before any state block"); return false; }
+        return parsePusApidDirectiveLocked(line);
+    }
     if (startsWith(line, "state "))
     {
         blockType              = BlockType::NONE;
@@ -538,10 +555,19 @@ bool MissionScriptEngine::parseTopLevelDirectiveLocked(const char* line,
         parseCurrentTaskRule_  = 0xFFU;
         parseCurrentHkSlot_    = 0xFFU;
         parseCurrentLogSlot_   = 0xFFU;
+        parseSeenState_        = true;
         return parseStateLineLocked(line, currentState);
     }
-    if (startsWith(line, "var "))   { return parseVarLineLocked(line); }
-    if (startsWith(line, "const ")) { return parseConstLineLocked(line); }
+    if (startsWith(line, "var "))
+    {
+        if (parseSeenState_) { setErrorLocked("'var' must appear before any state block"); return false; }
+        return parseVarLineLocked(line);
+    }
+    if (startsWith(line, "const "))
+    {
+        if (parseSeenState_) { setErrorLocked("'const' must appear before any state block"); return false; }
+        return parseConstLineLocked(line);
+    }
     if (startsWith(line, "task "))
     {
         blockType             = BlockType::TASK;
@@ -728,113 +754,125 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
     return true;
 }
 
-bool MissionScriptEngine::parseStateBlockContentLocked(const char* line, // NOLINT(readability-function-size)
+bool MissionScriptEngine::parseOnErrorBlockLineLocked(const char* line, StateDef& st)
+{
+    char evtPrefix[20] = {};
+    snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+    if (startsWith(line, evtPrefix))        { return parseOnErrorEventLineLocked(line, st); }
+    if (startsWith(line, "transition to ")) { return parseOnErrorTransitionLineLocked(line, st); }
+    setErrorLocked("only EVENT.* or 'transition to' allowed inside on_error");
+    return false;
+}
+
+bool MissionScriptEngine::parseOnEnterBlockLineLocked(const char* line, StateDef& st)
+{
+    char evtPrefix[20] = {};
+    snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+    if (startsWith(line, evtPrefix))       { return parseEventLineLocked(line, st); }
+    if (startsWith(line, "set "))          { return parseSetActionLineLocked(line, st); }
+    if (startsWith(line, "PULSE.fire "))   { return parsePulseFireLineLocked(line, st); }  // AMS-4.17
+    setErrorLocked("only EVENT.*, set and PULSE.fire are allowed inside on_enter");
+    return false;
+}
+
+bool MissionScriptEngine::parseOnExitBlockLineLocked(const char* line, StateDef& st)
+{
+    char evtPrefix[20] = {};
+    snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+    if (startsWith(line, evtPrefix))
+    {
+        return parseOnExitEventLineLocked(line, st);
+    }
+    if (startsWith(line, "set "))
+    {
+        if (st.onExitSetCount >= ares::AMS_MAX_SET_ACTIONS)
+        {
+            setErrorLocked("too many set actions in on_exit block");
+            return false;
+        }
+        if (!parseSetActionCoreLocked(line, st.onExitSetActions[st.onExitSetCount]))
+        {
+            return false;
+        }
+        st.onExitSetCount++;
+        return true;
+    }
+    if (startsWith(line, "transition to "))
+    {
+        setErrorLocked("transition is not allowed inside on_exit");
+        return false;
+    }
+    setErrorLocked("only EVENT.* and set are allowed inside on_exit");
+    return false;
+}
+
+bool MissionScriptEngine::parseOnTimeoutContentLineLocked(const char* line, StateDef& st)
+{
+    char evtPrefix[20] = {};
+    snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
+    if (startsWith(line, evtPrefix))        { return parseOnTimeoutEventLineLocked(line, st); }
+    if (startsWith(line, "transition to ")) { return parseOnTimeoutTransitionLineLocked(line, st); }
+    setErrorLocked("only EVENT.* and 'transition to' allowed inside on_timeout");
+    return false;
+}
+
+bool MissionScriptEngine::parseHkSlotFieldLineLocked(const char* line, StateDef& st)
+{
+    // AMS-4.3.1: fill the active HK slot, and mirror into legacy slot-0 fields.
+    if (parseCurrentHkSlot_ >= st.hkSlotCount)
+    {
+        setErrorLocked("HK field outside every block");
+        return false;
+    }
+    HkSlot& slot = st.hkSlots[parseCurrentHkSlot_];
+    if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "HK")) { return false; }
+    // Keep legacy fields in sync with slot-0 for single-slot code paths.
+    if (parseCurrentHkSlot_ == 0U)
+    {
+        st.hkFieldCount = slot.fieldCount;
+        if (slot.fieldCount > 0U)
+        {
+            st.hkFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
+        }
+    }
+    return true;
+}
+
+bool MissionScriptEngine::parseLogSlotFieldLineLocked(const char* line, StateDef& st)
+{
+    // AMS-4.3.1: fill the active LOG slot, and mirror into legacy slot-0 fields.
+    if (parseCurrentLogSlot_ >= st.logSlotCount)
+    {
+        setErrorLocked("LOG field outside log_every block");
+        return false;
+    }
+    HkSlot& slot = st.logSlots[parseCurrentLogSlot_];
+    if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "LOG")) { return false; }
+    // Keep legacy fields in sync with slot-0 for single-slot code paths.
+    if (parseCurrentLogSlot_ == 0U)
+    {
+        st.logFieldCount = slot.fieldCount;
+        if (slot.fieldCount > 0U)
+        {
+            st.logFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
+        }
+    }
+    return true;
+}
+
+bool MissionScriptEngine::parseStateBlockContentLocked(const char* line,
                                                        StateDef&   st,
                                                        BlockType   blockType,
                                                        bool&       handled)
 {
     handled = true;
     if (blockType == BlockType::CONDITIONS) { return parseConditionScopedLineLocked(line, st); }
-    if (blockType == BlockType::ON_ERROR)
-    {
-        char evtPrefix[20] = {};
-        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
-        if (startsWith(line, evtPrefix)) { return parseOnErrorEventLineLocked(line, st); }
-        if (startsWith(line, "transition to ")) { return parseOnErrorTransitionLineLocked(line, st); }
-        setErrorLocked("only EVENT.* or 'transition to' allowed inside on_error");
-        return false;
-    }
-    if (blockType == BlockType::ON_ENTER)
-    {
-        char evtPrefix[20] = {};
-        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
-        if (startsWith(line, evtPrefix)) { return parseEventLineLocked(line, st); }
-        if (startsWith(line, "set ")) { return parseSetActionLineLocked(line, st); }
-        if (startsWith(line, "PULSE.fire ")) { return parsePulseFireLineLocked(line, st); }  // AMS-4.17
-        setErrorLocked("only EVENT.*, set and PULSE.fire are allowed inside on_enter");
-        return false;
-    }
-    if (blockType == BlockType::ON_EXIT)
-    {
-        char evtPrefix[20] = {};
-        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
-        if (startsWith(line, evtPrefix))
-        {
-            return parseOnExitEventLineLocked(line, st);
-        }
-        if (startsWith(line, "set "))
-        {
-            if (st.onExitSetCount >= ares::AMS_MAX_SET_ACTIONS)
-            {
-                setErrorLocked("too many set actions in on_exit block");
-                return false;
-            }
-            if (!parseSetActionCoreLocked(line, st.onExitSetActions[st.onExitSetCount]))
-            {
-                return false;
-            }
-            st.onExitSetCount++;
-            return true;
-        }
-        if (startsWith(line, "transition to "))
-        {
-            setErrorLocked("transition is not allowed inside on_exit");
-            return false;
-        }
-        setErrorLocked("only EVENT.* and set are allowed inside on_exit");
-        return false;
-    }
-    if (blockType == BlockType::ON_TIMEOUT)
-    {
-        char evtPrefix[20] = {};
-        snprintf(evtPrefix, sizeof(evtPrefix), "%s.", program_.eventAlias);
-        if (startsWith(line, evtPrefix)) { return parseOnTimeoutEventLineLocked(line, st); }
-        if (startsWith(line, "transition to ")) { return parseOnTimeoutTransitionLineLocked(line, st); }
-        setErrorLocked("only EVENT.* and 'transition to' allowed inside on_timeout");
-        return false;
-    }
-    if (blockType == BlockType::HK)
-    {
-        // AMS-4.3.1: fill the active HK slot, and mirror into legacy slot-0 fields.
-        if (parseCurrentHkSlot_ >= st.hkSlotCount)
-        {
-            setErrorLocked("HK field outside every block");
-            return false;
-        }
-        HkSlot& slot = st.hkSlots[parseCurrentHkSlot_];
-        if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "HK")) { return false; }
-        // Keep legacy fields in sync with slot-0 for single-slot code paths.
-        if (parseCurrentHkSlot_ == 0U)
-        {
-            st.hkFieldCount = slot.fieldCount;
-            if (slot.fieldCount > 0U)
-            {
-                st.hkFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
-            }
-        }
-        return true;
-    }
-    if (blockType == BlockType::LOG)
-    {
-        // AMS-4.3.1: fill the active LOG slot, and mirror into legacy slot-0 fields.
-        if (parseCurrentLogSlot_ >= st.logSlotCount)
-        {
-            setErrorLocked("LOG field outside log_every block");
-            return false;
-        }
-        HkSlot& slot = st.logSlots[parseCurrentLogSlot_];
-        if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "LOG")) { return false; }
-        // Keep legacy fields in sync with slot-0 for single-slot code paths.
-        if (parseCurrentLogSlot_ == 0U)
-        {
-            st.logFieldCount = slot.fieldCount;
-            if (slot.fieldCount > 0U)
-            {
-                st.logFields[slot.fieldCount - 1U] = slot.fields[slot.fieldCount - 1U];
-            }
-        }
-        return true;
-    }
+    if (blockType == BlockType::ON_ERROR)   { return parseOnErrorBlockLineLocked(line, st); }
+    if (blockType == BlockType::ON_ENTER)   { return parseOnEnterBlockLineLocked(line, st); }
+    if (blockType == BlockType::ON_EXIT)    { return parseOnExitBlockLineLocked(line, st); }
+    if (blockType == BlockType::ON_TIMEOUT) { return parseOnTimeoutContentLineLocked(line, st); }
+    if (blockType == BlockType::HK)         { return parseHkSlotFieldLineLocked(line, st); }
+    if (blockType == BlockType::LOG)        { return parseLogSlotFieldLineLocked(line, st); }
     handled = false;
     return true;
 }
@@ -2189,7 +2227,12 @@ bool MissionScriptEngine::resolveTransitionsLocked()
             const uint8_t idx = findStateByNameLocked(st.transitions[ti].targetName);
             if (idx >= program_.stateCount)
             {
-                setErrorLocked("unknown transition target state");
+                char sug[40] = {};
+                suggestStateNameLocked(st.transitions[ti].targetName, sug, sizeof(sug));
+                char msg[80] = {};
+                snprintf(msg, sizeof(msg), "unknown transition target: '%s'%s",
+                         st.transitions[ti].targetName, sug);
+                setErrorLocked(msg);
                 return false;
             }
             st.transitions[ti].targetIndex    = idx;
@@ -2202,7 +2245,12 @@ bool MissionScriptEngine::resolveTransitionsLocked()
             const uint8_t idx = findStateByNameLocked(st.fallbackTargetName);
             if (idx >= program_.stateCount)
             {
-                setErrorLocked("unknown fallback transition target state");
+                char sug[40] = {};
+                suggestStateNameLocked(st.fallbackTargetName, sug, sizeof(sug));
+                char msg[80] = {};
+                snprintf(msg, sizeof(msg), "unknown fallback target: '%s'%s",
+                         st.fallbackTargetName, sug);
+                setErrorLocked(msg);
                 return false;
             }
             st.fallbackTargetIdx      = idx;
@@ -2215,7 +2263,12 @@ bool MissionScriptEngine::resolveTransitionsLocked()
             const uint8_t idx = findStateByNameLocked(st.onErrorTransitionTarget);
             if (idx >= program_.stateCount)
             {
-                setErrorLocked("unknown on_error transition target state");
+                char sug[40] = {};
+                suggestStateNameLocked(st.onErrorTransitionTarget, sug, sizeof(sug));
+                char msg[80] = {};
+                snprintf(msg, sizeof(msg), "unknown on_error target: '%s'%s",
+                         st.onErrorTransitionTarget, sug);
+                setErrorLocked(msg);
                 return false;
             }
             st.onErrorTransitionIdx      = idx;
@@ -2233,7 +2286,12 @@ bool MissionScriptEngine::resolveTransitionsLocked()
             const uint8_t idx = findStateByNameLocked(st.onTimeoutTransitionTarget);
             if (idx >= program_.stateCount)
             {
-                setErrorLocked("unknown on_timeout transition target state");
+                char sug[40] = {};
+                suggestStateNameLocked(st.onTimeoutTransitionTarget, sug, sizeof(sug));
+                char msg[80] = {};
+                snprintf(msg, sizeof(msg), "unknown on_timeout target: '%s'%s",
+                         st.onTimeoutTransitionTarget, sug);
+                setErrorLocked(msg);
                 return false;
             }
             st.onTimeoutTransitionIdx      = idx;
@@ -3427,10 +3485,12 @@ bool MissionScriptEngine::resolveTasksLocked()
             const uint8_t idx = findStateByNameLocked(td.activeStateNames[j]);
             if (idx >= program_.stateCount)
             {
-                static char msg[80] = {};
+                char sug[40] = {};
+                suggestStateNameLocked(td.activeStateNames[j], sug, sizeof(sug));
+                char msg[96] = {};
                 snprintf(msg, sizeof(msg),
-                         "task '%s': unknown state '%s' in 'when in' filter",
-                         td.name, td.activeStateNames[j]);
+                         "task '%s': unknown state '%s' in 'when in' filter%s",
+                         td.name, td.activeStateNames[j], sug);
                 setErrorLocked(msg);
                 return false;
             }
@@ -3590,8 +3650,11 @@ bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-func
         const uint8_t idx = findStateByNameLocked(ad.targetName);
         if (idx >= program_.stateCount)
         {
-            static char msg[80] = {};
-            snprintf(msg, sizeof(msg), "assert reachable: unknown state '%s'", ad.targetName);
+            char sug[40] = {};
+            suggestStateNameLocked(ad.targetName, sug, sizeof(sug));
+            char msg[96] = {};
+            snprintf(msg, sizeof(msg), "assert reachable: unknown state '%s'%s",
+                     ad.targetName, sug);
             setErrorLocked(msg);
             return false;
         }

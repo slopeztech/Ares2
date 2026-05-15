@@ -145,7 +145,8 @@ constexpr uint8_t     AMS_MAX_INCLUDES     = 8U;           ///< Max 'include' al
 constexpr uint16_t    AMS_DEFAULT_APID     = 0x01U;        ///< Default APID for mission runtime (APUS-10: rocket = 0x01).
 constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 500;          ///< Mutex timeout for API/runtime sync (AMS-8.3). Raised from 250 ms: LittleFS checkpoint writes and CSV log appends are now deferred outside the critical section; worst-case hold is a CALIBRATE sensor loop (~N×25 ms per read).
 constexpr const char* AMS_RESUME_PATH      = "/missions/.ams_resume.chk"; ///< Persistent AMS checkpoint file.
-constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS = 1000;   ///< Periodic checkpoint cadence while RUNNING.
+constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS        = 1000;   ///< Checkpoint cadence when material state changed (dirty flag set).
+constexpr uint32_t    AMS_CHECKPOINT_STABLE_INTERVAL_MS = 30000U; ///< Checkpoint cadence when no material change since last write (flash wear reduction).
 
 // ── Config field validation bounds (REST-5.4) ───────────────
 constexpr uint32_t    TELEMETRY_INTERVAL_MIN = 100;     ///< Min telemetry interval ms.

@@ -168,7 +168,7 @@ public:
      * @param[in] nowMs  Current millis() timestamp.
      * @pre  begin() returned true.
      */
-    void tick(uint32_t nowMs);
+    void tick(uint64_t nowMs);
 
     /**
      * Compute the earliest timestamp at which the next engine event is due.
@@ -187,7 +187,7 @@ public:
      * @param[in] nowMs  Current millis() timestamp.
      * @return Absolute millis() timestamp for the next required wakeup.
      */
-    uint32_t nextWakeupMs(uint32_t nowMs) const;
+    uint64_t nextWakeupMs(uint64_t nowMs) const;
 
     /**
      * Enable or disable runtime progression (state transitions and periodic actions).
@@ -209,7 +209,7 @@ public:
      * @param[in] nowMs  Current millis() timestamp (written into the frame).
      * @return true if at least one frame was transmitted.
      */
-    bool requestTelemetry(uint32_t nowMs);
+    bool requestTelemetry(uint64_t nowMs);
 
     /**
      * Override the HK report interval for all active telemetry slots in the
@@ -771,6 +771,12 @@ private:
                                       StateDef& st,
                                       BlockType blockType,
                                       bool& handled);
+    bool parseOnErrorBlockLineLocked(const char* line, StateDef& st);
+    bool parseOnEnterBlockLineLocked(const char* line, StateDef& st);
+    bool parseOnExitBlockLineLocked(const char* line, StateDef& st);
+    bool parseOnTimeoutContentLineLocked(const char* line, StateDef& st);
+    bool parseHkSlotFieldLineLocked(const char* line, StateDef& st);
+    bool parseLogSlotFieldLineLocked(const char* line, StateDef& st);
     bool parseStateLineLocked(const char* line, uint8_t& currentState);
     bool parseEventLineLocked(const char* line, StateDef& st);
     bool parseEveryLineLocked(const char* line, StateDef& st);
@@ -899,66 +905,69 @@ private:
     bool parseRhsVarNameOffsetLocked(const char* varExpr, char* varName, uint8_t varNameSz,
                                       float& offset, bool& hasOffset);
     uint8_t findStateByNameLocked(const char* name) const;
+    void    suggestStateNameLocked(const char* typo, char* buf, uint8_t bufSize) const;
+
+    static uint8_t levenshteinDist(const char* a, const char* b);
 
     void setErrorLocked(const char* reason);
-    void exitStateLocked(uint8_t stateIndex, uint32_t nowMs);
-    void enterStateLocked(uint8_t stateIndex, uint32_t nowMs);
-    bool checkOnTimeoutLocked(StateDef& state, uint32_t nowMs);
-    bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint32_t nowMs);
+    void exitStateLocked(uint8_t stateIndex, uint64_t nowMs);
+    void enterStateLocked(uint8_t stateIndex, uint64_t nowMs);
+    bool checkOnTimeoutLocked(StateDef& state, uint64_t nowMs);
+    bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint64_t nowMs);
     bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
                                               StateDef&,
                                               uint8_t         condIdx,
-                                              uint32_t        nowMs,
+                                              uint64_t        nowMs,
                                               bool&           tcPendingMatch);
-    bool applyTransitionHoldLocked(const Transition& tr, uint8_t trIdx, uint32_t nowMs);
+    bool applyTransitionHoldLocked(const Transition& tr, uint8_t trIdx, uint64_t nowMs);
     void consumeMatchedTransitionTcLocked(const Transition& tr);
     bool fireResolvedTransitionLocked(const StateDef&   state,
                                       const Transition& tr,
-                                      uint32_t          nowMs);
-    void executeDueActionsLocked(const StateDef& state, uint32_t nowMs);
+                                      uint64_t          nowMs);
+    void executeDueActionsLocked(const StateDef& state, uint64_t nowMs);
 
-    void sendOnEnterEventLocked(uint32_t nowMs);
-    void executeSetActionsLocked(StateDef& st, uint32_t nowMs);
+    void sendOnEnterEventLocked(uint64_t nowMs);
+    void executeSetActionsLocked(StateDef& st, uint64_t nowMs);
     void executePulseActionsLocked(const StateDef& st);  ///< AMS-4.17: fire all PULSE.fire actions for state entry.
-    void executeOneSetActionLocked(SetAction& act, uint32_t nowMs); ///< Execute a single set action (shared by state + task paths).
-    void stepPendingCalibrationsLocked(StateDef& st, uint32_t nowMs); ///< AMS-4.8.2: advance each in-progress CALIBRATE by one sample.
-    void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint32_t nowMs);
+    void executeOneSetActionLocked(SetAction& act, uint64_t nowMs); ///< Execute a single set action (shared by state + task paths).
+    void stepPendingCalibrationsLocked(StateDef& st, uint64_t nowMs); ///< AMS-4.8.2: advance each in-progress CALIBRATE by one sample.
+    void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint64_t nowMs);
     void executeDeltaSetActionLocked(SetAction& act, float& result, bool& gotReading);
     void executeMinMaxSetActionLocked(SetAction& act, const VarEntry* v, float& result, bool& gotReading);
-    void runTasksLocked(uint32_t nowMs);                            ///< AMS-11: evaluate all background tasks.
-    bool evaluateTaskRuleCondLocked(const TaskRule& rule, uint32_t nowMs, bool& condResult) const;
+    void runTasksLocked(uint64_t nowMs);                            ///< AMS-11: evaluate all background tasks.
+    bool evaluateTaskRuleCondLocked(const TaskRule& rule, uint64_t nowMs, bool& condResult) const;
     bool resolveVarThresholdLocked(const CondExpr& cond, float& outThreshold) const;
     VarEntry*       findVarLocked(const char* name);
     const VarEntry* findVarLocked(const char* name) const;
     const ConstEntry* findConstLocked(const char* name) const;
-    bool evaluateConditionsLocked(const StateDef& state, uint32_t nowMs);
+    bool evaluateConditionsLocked(const StateDef& state, uint64_t nowMs);
     static const char* sensorFieldNameForLog(SensorField f);
     bool evaluateGuardExprHoldsLocked(const CondExpr& expr,
                                       const StateDef& state,
-                                      uint32_t        nowMs,
+                                      uint64_t        nowMs,
                                       float&          actualVal) const;
     bool handleGuardViolationLocked(const StateDef& state,
                                     const CondExpr& expr,
                                     float           actualVal,
-                                    uint32_t        nowMs);
+                                    uint64_t        nowMs);
     void logGuardViolationLocked(const StateDef& state,
                                  const CondExpr& expr,
                                  float           actualVal,
-                                 uint32_t        nowMs);
-    bool applyGuardErrorLocked(const StateDef& state, uint32_t nowMs);
-    void sendHkReportLocked(uint32_t nowMs);
-    void sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot);       ///< AMS-4.3.1: single slot variant.
-    void appendLogReportLocked(uint32_t nowMs);
-    void appendLogReportSlotLocked(uint32_t nowMs,
+                                 uint64_t        nowMs);
+    bool applyGuardErrorLocked(const StateDef& state, uint64_t nowMs);
+    void sendHkReportLocked(uint64_t nowMs);
+    void sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot);       ///< AMS-4.3.1: single slot variant.
+    void appendLogReportLocked(uint64_t nowMs);
+    void appendLogReportSlotLocked(uint64_t nowMs,
                                    const HkSlot& slot,
                                    uint8_t slotIdx);                       ///< AMS-4.3.1: single slot variant.
     bool writeLogHeaderIfNeededLocked(const StateDef& st);
     bool buildLogDataRowLocked(const StateDef& st,
-                               uint32_t        nowMs,
+                               uint64_t        nowMs,
                                char*           outLine,
                                uint32_t        outSize,
                                uint32_t&       outLen) const;
-    void sendEventLocked(EventVerb verb, ares::proto::EventId id, const char* text, uint32_t nowMs);
+    void sendEventLocked(EventVerb verb, ares::proto::EventId id, const char* text, uint64_t nowMs);
 
     /**
      * @brief Infer the APUS-8 EventId from an AMS EventVerb.
@@ -1002,7 +1011,7 @@ private:
      * @param[in] nowMs  Current millis() for the event timestamp.
      */
     void evaluateMonitoringLocked(const ares::proto::TelemetryPayload& tm,
-                                  uint32_t nowMs);
+                                  uint64_t nowMs);
 
     /**
      * @brief Extract the value of @p id from @p tm.
@@ -1025,19 +1034,20 @@ private:
     /// after the mutex is released. Idempotent if nothing is pending.
     void flushPendingIoUnlocked();
 
-    bool saveResumePointLocked(uint32_t nowMs, bool force);
-    bool buildCheckpointRecordLocked(uint32_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
+    bool saveResumePointLocked(uint64_t nowMs, bool force);
+    bool buildCheckpointRecordLocked(uint64_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
     void appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
-    void appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint32_t nowMs) const;
-    bool tryRestoreResumePointLocked(uint32_t nowMs);
-    bool applyCheckpointStateLocked(uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
+    void appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
+    bool tryRestoreResumePointLocked(uint64_t nowMs);
+    bool applyCheckpointStateLocked(uint64_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
                                      uint32_t running, uint32_t status, uint32_t seq,
                                      uint32_t stateElapsed, uint32_t hkElapsed,
                                      uint32_t logElapsed);
     static bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed);
     const char* restoreCheckpointVarsLocked(const char* cursor);
-    void restoreCheckpointSlotsLocked(const char* cursor, uint32_t nowMs);
+    void restoreCheckpointSlotsLocked(const char* cursor, uint64_t nowMs);
     void clearResumePointLocked();
+    void writeAbortMarkerLocked(const char* stateName, uint64_t nowMs);
 
     /**
      * Internal deactivation — must be called with mutex_ already held.
@@ -1054,11 +1064,11 @@ private:
     void resetMonitorSlotsLocked();
 
     /** Compute earliest due time across active HK slots; returns updated @p cur. */
-    uint32_t nextDueFromHkSlots(const StateDef& s, uint32_t cur) const;
+    uint64_t nextDueFromHkSlots(const StateDef& s, uint64_t cur) const;
     /** Compute earliest due time across active LOG slots; returns updated @p cur. */
-    uint32_t nextDueFromLogSlots(const StateDef& s, uint32_t cur) const;
+    uint64_t nextDueFromLogSlots(const StateDef& s, uint64_t cur) const;
     /** Compute earliest due time across background tasks; returns updated @p cur. */
-    uint32_t nextDueFromTasks(uint32_t cur) const;
+    uint64_t nextDueFromTasks(uint64_t cur) const;
 
     StorageInterface&    storage_;
     const GpsEntry*      gpsDrivers_;
@@ -1084,16 +1094,16 @@ private:
     bool running_ = false;
     bool executionEnabled_ = false;
     uint8_t currentState_ = 0;
-    uint32_t stateEnterMs_ = 0;
-    uint32_t lastHkMs_ = 0;
-    uint32_t lastLogMs_ = 0;
+    uint64_t stateEnterMs_ = 0;
+    uint64_t lastHkMs_ = 0;
+    uint64_t lastLogMs_ = 0;
     /// Per-slot last-fire timestamps (AMS-4.3.1). Index matches hkSlots[]/logSlots[].
-    uint32_t lastHkSlotMs_[ares::AMS_MAX_HK_SLOTS]  = {};
-    uint32_t lastLogSlotMs_[ares::AMS_MAX_HK_SLOTS] = {};
+    uint64_t lastHkSlotMs_[ares::AMS_MAX_HK_SLOTS]  = {};
+    uint64_t lastLogSlotMs_[ares::AMS_MAX_HK_SLOTS] = {};
     bool pendingOnEnterEvent_ = false;
     EventVerb pendingEventVerb_ = EventVerb::INFO;
     char pendingEventText_[ares::AMS_MAX_EVENT_TEXT] = {};
-    uint32_t pendingEventTsMs_ = 0;
+    uint64_t pendingEventTsMs_ = 0;
 
     TcCommand pendingTc_ = TcCommand::NONE;
     uint8_t   tcConfirmCount_[4] = {}; ///< Per-TC injection counter for CONFIRM mode (AMS-4.11.2).
@@ -1105,7 +1115,7 @@ private:
     // ── Transition hold (debounce) state (AMS-4.6.1) ─────────────────────────
     // One hold-window entry per transition slot [0..AMS_MAX_TRANSITIONS-1].
     bool     transitionCondHolding_[ares::AMS_MAX_TRANSITIONS] = {};  ///< true while that transition's condition is being timed.
-    uint32_t transitionCondMetMs_[ares::AMS_MAX_TRANSITIONS]   = {};  ///< millis() when that transition's condition first became true.
+    uint64_t transitionCondMetMs_[ares::AMS_MAX_TRANSITIONS]   = {};  ///< millis64() when that transition's condition first became true.
 
     // ── Transition delta tracking (AMS-4.6.2) ────────────────────────────────
     // Flat 2D array indexed as [trIdx * AMS_MAX_TRANSITION_CONDS + condIdx].
@@ -1115,7 +1125,8 @@ private:
 
     bool logHeaderWritten_ = false;
     bool logSlotHeaderWritten_[ares::AMS_MAX_HK_SLOTS] = {}; ///< Per-slot CSV header written flags (AMS-4.3.1).
-    uint32_t lastCheckpointMs_ = 0;
+    uint64_t lastCheckpointMs_ = 0;
+    bool     checkpointDirty_  = false; ///< True when a material field changed since the last checkpoint write.
 
     // ── Deferred I/O staging (AMS-8.3) ───────────────────────────────────────
     // Checkpoint writes and CSV log appends are assembled inside the mutex but
@@ -1156,13 +1167,13 @@ private:
     //
     // IMU: original per-engine cache (unchanged).
     mutable ImuReading imuCachedReading_ = {};   ///< Last successful IMU burst.
-    mutable uint32_t   imuCacheTsMs_     = 0U;   ///< millis() when last attempt was made.
+    mutable uint64_t   imuCacheTsMs_     = 0U;   ///< millis64() when last attempt was made.
     mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS  = 5U; ///< Max cache age — one tick period.
 
     // BARO: per-alias cache (one entry per 'include' alias, indexed by alias slot).
     mutable BaroReading baroCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
-    mutable uint32_t    baroCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
+    mutable uint64_t    baroCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        baroCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
     static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = 5U;
 
@@ -1172,7 +1183,7 @@ private:
     // normal tick rate, transition conditions therefore read fresh data on
     // their first field access each tick.
     mutable GpsReading  gpsCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
-    mutable uint32_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
+    mutable uint64_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        gpsCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
     static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = 5U;
 
@@ -1184,7 +1195,7 @@ private:
     // ── Vertical velocity tracking (APUS-6) ───────────────────────────────────
     // Computed from consecutive baro altitude samples in every HK frame.
     float    prevAltM_       = 0.0f;  ///< Altitude at the previous HK send (m AGL).
-    uint32_t prevAltMs_      = 0U;    ///< Timestamp of the previous HK send.
+    uint64_t prevAltMs_      = 0U;    ///< Timestamp of the previous HK send.
     bool     hasPrevAlt_     = false; ///< True after the first HK altitude sample.
 
     // ── Telemetry delta-encoding state (APUS-3.3) ─────────────────────────────
@@ -1254,7 +1265,7 @@ private:
 
     // ── AMS-11: per-task last-fire timestamps ─────────────────────────────────
     // Indexed by task slot in program_.tasks[].  Reset on deactivate().
-    uint32_t taskLastTickMs_[ares::AMS_MAX_TASKS] = {};
+    uint64_t taskLastTickMs_[ares::AMS_MAX_TASKS] = {};
 
     // ── Parser context for task blocks (valid only during parseScriptLocked) ──
     uint8_t  parseCurrentTask_     = 0xFFU; ///< Index of task being parsed; 0xFF = none.
@@ -1263,6 +1274,12 @@ private:
     // ── Parser context for multi-slot every/log_every (AMS-4.3.1) ────────────
     uint8_t  parseCurrentHkSlot_  = 0xFFU; ///< Index of HK slot being parsed; 0xFF = none.
     uint8_t  parseCurrentLogSlot_ = 0xFFU; ///< Index of LOG slot being parsed; 0xFF = none.
+
+    // ── Metadata-order guard (AMS-4.2) ───────────────────────────────────────
+    // Set to true the moment the first state: keyword is parsed.  Any metadata
+    // directive (include, var, const, pus.*, radio.config) seen after this
+    // point is a parse error.
+    bool     parseSeenState_      = false;
 };
 
 } // namespace ams

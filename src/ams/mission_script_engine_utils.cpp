@@ -16,6 +16,7 @@
 #include "ares_assert.h"
 #include "config.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -256,6 +257,113 @@ bool MissionScriptEngine::parseTcCommand(const char* text, TcCommand& out)
     if (strcmp(text, "RESET_ABNORMAL")  == 0) { out = TcCommand::RESET_ABNORMAL;  return true; }
 
     return false;
+}
+
+// ── levenshteinDist ──────────────────────────────────────────────────────────
+
+/**
+ * @brief Compute the Levenshtein edit distance between two short strings.
+ *
+ * Uses a two-row iterative DP; both rows are stack-allocated with a fixed
+ * capacity of @c AMS_MAX_STATE_NAME + 1 bytes — no heap allocation.
+ * Strings longer than @c AMS_MAX_STATE_NAME are silently truncated.
+ *
+ * @param[in] a  First NUL-terminated string.
+ * @param[in] b  Second NUL-terminated string.
+ * @return Edit distance (0 = equal).
+ */
+uint8_t MissionScriptEngine::levenshteinDist(const char* a, const char* b)
+{
+    if (a == nullptr || b == nullptr) { return UINT8_MAX; }
+
+    const uint8_t la = static_cast<uint8_t>(strnlen(a, ares::AMS_MAX_STATE_NAME));
+    const uint8_t lb = static_cast<uint8_t>(strnlen(b, ares::AMS_MAX_STATE_NAME));
+
+    // Two rows: prev[j] = dist(a[0..i-1], b[0..j-1])
+    uint8_t prev[ares::AMS_MAX_STATE_NAME + 1U] = {};
+    uint8_t curr[ares::AMS_MAX_STATE_NAME + 1U] = {};
+
+    for (uint8_t j = 0U; j <= lb; j++) { prev[j] = j; }
+
+    for (uint8_t i = 1U; i <= la; i++)
+    {
+        curr[0U] = i;
+        for (uint8_t j = 1U; j <= lb; j++)
+        {
+            const uint8_t cost = (a[i - 1U] == b[j - 1U]) ? 0U : 1U;
+            const uint8_t del  = static_cast<uint8_t>(prev[j]      + 1U);
+            const uint8_t ins  = static_cast<uint8_t>(curr[j - 1U] + 1U);
+            const uint8_t sub  = static_cast<uint8_t>(prev[j - 1U] + cost);
+            const uint8_t best = (del < ins) ? del : ins;
+            curr[j] = (best < sub) ? best : sub;
+        }
+        for (uint8_t j = 0U; j <= lb; j++) { prev[j] = curr[j]; }
+    }
+
+    return prev[lb];
+}
+
+// ── suggestStateNameLocked ───────────────────────────────────────────────────
+
+/**
+ * @brief Build a "did you mean" hint when a state name cannot be resolved.
+ *
+ * Scans all known state names and returns the closest match by Levenshtein
+ * distance.  Only writes a suggestion when the best distance is non-zero
+ * (not an exact match) and within a heuristic threshold (at most half the
+ * length of @p typo, minimum 2).
+ *
+ * @param[in]  typo     The unresolved name that caused the error.
+ * @param[out] buf      Buffer for the hint string (e.g. @c " (did you mean 'FLIGHT'?)").
+ *                      Set to an empty string when no suggestion is warranted.
+ * @param[in]  bufSize  Capacity of @p buf in bytes.
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::suggestStateNameLocked(const char* typo,
+                                                  char*       buf,
+                                                  uint8_t     bufSize) const
+{
+    buf[0] = '\0';
+    if (typo == nullptr || program_.stateCount == 0U || bufSize == 0U) { return; }
+
+    // Build a lower-cased copy of typo for case-insensitive distance.
+    char typoLow[ares::AMS_MAX_STATE_NAME] = {};
+    const uint8_t typoLen = static_cast<uint8_t>(
+        strnlen(typo, ares::AMS_MAX_STATE_NAME - 1U));
+    for (uint8_t k = 0U; k < typoLen; k++)
+    {
+        typoLow[k] = static_cast<char>(tolower(static_cast<unsigned char>(typo[k])));
+    }
+
+    uint8_t bestDist = UINT8_MAX;
+    uint8_t bestIdx  = 0U;
+
+    for (uint8_t i = 0U; i < program_.stateCount; i++)
+    {
+        // Lower-case the candidate for case-insensitive comparison.
+        char candLow[ares::AMS_MAX_STATE_NAME] = {};
+        const uint8_t candLen = static_cast<uint8_t>(
+            strnlen(program_.states[i].name, ares::AMS_MAX_STATE_NAME - 1U));
+        for (uint8_t k = 0U; k < candLen; k++)
+        {
+            candLow[k] = static_cast<char>(
+                tolower(static_cast<unsigned char>(program_.states[i].name[k])));
+        }
+
+        const uint8_t d = levenshteinDist(typoLow, candLow);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+
+    // Threshold: within half the typo length (minimum 2).
+    // A case-only mismatch gives CI distance 0 — always suggest in that case
+    // (findStateByNameLocked already confirmed the exact name was not found).
+    const uint8_t half      = static_cast<uint8_t>(typoLen / 2U);
+    const uint8_t threshold = (half > 2U) ? half : 2U;
+
+    if (bestDist <= threshold)
+    {
+        snprintf(buf, bufSize, " (did you mean '%s'?)", program_.states[bestIdx].name);
+    }
 }
 
 } // namespace ams

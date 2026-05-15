@@ -17,6 +17,7 @@
 #include "api/api_common.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
+#include "hal/millis64.h"
 
 #include <Arduino.h>
 #include <algorithm>
@@ -38,7 +39,11 @@ static constexpr uint8_t AMS_RESUME_VERSION = 3U;
 /**
  * @brief Clamp the per-tick action budget to the valid range [1, 3].
  *
- * A budget of 0 is treated as 1 (at least one action per tick).
+ * @c budget counts **action groups** (EVENT=0, HK=1, LOG=2) dispatched per
+ * tick, not individual HK/LOG slots.  When the HK group is selected, all due
+ * HK slots fire within that single budget step (AMS-4.4).
+ *
+ * A budget of 0 is treated as 1 (at least one group per tick).
  * Values above 3 are capped to 3 (APUS-19.2 maximum).
  *
  * @param[in] budget  Unclamped budget value.
@@ -52,15 +57,16 @@ static uint8_t clampActionBudget(uint8_t budget)
 }
 
 /**
- * @brief Select the highest-priority action slot that has pending work.
+ * @brief Select the highest-priority action group that has pending work.
  *
- * Iterates over the three action slots (EVENT=0, HK=1, LOG=2) and returns
+ * Iterates over the three action groups (EVENT=0, HK=1, LOG=2) and returns
  * the index of the one with the highest priority among those with
- * @p due set to @c true.
+ * @p due set to @c true.  Selecting a group dispatches the entire group
+ * (all due HK slots or all due LOG slots) within one budget step (AMS-4.4).
  *
- * @param[in] priorities  Priority of each slot (0-9; higher = earlier).
- * @param[in] due         Which slots have pending work.
- * @return Index of the winning slot (0, 1, or 2), or -1 if none are due.
+ * @param[in] priorities  Priority of each group (0-9; higher = earlier).
+ * @param[in] due         Which groups have pending work.
+ * @return Index of the winning group (0, 1, or 2), or -1 if none are due.
  */
 static int8_t pickBestDueActionIndex(const uint8_t priorities[3],
                                      const bool    due[3])
@@ -111,7 +117,7 @@ bool MissionScriptEngine::begin()
         return false;
     }
 
-    (void)tryRestoreResumePointLocked(millis());
+    (void)tryRestoreResumePointLocked(millis64());
     return true;
 }
 
@@ -150,7 +156,7 @@ bool MissionScriptEngine::activate(const char* fileName)
         startIdx = waitIdx;
     }
 
-    enterStateLocked(startIdx, millis());
+    enterStateLocked(startIdx, millis64());
     LOG_I(TAG, "activated script=%s states=%u",
           activeFile_, static_cast<uint32_t>(program_.stateCount));
     return true;
@@ -159,9 +165,10 @@ bool MissionScriptEngine::activate(const char* fileName)
 void MissionScriptEngine::deactivateLocked()
 {
     LOG_I(TAG, "deactivated");
-    running_ = false;
-    executionEnabled_ = false;
-    status_ = EngineStatus::IDLE;
+    running_           = false;
+    executionEnabled_  = false;
+    checkpointDirty_   = false;
+    status_            = EngineStatus::IDLE;
     program_ = {};
     primaryCom_ = nullptr;
     activeFile_[0] = '\0';
@@ -292,7 +299,7 @@ bool MissionScriptEngine::arm()
         pendingTc_        = TcCommand::LAUNCH;
         LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
 
-        (void)saveResumePointLocked(millis(), true);
+        (void)saveResumePointLocked(millis64(), true);
     } // Mutex released; checkpoint staged.
 
     flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
@@ -329,13 +336,13 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
         }
         LOG_I(TAG, "execution %s", enabled ? "enabled" : "disabled");
 
-        (void)saveResumePointLocked(millis(), true);
+        (void)saveResumePointLocked(millis64(), true);
     } // Mutex released; checkpoint staged.
 
     flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
 }
 
-bool MissionScriptEngine::requestTelemetry(uint32_t nowMs)
+bool MissionScriptEngine::requestTelemetry(uint64_t nowMs)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired()) { return false; }
@@ -420,7 +427,7 @@ void MissionScriptEngine::notifyPulseFired(uint8_t channel)
 
 // ── nextWakeupMs ─────────────────────────────────────────────────────────────
 
-uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
+uint64_t MissionScriptEngine::nextWakeupMs(uint64_t nowMs) const
 {
     // Fast-path: engine not running — keep full tick rate.
     if (!running_ || status_ != EngineStatus::RUNNING)
@@ -445,7 +452,7 @@ uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
     // No conditions: compute the next time something actually needs to happen.
     // Start from the radio-cap so TC commands (LAUNCH/ABORT) are never delayed
     // more than kRadioMaxSleepMs even in pure reporting states.
-    uint32_t next = nowMs + kRadioMaxSleepMs;
+    uint64_t next = nowMs + kRadioMaxSleepMs;
 
     next = nextDueFromHkSlots(s, next);
     next = nextDueFromLogSlots(s, next);
@@ -453,45 +460,45 @@ uint32_t MissionScriptEngine::nextWakeupMs(uint32_t nowMs) const
 
     if (s.hasOnTimeout)
     {
-        const uint32_t due = stateEnterMs_ + s.onTimeoutMs;
+        const uint64_t due = stateEnterMs_ + s.onTimeoutMs;
         if (due < next) { next = due; }
     }
     if (s.hasFallback)
     {
-        const uint32_t due = stateEnterMs_ + s.fallbackAfterMs;
+        const uint64_t due = stateEnterMs_ + s.fallbackAfterMs;
         if (due < next) { next = due; }
     }
 
     return (next > nowMs) ? next : (nowMs + 1U);
 }
 
-uint32_t MissionScriptEngine::nextDueFromHkSlots(const StateDef& s, uint32_t cur) const
+uint64_t MissionScriptEngine::nextDueFromHkSlots(const StateDef& s, uint64_t cur) const
 {
     for (uint8_t i = 0U; i < s.hkSlotCount; ++i)
     {
         if (s.hkSlots[i].everyMs > 0U)
         {
-            const uint32_t due = lastHkSlotMs_[i] + s.hkSlots[i].everyMs;
+            const uint64_t due = lastHkSlotMs_[i] + s.hkSlots[i].everyMs;
             if (due < cur) { cur = due; }
         }
     }
     return cur;
 }
 
-uint32_t MissionScriptEngine::nextDueFromLogSlots(const StateDef& s, uint32_t cur) const
+uint64_t MissionScriptEngine::nextDueFromLogSlots(const StateDef& s, uint64_t cur) const
 {
     for (uint8_t i = 0U; i < s.logSlotCount; ++i)
     {
         if (s.logSlots[i].everyMs > 0U)
         {
-            const uint32_t due = lastLogSlotMs_[i] + s.logSlots[i].everyMs;
+            const uint64_t due = lastLogSlotMs_[i] + s.logSlots[i].everyMs;
             if (due < cur) { cur = due; }
         }
     }
     return cur;
 }
 
-uint32_t MissionScriptEngine::nextDueFromTasks(uint32_t cur) const
+uint64_t MissionScriptEngine::nextDueFromTasks(uint64_t cur) const
 {
     for (uint8_t t = 0U; t < program_.taskCount; ++t)
     {
@@ -508,14 +515,14 @@ uint32_t MissionScriptEngine::nextDueFromTasks(uint32_t cur) const
         }
         if (active)
         {
-            const uint32_t due = taskLastTickMs_[t] + td.everyMs;
+            const uint64_t due = taskLastTickMs_[t] + td.everyMs;
             if (due < cur) { cur = due; }
         }
     }
     return cur;
 }
 
-void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-size)
+void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-size)
 {
     // Reset staging buffers before every tick.  They are populated inside the
     // mutex scope below and flushed by flushPendingIoUnlocked() after the lock
@@ -573,6 +580,17 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
     {
         LOG_W(TAG, "ABORT TC not consumed by state=%s: force-deactivating",
               state.name);
+        // Emit an auditable ERROR event so the ground station knows which state
+        // was active when the unhandled ABORT triggered the force-deactivation.
+        char abortMsg[80] = {};
+        snprintf(abortMsg, sizeof(abortMsg),
+                 "ABORT: forced in state=%s", state.name);
+        sendEventLocked(EventVerb::ERROR,
+                        ares::proto::EventId::FPL_VIOLATION,
+                        abortMsg, nowMs);
+        // Persist a final "abort" row in the mission log (survives deactivate
+        // because queueAppendLocked copies the path before logPath_ is cleared).
+        writeAbortMarkerLocked(state.name, nowMs);
         deactivateLocked();
         return;
     }
@@ -643,7 +661,7 @@ void MissionScriptEngine::tick(uint32_t nowMs) // NOLINT(readability-function-si
  * @pre  currentState_ < program_.stateCount.
  */
 bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
-                                                                uint32_t nowMs)
+                                                                uint64_t nowMs)
 {
     ARES_ASSERT(currentState_ < program_.stateCount);
 
@@ -709,7 +727,7 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
 bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& cond,
                                                                StateDef&,
                                                                uint8_t         condIdx,
-                                                               uint32_t        nowMs,
+                                                               uint64_t        nowMs,
                                                                bool&           tcPendingMatch)
 {
     bool condResult = false;
@@ -730,7 +748,7 @@ bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& c
         break;
 
     case CondKind::TIME_GT:
-        condResult = ((nowMs - stateEnterMs_) > static_cast<uint32_t>(cond.threshold));
+        condResult = ((nowMs - stateEnterMs_) > static_cast<uint64_t>(cond.threshold));
         break;
 
     case CondKind::SENSOR_LT:
@@ -776,7 +794,7 @@ bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& c
 
 bool MissionScriptEngine::applyTransitionHoldLocked(const Transition& tr,
                                                     uint8_t           trIdx,
-                                                    uint32_t          nowMs)
+                                                    uint64_t          nowMs)
 {
     ARES_ASSERT(trIdx < ares::AMS_MAX_TRANSITIONS);
 
@@ -821,7 +839,7 @@ void MissionScriptEngine::consumeMatchedTransitionTcLocked(const Transition& tr)
 
 bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
                                                        const Transition& tr,
-                                                       uint32_t          nowMs)
+                                                       uint64_t          nowMs)
 {
     if (!tr.targetResolved || tr.targetIndex >= program_.stateCount)
     {
@@ -829,7 +847,7 @@ bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
         return true;
     }
 
-    LOG_I(TAG, "Transition: '%s' -> '%s' at t=%" PRIu32 "ms",
+    LOG_I(TAG, "Transition: '%s' -> '%s' at t=%" PRIu64 "ms",
           state.name,
           program_.states[tr.targetIndex].name,
           nowMs);
@@ -839,18 +857,20 @@ bool MissionScriptEngine::fireResolvedTransitionLocked(const StateDef&   state,
 }
 
 /**
- * @brief Execute the highest-priority due action(s) within the per-tick budget.
+ * @brief Execute the highest-priority due action groups within the per-tick budget.
  *
- * On each call, up to `state.actionBudget` (clamped 1-3 by APUS-19.2) actions
- * are dispatched in priority order: EVENT > HK > LOG (configurable via
- * `priorities` in the AMS script).  Timers for dispatched actions are reset.
+ * On each call, up to `state.actionBudget` (clamped 1-3 by APUS-19.2) action
+ * **groups** are dispatched in priority order: EVENT > HK > LOG (configurable
+ * via `priorities` in the AMS script).  Within a selected group ALL due slots
+ * fire before the next group is considered (AMS-4.4).  Timers for dispatched
+ * slots are advanced by their configured cadence.
  *
  * @param[in] state  Current state definition (contains schedules and fields).
  * @param[in] nowMs  Current system time in milliseconds.
  * @pre  mutex_ is held by the caller.
  * @pre  currentState_ < program_.stateCount.
  */
-void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_t nowMs) // NOLINT(readability-function-size)
+void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_t nowMs) // NOLINT(readability-function-size)
 {
     ARES_ASSERT(currentState_ < program_.stateCount);
 
@@ -874,8 +894,10 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
                      && ((nowMs - lastLogSlotMs_[s]) >= sl.everyMs);
     }
 
-    // Legacy single-slot due flags (used by pickBestDueActionIndex).
-    // A slot group is "due" if any slot within it is due.
+    // Build per-group due flags for pickBestDueActionIndex (AMS-4.4).
+    // Each entry represents one action GROUP (EVENT=0, HK=1, LOG=2).
+    // A group is "due" if at least one slot within it is due; selecting
+    // the group will fire ALL due slots inside it in one budget step.
     bool anyHkDue  = false;
     bool anyLogDue = false;
     for (uint8_t s = 0; s < state.hkSlotCount;  s++) { if (hkSlotDue[s])  { anyHkDue  = true; break; } }
@@ -937,6 +959,22 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
                     {
                         sendHkReportSlotLocked(nowMs, state.hkSlots[s]);
                         lastHkSlotMs_[s] += state.hkSlots[s].everyMs;
+                        // Starvation guard (AMS-4.4): if still ≥1 period behind after
+                        // the timer advance, skip to nowMs and emit one WARN so the
+                        // radio bus is not flooded by N consecutive catch-up bursts.
+                        if ((nowMs - lastHkSlotMs_[s]) >= state.hkSlots[s].everyMs)
+                        {
+                            const uint32_t skipped = static_cast<uint32_t>(
+                                (nowMs - lastHkSlotMs_[s]) / state.hkSlots[s].everyMs);
+                            char warnMsg[64] = {};
+                            snprintf(warnMsg, sizeof(warnMsg),
+                                     "HK slot %u skipped %" PRIu32 " samples",
+                                     static_cast<uint32_t>(s), skipped);
+                            sendEventLocked(EventVerb::WARN,
+                                            ares::proto::EventId::FPL_VIOLATION,
+                                            warnMsg, nowMs);
+                            lastHkSlotMs_[s] = nowMs;
+                        }
                         hkSlotDue[s] = false;
                     }
                 }
@@ -946,6 +984,19 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
                 // Legacy fallback.
                 sendHkReportLocked(nowMs);
                 lastHkMs_ += state.hkEveryMs;
+                // Starvation guard (AMS-4.4).
+                if ((nowMs - lastHkMs_) >= state.hkEveryMs)
+                {
+                    const uint32_t skipped = static_cast<uint32_t>(
+                        (nowMs - lastHkMs_) / state.hkEveryMs);
+                    char warnMsg[64] = {};
+                    snprintf(warnMsg, sizeof(warnMsg),
+                             "HK slot 0 skipped %" PRIu32 " samples", skipped);
+                    sendEventLocked(EventVerb::WARN,
+                                    ares::proto::EventId::FPL_VIOLATION,
+                                    warnMsg, nowMs);
+                    lastHkMs_ = nowMs;
+                }
             }
             due[1] = false;
         }
@@ -960,6 +1011,20 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
                     {
                         appendLogReportSlotLocked(nowMs, state.logSlots[s], s);
                         lastLogSlotMs_[s] += state.logSlots[s].everyMs;
+                        // Starvation guard (AMS-4.4).
+                        if ((nowMs - lastLogSlotMs_[s]) >= state.logSlots[s].everyMs)
+                        {
+                            const uint32_t skipped = static_cast<uint32_t>(
+                                (nowMs - lastLogSlotMs_[s]) / state.logSlots[s].everyMs);
+                            char warnMsg[64] = {};
+                            snprintf(warnMsg, sizeof(warnMsg),
+                                     "LOG slot %u skipped %" PRIu32 " samples",
+                                     static_cast<uint32_t>(s), skipped);
+                            sendEventLocked(EventVerb::WARN,
+                                            ares::proto::EventId::FPL_VIOLATION,
+                                            warnMsg, nowMs);
+                            lastLogSlotMs_[s] = nowMs;
+                        }
                         logSlotDue[s] = false;
                     }
                 }
@@ -969,6 +1034,19 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint32_
                 // Legacy fallback.
                 appendLogReportLocked(nowMs);
                 lastLogMs_ += state.logEveryMs;
+                // Starvation guard (AMS-4.4).
+                if ((nowMs - lastLogMs_) >= state.logEveryMs)
+                {
+                    const uint32_t skipped = static_cast<uint32_t>(
+                        (nowMs - lastLogMs_) / state.logEveryMs);
+                    char warnMsg[64] = {};
+                    snprintf(warnMsg, sizeof(warnMsg),
+                             "LOG slot 0 skipped %" PRIu32 " samples", skipped);
+                    sendEventLocked(EventVerb::WARN,
+                                    ares::proto::EventId::FPL_VIOLATION,
+                                    warnMsg, nowMs);
+                    lastLogMs_ = nowMs;
+                }
             }
             due[2] = false;
         }
@@ -1074,7 +1152,7 @@ const char* MissionScriptEngine::sensorFieldNameForLog(SensorField f)
 
 bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
                                                        const StateDef&,
-                                                       uint32_t        nowMs,
+                                                       uint64_t        nowMs,
                                                        float&          actualVal) const
 {
     bool holds = true;
@@ -1082,8 +1160,8 @@ bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
     {
     case CondKind::TIME_GT:
         actualVal = static_cast<float>(nowMs - stateEnterMs_);
-        holds = (static_cast<uint32_t>(actualVal)
-                 <= static_cast<uint32_t>(expr.threshold));
+        holds = (static_cast<uint64_t>(actualVal)
+                 <= static_cast<uint64_t>(expr.threshold));
         break;
 
     case CondKind::SENSOR_LT:
@@ -1109,7 +1187,7 @@ bool MissionScriptEngine::evaluateGuardExprHoldsLocked(const CondExpr& expr,
 bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
                                                      const CondExpr& expr,
                                                      float           actualVal,
-                                                     uint32_t        nowMs)
+                                                     uint64_t        nowMs)
 {
     logGuardViolationLocked(state, expr, actualVal, nowMs);
     return applyGuardErrorLocked(state, nowMs);
@@ -1118,7 +1196,7 @@ bool MissionScriptEngine::handleGuardViolationLocked(const StateDef& state,
 void MissionScriptEngine::logGuardViolationLocked(const StateDef& state,
                                                   const CondExpr& expr,
                                                   float           actualVal,
-                                                  uint32_t        nowMs)
+                                                  uint64_t        nowMs)
 {
     char valText[16] = {};
     char thrText[16] = {};
@@ -1160,7 +1238,7 @@ void MissionScriptEngine::logGuardViolationLocked(const StateDef& state,
 }
 
 bool MissionScriptEngine::applyGuardErrorLocked(const StateDef& state,
-                                                uint32_t        nowMs)
+                                                uint64_t        nowMs)
 {
     if (state.hasOnErrorTransition && state.onErrorTransitionResolved)
     {
@@ -1191,7 +1269,7 @@ bool MissionScriptEngine::applyGuardErrorLocked(const StateDef& state,
  * @pre  mutex_ is held by the caller.
  */
 bool MissionScriptEngine::evaluateConditionsLocked(const StateDef& state,
-                                                   uint32_t nowMs)
+                                                   uint64_t nowMs)
 {
     if (state.conditionCount == 0U)
     {
@@ -1285,7 +1363,7 @@ void MissionScriptEngine::setErrorLocked(const char* reason)
  * @param[in] nowMs       Current system time in milliseconds.
  * @pre  mutex_ is held by the caller.
  */
-void MissionScriptEngine::exitStateLocked(uint8_t stateIndex, uint32_t nowMs)
+void MissionScriptEngine::exitStateLocked(uint8_t stateIndex, uint64_t nowMs)
 {
     if (stateIndex >= program_.stateCount) { return; }
     StateDef& st = program_.states[stateIndex];
@@ -1319,14 +1397,14 @@ void MissionScriptEngine::exitStateLocked(uint8_t stateIndex, uint32_t nowMs)
  * @return @c true if the timeout fired (caller must return immediately).
  * @pre  mutex_ is held by the caller.
  */
-bool MissionScriptEngine::checkOnTimeoutLocked(StateDef& state, uint32_t nowMs)
+bool MissionScriptEngine::checkOnTimeoutLocked(StateDef& state, uint64_t nowMs)
 {
     if (!state.hasOnTimeout || !state.onTimeoutTransitionResolved) { return false; }
 
-    const uint32_t elapsed = nowMs - stateEnterMs_;
+    const uint64_t elapsed = nowMs - stateEnterMs_;
     if (elapsed < state.onTimeoutMs) { return false; }
 
-    LOG_I(TAG, "on_timeout: '%s' -> '%s' (elapsed %" PRIu32 "ms)",
+    LOG_I(TAG, "on_timeout: '%s' -> '%s' (elapsed %" PRIu64 "ms)",
           state.name,
           program_.states[state.onTimeoutTransitionIdx].name,
           elapsed);
@@ -1355,7 +1433,7 @@ bool MissionScriptEngine::checkOnTimeoutLocked(StateDef& state, uint32_t nowMs)
  * @pre  mutex_ is held by the caller.
  * @pre  stateIndex < program_.stateCount.
  */
-void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
+void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint64_t nowMs)
 {
     if (stateIndex >= program_.stateCount)
     {
@@ -1412,17 +1490,18 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint32_t nowMs)
     }
 
     sendOnEnterEventLocked(nowMs);
+    checkpointDirty_ = true; // state change is material — write checkpoint soon
     (void)saveResumePointLocked(nowMs, true);
 }
 
-bool MissionScriptEngine::buildCheckpointRecordLocked(uint32_t nowMs,
+bool MissionScriptEngine::buildCheckpointRecordLocked(uint64_t nowMs,
                                                       char*    record,
                                                       size_t   recSize,
                                                       int32_t& outWritten) const
 {
-    const uint32_t stateElapsed = nowMs - stateEnterMs_;
-    const uint32_t hkElapsed    = nowMs - lastHkMs_;
-    const uint32_t logElapsed   = nowMs - lastLogMs_;
+    const uint32_t stateElapsed = static_cast<uint32_t>(nowMs - stateEnterMs_);
+    const uint32_t hkElapsed    = static_cast<uint32_t>(nowMs - lastHkMs_);
+    const uint32_t logElapsed   = static_cast<uint32_t>(nowMs - lastLogMs_);
 
     int32_t written = static_cast<int32_t>(snprintf(record, recSize,
                            "%" PRIu32 "|%s|%" PRIu32 "|%" PRIu32
@@ -1480,7 +1559,7 @@ void MissionScriptEngine::appendVarsSectionLocked(char*   record,
 void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
                                                         size_t   recSize,
                                                         int32_t& written,
-                                                        uint32_t nowMs) const
+                                                        uint64_t nowMs) const
 {
     if (written <= 0 || currentState_ >= program_.stateCount) { return; }
     const StateDef& curSt = program_.states[currentState_];
@@ -1495,7 +1574,7 @@ void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
     }
     for (uint8_t s = 0U; s < curSt.hkSlotCount && written > 0; s++)  // PO10-2
     {
-        const uint32_t slotElap = nowMs - lastHkSlotMs_[s];
+        const uint32_t slotElap = static_cast<uint32_t>(nowMs - lastHkSlotMs_[s]);
         const int32_t ws = static_cast<int32_t>(snprintf(
             record + written, recSize - static_cast<size_t>(written),
             "|%" PRIu32, slotElap));
@@ -1515,7 +1594,7 @@ void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
     }
     for (uint8_t s = 0U; s < curSt.logSlotCount && written > 0; s++)  // PO10-2
     {
-        const uint32_t slotElap = nowMs - lastLogSlotMs_[s];
+        const uint32_t slotElap = static_cast<uint32_t>(nowMs - lastLogSlotMs_[s]);
         const int32_t ws = static_cast<int32_t>(snprintf(
             record + written, recSize - static_cast<size_t>(written),
             "|%" PRIu32, slotElap));
@@ -1526,7 +1605,7 @@ void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
     }
 }
 
-bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
+bool MissionScriptEngine::saveResumePointLocked(uint64_t nowMs, bool force)
 {
     if (!running_ || activeFile_[0] == '\0')
     {
@@ -1535,6 +1614,14 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
 
     if (!force && ((nowMs - lastCheckpointMs_) < ares::AMS_CHECKPOINT_INTERVAL_MS))
     {
+        return true;
+    }
+
+    if (!force && !checkpointDirty_
+        && ((nowMs - lastCheckpointMs_) < ares::AMS_CHECKPOINT_STABLE_INTERVAL_MS))
+    {
+        // No material state change since last write; defer until the stable
+        // cadence elapses to reduce flash sector wear (AMS-8.4).
         return true;
     }
 
@@ -1560,6 +1647,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint32_t nowMs, bool force)
     pendingCheckpoint_.len     = written;
     pendingCheckpoint_.pending = true;
     lastCheckpointMs_          = nowMs;
+    checkpointDirty_           = false;
     return true;
 }
 
@@ -1580,6 +1668,27 @@ void MissionScriptEngine::clearResumePointLocked()
     if (stRemove != StorageStatus::OK && stRemove != StorageStatus::NOT_FOUND)
     {
         LOG_W(TAG, "checkpoint remove failed: %u", static_cast<uint32_t>(stRemove));
+    }
+}
+
+void MissionScriptEngine::writeAbortMarkerLocked(const char* stateName, uint64_t nowMs)
+{
+    // Appends one final CSV row to the mission log so the abort event is
+    // traceable in post-flight analysis (AMS ABORT audit trail).
+    // queueAppendLocked copies logPath_ into a local buffer, so this row is
+    // written even after deactivateLocked() clears logPath_.
+    if (logPath_[0] == '\0') { return; }
+
+    char line[96] = {};
+    const int32_t len = static_cast<int32_t>(
+        snprintf(line, sizeof(line),
+                 "%" PRIu64 ",ABORT,aborted_in_state=%s\n",
+                 nowMs, stateName));
+    if (len > 0 && len < static_cast<int32_t>(sizeof(line)))
+    {
+        queueAppendLocked(logPath_,
+                          reinterpret_cast<const uint8_t*>(line),
+                          static_cast<uint32_t>(len));
     }
 }
 
@@ -1725,7 +1834,7 @@ const char* MissionScriptEngine::restoreCheckpointVarsLocked(const char* cursor)
     return cursor;
 }
 
-void MissionScriptEngine::restoreCheckpointSlotsLocked(const char* cursor, uint32_t nowMs)
+void MissionScriptEngine::restoreCheckpointSlotsLocked(const char* cursor, uint64_t nowMs)
 {
     // cursor points to the first character of the hkSlotCount value.
     uint32_t hkCount = 0U;
@@ -1774,7 +1883,7 @@ void MissionScriptEngine::restoreCheckpointSlotsLocked(const char* cursor, uint3
 }
 
 bool MissionScriptEngine::applyCheckpointStateLocked(
-    uint32_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
+    uint64_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
     uint32_t running, uint32_t status, uint32_t seq,
     uint32_t stateElapsed, uint32_t hkElapsed, uint32_t logElapsed)
 {
@@ -1818,7 +1927,7 @@ bool MissionScriptEngine::applyCheckpointStateLocked(
     return true;
 }
 
-bool MissionScriptEngine::tryRestoreResumePointLocked(uint32_t nowMs) // NOLINT(readability-function-size)
+bool MissionScriptEngine::tryRestoreResumePointLocked(uint64_t nowMs) // NOLINT(readability-function-size)
 {
     bool exists = false;
     const StorageStatus stExists = storage_.exists(ares::AMS_RESUME_PATH, exists);
@@ -2002,7 +2111,7 @@ bool MissionScriptEngine::resolveVarThresholdLocked(const CondExpr& cond,
  * @pre  mutex_ is held by the caller.
  */
 void MissionScriptEngine::executeSetActionsLocked(StateDef& st,
-                                                  uint32_t nowMs)
+                                                  uint64_t nowMs)
 {
     for (uint8_t i = 0; i < st.setActionCount; i++)
     {
@@ -2027,7 +2136,7 @@ void MissionScriptEngine::executeSetActionsLocked(StateDef& st,
  * @param[in]     nowMs  Current timestamp for event framing.
  * @pre  mutex_ is held by the caller.
  */
-void MissionScriptEngine::stepPendingCalibrationsLocked(StateDef& st, uint32_t nowMs)
+void MissionScriptEngine::stepPendingCalibrationsLocked(StateDef& st, uint64_t nowMs)
 {
     for (uint8_t i = 0U; i < st.setActionCount; i++)
     {
@@ -2054,7 +2163,7 @@ void MissionScriptEngine::stepPendingCalibrationsLocked(StateDef& st, uint32_t n
 void MissionScriptEngine::executeCalibrateSetActionLocked(SetAction& act,
                                                           float&     result,
                                                           bool&      gotReading,
-                                                          uint32_t   /*nowMs*/)
+                                                          uint64_t   /*nowMs*/)
 {
     // AMS-4.8.2 — Async CALIBRATE: one sensor read per tick.
     //
@@ -2151,7 +2260,7 @@ void MissionScriptEngine::executeMinMaxSetActionLocked(SetAction&    act,
     gotReading = true;
 }
 
-void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t nowMs)
+void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint64_t nowMs)
 {
     VarEntry* v = findVarLocked(act.varName);
     if (v == nullptr)
@@ -2194,6 +2303,7 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
     {
         v->value = result;
         v->valid = true;
+        checkpointDirty_ = true; // var updated — checkpoint on next 1 s window
     }
     else if (act.kind == SetActionKind::CALIBRATE && act.calibInProgress)
     {
@@ -2228,7 +2338,7 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint32_t now
  * @pre  mutex_ is held.  running_ is true.  currentState_ is valid.
  */
 bool MissionScriptEngine::evaluateTaskRuleCondLocked(const TaskRule& rule,
-                                                     uint32_t        nowMs,
+                                                     uint64_t        nowMs,
                                                      bool&           condResult) const
 {
     condResult = false;
@@ -2249,7 +2359,7 @@ bool MissionScriptEngine::evaluateTaskRuleCondLocked(const TaskRule& rule,
     }
     case CondKind::TIME_GT:
         condResult = (nowMs - stateEnterMs_) >
-                     static_cast<uint32_t>(rule.cond.threshold);
+                     static_cast<uint64_t>(rule.cond.threshold);
         return true;
     default:
         // Delta and TC conditions are not supported in task if-rules.
@@ -2257,7 +2367,7 @@ bool MissionScriptEngine::evaluateTaskRuleCondLocked(const TaskRule& rule,
     }
 }
 
-void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
+void MissionScriptEngine::runTasksLocked(uint64_t nowMs)
 {
     for (uint8_t i = 0U; i < program_.taskCount; i++)
     {
@@ -2323,7 +2433,7 @@ void MissionScriptEngine::runTasksLocked(uint32_t nowMs)
  * @pre  mutex_ is held by the caller.
  * @pre  currentState_ < program_.stateCount.
  */
-void MissionScriptEngine::sendOnEnterEventLocked(uint32_t nowMs)
+void MissionScriptEngine::sendOnEnterEventLocked(uint64_t nowMs)
 {
     if (currentState_ >= program_.stateCount)
     {

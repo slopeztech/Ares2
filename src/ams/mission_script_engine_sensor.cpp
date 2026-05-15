@@ -17,6 +17,7 @@
 #include "debug/ares_log.h"
 
 #include <Arduino.h>
+#include "hal/millis64.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -204,7 +205,7 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
     if (gps == nullptr) { return false; }
 
     const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
-    const uint32_t nowMs    = static_cast<uint32_t>(millis());
+    const uint64_t nowMs    = millis64();
 
     if (!gpsCacheValid_[aliasIdx] || (nowMs - gpsCacheTsMs_[aliasIdx]) >= GPS_CACHE_MAX_AGE_MS)
     {
@@ -215,7 +216,7 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
         {
             ok = (gps->read(r) == GpsStatus::OK);
         }
-        gpsCacheTsMs_[aliasIdx]  = static_cast<uint32_t>(millis());
+        gpsCacheTsMs_[aliasIdx]  = millis64();
         gpsCacheValid_[aliasIdx] = ok;
         if (ok) { gpsCachedReadings_[aliasIdx] = r; }
         else    { return false; }
@@ -244,7 +245,7 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
     if (baro == nullptr) { return false; }
 
     const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
-    const uint32_t nowMs    = static_cast<uint32_t>(millis());
+    const uint64_t nowMs    = millis64();
 
     if (!baroCacheValid_[aliasIdx] || (nowMs - baroCacheTsMs_[aliasIdx]) >= BARO_CACHE_MAX_AGE_MS)
     {
@@ -255,7 +256,7 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
         {
             ok = (baro->read(r) == BaroStatus::OK);
         }
-        baroCacheTsMs_[aliasIdx]  = static_cast<uint32_t>(millis());
+        baroCacheTsMs_[aliasIdx]  = millis64();
         baroCacheValid_[aliasIdx] = ok;
         if (ok) { baroCachedReadings_[aliasIdx] = r; }
         else    { return false; }
@@ -275,7 +276,7 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
 bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
                                                 uint8_t       maxAttempts) const
 {
-    const uint32_t nowMs = static_cast<uint32_t>(millis());
+    const uint64_t nowMs = millis64();
     if ((nowMs - imuCacheTsMs_) < IMU_CACHE_MAX_AGE_MS) { return true; }
 
     bool readOk = false;
@@ -288,7 +289,7 @@ bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
             break;
         }
     }
-    imuCacheTsMs_ = static_cast<uint32_t>(millis());
+    imuCacheTsMs_ = millis64();
     if (!readOk)
     {
         imuCacheValid_ = false;

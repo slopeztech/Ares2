@@ -244,7 +244,8 @@ Constraints:
 - Max `AMS_MAX_HK_SLOTS = 4` blocks of each type per state
 - Each slot is independent — its timer resets when the state is activated
 - Budget arbitration (APUS-19.2) still applies: if multiple slots and tasks are due
-  in the same tick, the engine dispatches up to `actionBudget` actions in priority order
+  in the same tick, the engine dispatches up to `actionBudget` action *groups* in priority
+  order (see AMS-4.4); within a selected group all due slots fire in that budget step
 
 Recommendation:
 - Keep LOG faster than HK during dynamic phases (ascent/descent)
@@ -261,8 +262,13 @@ priorities event=4 hk=3 log=1 budget=2
 ```
 
 Meaning:
-- Higher number = higher prioritya
-- `budget` = max actions executed per tick
+- Higher number = higher priority
+- `budget` = max **action groups** (EVENT / HK / LOG) dispatched per tick
+
+> **Important:** `budget` counts groups, not individual slots.  With `budget=1`
+> and three simultaneously-due HK slots, all three HK slots still fire in one
+> tick because they belong to the same HK group.  To throttle output rate,
+> reduce the HK slot cadence (`every Nms`), not the budget.
 
 Recommended profile (PUS-first):
 - `event=4`
@@ -274,7 +280,8 @@ When to increase budget to 3:
 - Lab/testing runs where latency is more important than CPU margin
 
 When to keep budget at 1 or 2:
-- Flight-critical conservative runtime with tighter timing bounds
+- Flight-critical conservative runtime; prevents EVENT + HK + LOG from
+  all transmitting in the same tick, spreading radio load across ticks
 
 ---
 

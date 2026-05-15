@@ -61,7 +61,7 @@ static constexpr const char* TAG = "AMS";
  * @pre  Caller holds the engine mutex.  @c currentState_ is valid.
  * @post A TELEMETRY frame is transmitted; @c seq_ is advanced.
  */
-void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readability-function-size)
+void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readability-function-size)
 {
     if (currentState_ >= program_.stateCount) { return; }
 
@@ -70,7 +70,7 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readabili
     if (!st.hasHkEvery || st.hkFieldCount == 0U) { return; }
 
     TelemetryPayload tm = {};
-    tm.timestampMs = nowMs;
+    tm.timestampMs = static_cast<uint32_t>(nowMs);
     tm.flightPhase = static_cast<uint8_t>(currentState_);
     tm.statusBits  = buildStatusBitsLocked();
 
@@ -168,13 +168,13 @@ void MissionScriptEngine::sendHkReportLocked(uint32_t nowMs) // NOLINT(readabili
  * @param[in] slot   The HK slot to transmit.
  * @pre  Caller holds the engine mutex.
  */
-void MissionScriptEngine::sendHkReportSlotLocked(uint32_t nowMs, const HkSlot& slot) // NOLINT(readability-function-size)
+void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot) // NOLINT(readability-function-size)
 {
     ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
     if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
 
     TelemetryPayload tm = {};
-    tm.timestampMs = nowMs;
+    tm.timestampMs = static_cast<uint32_t>(nowMs);
     tm.flightPhase = static_cast<uint8_t>(currentState_);
     tm.statusBits  = buildStatusBitsLocked();
 
@@ -414,7 +414,7 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(
  * @pre  Caller holds the engine mutex.  @c logPath_ is set.
  * @post One or two lines are appended to @c logPath_ on the storage device.
  */
-void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
+void MissionScriptEngine::appendLogReportLocked(uint64_t nowMs)
 {
     if (currentState_ >= program_.stateCount) { return; }
 
@@ -452,7 +452,7 @@ void MissionScriptEngine::appendLogReportLocked(uint32_t nowMs)
  * @param[in] slotIdx  Zero-based slot index (used to track header state).
  * @pre  Caller holds the engine mutex.  @c logPath_ is set.
  */
-void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs, // NOLINT(readability-function-size)
+void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLINT(readability-function-size)
                                                     const HkSlot& slot,
                                                     uint8_t       slotIdx)
 {
@@ -492,7 +492,7 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint32_t      nowMs, // NOLI
 
     // Build data row: t_ms, state_name, slot_index, field values.
     static char line[256] = {};
-    int32_t head = static_cast<int32_t>(snprintf(line, sizeof(line), "%" PRIu32 ",%s,%u",
+    int32_t head = static_cast<int32_t>(snprintf(line, sizeof(line), "%" PRIu64 ",%s,%u",
                         nowMs, st.name, static_cast<uint32_t>(slotIdx)));
     if (head <= 0) { return; }
 
@@ -553,12 +553,12 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
 }
 
 bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
-                                                uint32_t        nowMs,
+                                                uint64_t        nowMs,
                                                 char*           outLine,
                                                 uint32_t        outSize,
                                                 uint32_t&       outLen) const
 {
-    int32_t headLen = static_cast<int32_t>(snprintf(outLine, outSize, "%" PRIu32 ",%s", nowMs, st.name));
+    int32_t headLen = static_cast<int32_t>(snprintf(outLine, outSize, "%" PRIu64 ",%s", nowMs, st.name));
     if (headLen <= 0)
     {
         return false;
@@ -710,12 +710,12 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
 void MissionScriptEngine::sendEventLocked(EventVerb         verb,
                                           ares::proto::EventId id,
                                           const char*       text,
-                                          uint32_t          nowMs)
+                                          uint64_t          nowMs)
 {
     ARES_ASSERT(text != nullptr);
 
     EventHeader header = {};
-    header.timestampMs = nowMs;
+    header.timestampMs = static_cast<uint32_t>(nowMs);
     // APUS-8: use the caller-supplied EventId so each event class is distinct.
     header.eventId = static_cast<uint8_t>(id);
 
@@ -783,7 +783,7 @@ void MissionScriptEngine::sendEventLocked(EventVerb         verb,
  */
 void MissionScriptEngine::evaluateMonitoringLocked(
     const ares::proto::TelemetryPayload& tm,
-    uint32_t                             nowMs)
+    uint64_t                             nowMs)
 {
     for (uint8_t i = 0U; i < kMaxMonitorSlots; ++i)
     {

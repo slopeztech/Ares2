@@ -34,6 +34,7 @@ extern void test_flight_time_transition_fires_at_5s();
 extern void test_flight_reaches_complete_after_end_state();
 extern void test_sensor_transition_fires_on_altitude_threshold();
 extern void test_multiple_hk_frames_accumulate_correctly();
+extern void test_hk_slot_starvation_skips_samples();
 
 // ── test_ams_engine_control.cpp ───────────────────────────────────────────────
 
@@ -50,6 +51,14 @@ extern void test_notify_pulse_b_sets_status_bit();
 
 extern void test_parser_error_on_empty_script();
 extern void test_parser_error_on_line_too_long();
+extern void test_parser_error_include_after_state();
+extern void test_parser_error_var_after_state();
+extern void test_parser_error_const_after_state();
+extern void test_parser_error_radio_config_after_state();
+extern void test_parser_error_pus_service_after_state();
+extern void test_parser_error_pus_apid_after_state();
+extern void test_typo_state_name_case_suggests_correction();
+extern void test_typo_state_name_single_char_suggests_correction();
 extern void test_fallback_transition_fires_on_timeout();
 extern void test_guard_violation_sets_error_status();
 extern void test_on_error_recovery_transition_replaces_halt();
@@ -106,6 +115,7 @@ int main()
     RUN_TEST(test_flight_reaches_complete_after_end_state);
     RUN_TEST(test_sensor_transition_fires_on_altitude_threshold);
     RUN_TEST(test_multiple_hk_frames_accumulate_correctly);
+    RUN_TEST(test_hk_slot_starvation_skips_samples);
 
     // Engine control
     RUN_TEST(test_abort_tc_deactivates_engine);
@@ -120,6 +130,14 @@ int main()
     // Script variants
     RUN_TEST(test_parser_error_on_empty_script);
     RUN_TEST(test_parser_error_on_line_too_long);
+    RUN_TEST(test_parser_error_include_after_state);
+    RUN_TEST(test_parser_error_var_after_state);
+    RUN_TEST(test_parser_error_const_after_state);
+    RUN_TEST(test_parser_error_radio_config_after_state);
+    RUN_TEST(test_parser_error_pus_service_after_state);
+    RUN_TEST(test_parser_error_pus_apid_after_state);
+    RUN_TEST(test_typo_state_name_case_suggests_correction);
+    RUN_TEST(test_typo_state_name_single_char_suggests_correction);
     RUN_TEST(test_fallback_transition_fires_on_timeout);
     RUN_TEST(test_guard_violation_sets_error_status);
     RUN_TEST(test_on_error_recovery_transition_replaces_halt);

@@ -244,11 +244,42 @@ State defaults:
 - `logPriority = 1`
 - `actionBudget = 2`
 
-Arbitration behavior per tick:
+#### Action groups
+
+The engine defines exactly **three action groups** per state:
+
+| Group index | Name  | Contents |
+|-------------|-------|----------|
+| 0           | EVENT | At most one pending `on_enter:` event frame |
+| 1           | HK    | All due HK slots (`every Nms: HK.report { … }`) |
+| 2           | LOG   | All due LOG slots (`every Nms: LOG.report { … }`) |
+
+#### `budget` semantics (NORMATIVE)
+
+`budget` counts **action groups dispatched per tick**, not individual slots.
+When the HK group is selected, **all** HK slots that are currently due fire
+within that single budget step.  The same applies to the LOG group.
+
+Consequence: with `budget=1` and four simultaneously-due HK slots, all four
+slots are served in one tick — the budget is not exhausted by individual slots.
+This is intentional: HK slots within the same group share a single radio
+transmission window; splitting them across ticks would create artificial skew.
+
+Maximum throughput per tick by budget level:
+
+| `budget` | Groups dispatched | Maximum actions in one tick |
+|----------|-------------------|---------------------------------|
+| 1        | 1                 | 1 EVENT **or** N HK slots **or** M LOG slots |
+| 2        | 2                 | Any 2 of the 3 groups |
+| 3        | 3                 | All 3 groups |
+
+#### Arbitration behavior per tick
+
 - Due actions are calculated for pending EVENT, HK, LOG
-- Up to `budget` actions are executed
-- Highest priority executes first
-- Tie-break order is deterministic: EVENT, HK, LOG
+- Up to `budget` **groups** are dispatched per tick
+- Highest-priority group executes first
+- Tie-break order is deterministic: EVENT > HK > LOG
+- Within a selected group all due slots fire before the next group is considered
 
 ### AMS-4.5 Sensor Expressions
 

@@ -21,9 +21,11 @@
 /// uses the value only for display, not for logic.
 #ifdef ARES_SITL
 #include "sim_clock.h"
-inline uint32_t millis() { return ares::sim::clock::nowMs(); }
+inline uint32_t millis()   { return ares::sim::clock::nowMs(); }
+inline uint64_t millis64() { return static_cast<uint64_t>(ares::sim::clock::nowMs()); }
 #else
-inline uint32_t millis() { return 0U; }
+inline uint32_t millis()   { return 0U; }
+inline uint64_t millis64() { return 0ULL; }
 #endif
 
 /// Minimal Serial stub: routes output to stdout so log lines are visible

@@ -374,3 +374,128 @@ void test_parser_error_on_line_too_long()
     TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
     TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "line too long"));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Metadata-order enforcement (AMS-4.2): directives that must precede any
+// state: block are rejected when placed after one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Helper: verify that a script with the given forbidden line placed after a
+// state block causes activate() to fail with an error containing "must appear
+// before any state block".
+static void checkMetadataAfterStateRejected(const char* badScript, const char* keyword)
+{
+    ScriptFixture f;
+    f.init("/missions/order.ams", badScript);
+
+    const bool ok = f.engine.activate("order.ams");
+    TEST_ASSERT_FALSE_MESSAGE(ok, keyword);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::ERROR, snap.status, keyword);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "must appear before any state block"), keyword);
+}
+
+void test_parser_error_include_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "include SIM_BARO as BARO\n";
+    checkMetadataAfterStateRejected(kScript, "include");
+}
+
+void test_parser_error_var_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "var x : float = 1.0\n";
+    checkMetadataAfterStateRejected(kScript, "var");
+}
+
+void test_parser_error_const_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "const THRESH : float = 500.0\n";
+    checkMetadataAfterStateRejected(kScript, "const");
+}
+
+void test_parser_error_radio_config_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "radio.config sf=7 bw=125000 cr=5 pwr=14\n";
+    checkMetadataAfterStateRejected(kScript, "radio.config");
+}
+
+void test_parser_error_pus_service_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "pus.service 3 as HK\n";
+    checkMetadataAfterStateRejected(kScript, "pus.service");
+}
+
+void test_parser_error_pus_apid_after_state()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "state END:\n"
+        "pus.apid = 1\n";
+    checkMetadataAfterStateRejected(kScript, "pus.apid");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Levenshtein "did you mean" suggestions (case-sensitive name typos, AMS-4.6).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A transition target that differs only in case (e.g. "flight" vs "FLIGHT")
+// must produce a "did you mean 'FLIGHT'?" hint in the error message.
+void test_typo_state_name_case_suggests_correction()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "  transition to flight when TIME.elapsed > 1000\n"
+        "state FLIGHT:\n";
+
+    ScriptFixture f;
+    f.init("/missions/typo_case.ams", kScript);
+
+    const bool ok = f.engine.activate("typo_case.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "did you mean 'FLIGHT'"),
+                                 snap.lastError);
+}
+
+// A one-character typo in a transition target (e.g. "FLIGH" vs "FLIGHT")
+// must also produce a "did you mean 'FLIGHT'?" hint.
+void test_typo_state_name_single_char_suggests_correction()
+{
+    static const char kScript[] =
+        "state INIT:\n"
+        "  transition to FLIGH when TIME.elapsed > 1000\n"
+        "state FLIGHT:\n";
+
+    ScriptFixture f;
+    f.init("/missions/typo_onechar.ams", kScript);
+
+    const bool ok = f.engine.activate("typo_onechar.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "did you mean 'FLIGHT'"),
+                                 snap.lastError);
+}
+
