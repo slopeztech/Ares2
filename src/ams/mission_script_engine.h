@@ -338,6 +338,8 @@ private:
         IMU_TEMP  = 13, ///< IMU: die temperature (°C)
         SATS      = 14, ///< GPS: satellites in use (integer, compared as float)
         HDOP      = 15, ///< GPS: horizontal dilution of precision (dimensionless)
+        GYRO_MAG  = 16, ///< IMU: ||gyro|| (deg/s) — angular rate magnitude √(gx²+gy²+gz²)
+        VAR       = 17, ///< AMS variable — alias holds the variable name (AMS-4.8)
     };
 
     // ── Unified condition kind ─────────────────────────────────────────────
@@ -419,9 +421,10 @@ private:
      */
     enum class AssertKind : uint8_t
     {
-        REACHABLE      = 0U, ///< assert reachable STATE — BFS reachability from initial state.
-        NO_DEAD_STATES = 1U, ///< assert no_dead_states — all states are reachable from initial.
-        MAX_DEPTH      = 2U, ///< assert max_transition_depth < N — longest simple path < N.
+        REACHABLE           = 0U, ///< assert reachable STATE — BFS reachability from initial state.
+        NO_DEAD_STATES      = 1U, ///< assert no_dead_states — all states are reachable from initial.
+        MAX_DEPTH           = 2U, ///< assert max_transition_depth < N — longest simple path < N.
+        NO_SILENT_TERMINALS = 3U, ///< assert no_silent_terminals — every state has ≥1 exit.
     };
 
     /**
@@ -523,8 +526,9 @@ private:
      */
     struct HkField
     {
-        char        label[20] = {};              ///< User-provided key (CSV column name).
-        char        alias[16] = {};              ///< Peripheral alias (e.g. "GPS", "GPS1").
+        char        label[20] = {};  ///< User-provided key (CSV column name).
+        char        alias[16] = {};  ///< Peripheral alias (e.g. "GPS") or variable name
+                                     ///< when @c field == SensorField::VAR (AMS-4.8).
         SensorField field     = SensorField::ALT;
     };
 
@@ -615,6 +619,7 @@ private:
         uint8_t logPriority   = 1;  ///< Keep local log below PUS HK by default.
         uint8_t eventPriority = 4;  ///< PUS event reporting has highest default priority.
         uint8_t actionBudget  = 2;  ///< Max actions per tick (EVENT/HK/LOG arbitration).
+        bool    prioritiesSet = false; ///< True once a priorities directive has been parsed.
 
         // ── Regular transitions (AMS-4.6) ──────────────────────────────────
         // Up to AMS_MAX_TRANSITIONS independent "transition to" directives per state.
@@ -734,6 +739,8 @@ private:
 
     bool loadFromStorageLocked(const char* fileName);
     bool parseScriptLocked(const char* script, uint32_t length);
+    void initProgramParseStateLocked();                               ///< Reset program_ and parse state variables; called from parseScriptLocked.
+    bool finalizeScriptLocked();                                      ///< Post-parse resolve + validate + warn; called from parseScriptLocked.
     bool readNextScriptLineLocked(const char* script,
                                   uint32_t length,
                                   uint32_t& offset,
@@ -746,6 +753,7 @@ private:
                                       uint8_t& currentState,
                                       BlockType& blockType,
                                       bool& handled);
+    bool parsePreStateDirectiveLocked(const char* line, bool& handled);  ///< Handle include/radio.config/pus.*/var/const before any state block.
     bool parsePusApidDirectiveLocked(const char* line);
     bool parsePusServiceDirectiveLocked(const char* line);
     bool parseRadioConfigLineLocked(const char* line);  ///< AMS-4.15: radio.config PARAM = VALUE.
@@ -791,6 +799,12 @@ private:
                               HkField* fields,
                               uint8_t& count,
                               const char* ctxName);
+    bool storeVarFieldLocked(const char* expr, const char* key,
+                             HkField* fields, uint8_t& count,
+                             const char* ctxName);                    ///< Store a variable-reference HK/LOG field entry (AMS-4.8).
+    bool storeAliasFieldLocked(const char* aliasStr, const char* fieldStr,
+                               const char* key, HkField* fields,
+                               uint8_t& count, const char* ctxName); ///< Store an ALIAS.field HK/LOG field entry.
     bool parseTransitionLineLocked(const char* line, StateDef& st);
     bool buildAndStoreTransitionLocked(const char* target, uint32_t holdMs,
                                         TransitionLogic logic,
@@ -841,8 +855,16 @@ private:
     bool parseOnErrorTransitionLineLocked(const char* line, StateDef& st);
     static bool mapApidToNode(uint16_t apid, uint8_t& nodeId);
     bool resolveTransitionsLocked();
+    bool resolveTargetNameLocked(const char* name, const char* kindStr,
+                                  uint8_t& outIdx);                   ///< Find state by name, emit error with suggestion on failure.
     bool resolveTasksLocked();        ///< AMS-11: resolve 'when in' state names to indices after parsing.
     bool validateAssertionsLocked();  ///< AMS-15: run BFS/DFS graph checks; call from parseScriptLocked.
+    void warnShadowedTransitionsLocked(uint64_t nowMs); ///< AMS-5.1: LOG_W + EVENT.info for unreachable transitions.
+    void checkTransitionPairLocked(const StateDef& st, uint8_t i, const CondExpr& ci,
+                                    uint8_t j, uint64_t nowMs);       ///< Test one (i,j) pair for shadowing; emits warning if shadowed.
+    void emitShadowWarningLocked(const StateDef& st, uint8_t i, uint8_t j,
+                                  const CondExpr& ci, const CondExpr& cj,
+                                  uint64_t nowMs);                    ///< Emit LOG_W + EVENT for one shadowed transition pair.
     void computeBfsReachabilityLocked(uint16_t& reachable) const;
     void computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasCycle) const;
     bool evaluateOneAssertionLocked(const AssertDef& ad, uint16_t reachable,
@@ -954,7 +976,8 @@ private:
                                  const CondExpr& expr,
                                  float           actualVal,
                                  uint64_t        nowMs);
-    bool applyGuardErrorLocked(const StateDef& state, uint64_t nowMs);
+    bool applyGuardErrorLocked(const StateDef& state, uint64_t nowMs,
+                               const CondExpr& firstExpr, float firstActualVal);
     void sendHkReportLocked(uint64_t nowMs);
     void sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot);       ///< AMS-4.3.1: single slot variant.
     void appendLogReportLocked(uint64_t nowMs);
@@ -997,6 +1020,8 @@ private:
      * @pre  Caller holds mutex_.
      */
     uint8_t readGpsSatsLocked() const;
+    void    finaliseHkPayloadLocked(ares::proto::TelemetryPayload& tm, uint64_t nowMs);
+    void    transmitHkFrameLocked(const ares::proto::TelemetryPayload& tm, const char* logLabel);
 
     /**
      * @brief Evaluate all enabled monitoring slots against @p tm (APUS-12.4).
@@ -1029,7 +1054,8 @@ private:
     bool sendFrameLocked(const ares::proto::Frame& frame);
 
     /// Stage a log-file append for deferred execution outside the mutex (AMS-8.3).
-    void queueAppendLocked(const char* path, const uint8_t* data, uint32_t len);
+    void queueAppendLocked(const char* path, const uint8_t* data, uint32_t len,
+                             bool* onSuccessFlag = nullptr);
     /// Flush all staged file I/O that was built under the mutex. Must be called
     /// after the mutex is released. Idempotent if nothing is pending.
     void flushPendingIoUnlocked();
@@ -1038,6 +1064,7 @@ private:
     bool buildCheckpointRecordLocked(uint64_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
     void appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
     void appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
+    void appendConfirmHoldSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
     bool tryRestoreResumePointLocked(uint64_t nowMs);
     bool applyCheckpointStateLocked(uint64_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
                                      uint32_t running, uint32_t status, uint32_t seq,
@@ -1045,7 +1072,8 @@ private:
                                      uint32_t logElapsed);
     static bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed);
     const char* restoreCheckpointVarsLocked(const char* cursor);
-    void restoreCheckpointSlotsLocked(const char* cursor, uint64_t nowMs);
+    const char* restoreCheckpointSlotsLocked(const char* cursor, uint64_t nowMs);
+    void        restoreCheckpointV4FieldsLocked(const char* cursor, uint64_t nowMs);
     void clearResumePointLocked();
     void writeAbortMarkerLocked(const char* stateName, uint64_t nowMs);
 
@@ -1142,7 +1170,7 @@ private:
 
     struct PendingCheckpoint
     {
-        char    buf[512];  ///< Serialised v3 checkpoint record.
+        char    buf[512];  ///< Serialised v4 checkpoint record.
         int32_t len;       ///< Valid bytes in buf[]; 0 = nothing staged.
         bool    pending;   ///< True iff buf[] holds an unflushed record.
     };
@@ -1152,6 +1180,10 @@ private:
         char     path[ares::STORAGE_MAX_PATH]; ///< Target LittleFS path.
         uint8_t  data[256];                    ///< Serialised row bytes.
         uint32_t len;                          ///< Valid bytes in data[].
+        /// If non-null, set to true when appendFile succeeds.
+        /// Used by CSV header entries so the written flag is only raised
+        /// after a confirmed flush — enabling retry on NO_SPACE (AMS-4.3.2).
+        bool*    onSuccessFlag;                ///< Set on successful flush; null for data rows.
     };
 
     PendingCheckpoint pendingCheckpoint_              = {};
@@ -1169,23 +1201,24 @@ private:
     mutable ImuReading imuCachedReading_ = {};   ///< Last successful IMU burst.
     mutable uint64_t   imuCacheTsMs_     = 0U;   ///< millis64() when last attempt was made.
     mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
-    static constexpr uint32_t IMU_CACHE_MAX_AGE_MS  = 5U; ///< Max cache age — one tick period.
+    /// Cache age limit: reuse reading if age < AMS_SENSOR_CACHE_TTL_MS (config.h).
+    static constexpr uint32_t IMU_CACHE_MAX_AGE_MS  = ares::AMS_SENSOR_CACHE_TTL_MS;
 
     // BARO: per-alias cache (one entry per 'include' alias, indexed by alias slot).
     mutable BaroReading baroCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
     mutable uint64_t    baroCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        baroCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
-    static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = 5U;
+    static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = ares::AMS_SENSOR_CACHE_TTL_MS;
 
-    // GPS: per-alias cache.  GPS sentences update at 1–10 Hz; a 5 ms TTL
-    // amortises redundant UART reads for multi-field HK slots.  The TTL is
-    // shorter than SENSOR_RATE_MS so the cache expires between ticks; at
-    // normal tick rate, transition conditions therefore read fresh data on
-    // their first field access each tick.
+    // GPS: per-alias cache.  GPS sentences update at 1–10 Hz; a short TTL
+    // (AMS_SENSOR_CACHE_TTL_MS, config.h) amortises redundant UART reads for
+    // multi-field HK slots.  The TTL is shorter than SENSOR_RATE_MS so the
+    // cache expires between ticks; at normal tick rate, transition conditions
+    // therefore read fresh data on their first field access each tick.
     mutable GpsReading  gpsCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
     mutable uint64_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        gpsCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
-    static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = 5U;
+    static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = ares::AMS_SENSOR_CACHE_TTL_MS;
 
     // ── Adaptive tick scheduling ──────────────────────────────────────────────
     /// Maximum time the main loop may sleep even when no sensor condition is
@@ -1260,8 +1293,21 @@ private:
 
     // Current line number during script parsing (1-based).
     // Zero when the engine is not actively parsing.
-    // Used by setErrorLocked() to emit "Parse Error (line N): ..." messages.
+    // Used by setErrorLocked() to emit "Parse Error (FILE, line N): ..." messages.
     uint32_t parseLineNum_ = 0U;
+
+    // Basename of the file currently being parsed (e.g. "flight.ams").
+    // Empty string when the engine is not actively parsing a named source.
+    // Set in loadFromStorageLocked() before parseScriptLocked() is called.
+    // Cleared by setErrorLocked() (error path) and by parseScriptLocked()
+    // at the point where parseLineNum_ is cleared (success path).
+    //
+    // NOTE FOR FUTURE IMPORTS: when "include <file>" is added, push/pop
+    // parseSourceFile_ and parseLineNum_ onto a small stack (depth-limited
+    // by AMS_MAX_IMPORT_DEPTH) so nested files report their own filename
+    // and line number correctly.  The public error format must remain
+    // "Parse Error (FILE, line N): reason" — only FILE and N change.
+    char parseSourceFile_[ares::MISSION_FILENAME_MAX] = {};
 
     // ── AMS-11: per-task last-fire timestamps ─────────────────────────────────
     // Indexed by task slot in program_.tasks[].  Reset on deactivate().

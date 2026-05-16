@@ -331,15 +331,25 @@ Defines the payload layout for `TYPE == TELEMETRY (0x01)`.
 | 6      | 4    | float    | altitudeAglM     | m        |
 | 10     | 4    | float    | verticalVelMs    | m/s      |
 | 14     | 4    | float    | accelMag         | m/s²     |
-| 18     | 4    | float    | pressurePa       | Pa       |
-| 22     | 4    | float    | temperatureC     | °C       |
-| 26     | 4    | int32_t  | latitudeE7       | deg×1e7  |
-| 30     | 4    | int32_t  | longitudeE7      | deg×1e7  |
-| 34     | 2    | uint16_t | gpsAltDm         | dm       |
-| 36     | 1    | uint8_t  | gpsSats          | count    |
-| 37     | 1    | uint8_t  | batteryPct       | %        |
+| 18     | 4    | float    | accelX           | m/s²     |
+| 22     | 4    | float    | accelY           | m/s²     |
+| 26     | 4    | float    | accelZ           | m/s²     |
+| 30     | 4    | float    | gyroMag          | deg/s    |
+| 34     | 4    | float    | gyroX            | deg/s    |
+| 38     | 4    | float    | gyroY            | deg/s    |
+| 42     | 4    | float    | gyroZ            | deg/s    |
+| 46     | 4    | float    | imuTempC         | °C       |
+| 50     | 4    | float    | gpsSpeedMs       | m/s      |
+| 54     | 4    | float    | gpsHdop          | —        |
+| 58     | 4    | float    | pressurePa       | Pa       |
+| 62     | 4    | float    | temperatureC     | °C       |
+| 66     | 4    | int32_t  | latitudeE7       | deg×1e7  |
+| 70     | 4    | int32_t  | longitudeE7      | deg×1e7  |
+| 74     | 2    | uint16_t | gpsAltDm         | dm       |
+| 76     | 1    | uint8_t  | gpsSats          | count    |
+| 77     | 1    | uint8_t  | batteryPct       | %        |
 
-Total: **38 bytes** (fits in a single frame with margin).
+Total: **78 bytes** (fits in a single frame with margin).
 
 ### statusBits layout
 

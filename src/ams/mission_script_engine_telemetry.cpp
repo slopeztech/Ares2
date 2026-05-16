@@ -16,6 +16,7 @@
 #include "ams/mission_script_engine_helpers.h"
 
 #include "ares_assert.h"
+#include "ares_util.h"
 #include "debug/ares_log.h"
 
 #include <cinttypes>
@@ -45,6 +46,7 @@ using ares::proto::STATUS_PULSE_B_FIRED;
 using ares::proto::STATUS_DELTA_FRAME;
 
 using detail::formatScaledFloat;
+using detail::crc8Smbus;
 
 static constexpr const char* TAG = "AMS";
 
@@ -61,7 +63,7 @@ static constexpr const char* TAG = "AMS";
  * @pre  Caller holds the engine mutex.  @c currentState_ is valid.
  * @post A TELEMETRY frame is transmitted; @c seq_ is advanced.
  */
-void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readability-function-size)
+void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs)
 {
     if (currentState_ >= program_.stateCount) { return; }
 
@@ -79,10 +81,63 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readabili
         applyHkFieldToPayloadLocked(st.hkFields[i], tm);
     }
 
-    // ── GPS satellite count (APUS-6, gap #10) ──────────────────────────────
+    finaliseHkPayloadLocked(tm, nowMs);
+    transmitHkFrameLocked(tm, "HK");
+}
+
+// ── sendHkReportSlotLocked ───────────────────────────────────────────────────
+
+/**
+ * @brief Build and transmit a PUS TM Service 3 housekeeping frame for one slot.
+ *
+ * AMS-4.3.1: each @c every block creates an independent @c HkSlot.
+ * This function builds a @c TelemetryPayload from the slot's field list
+ * and transmits it, independent of the legacy single-slot path.
+ *
+ * @param[in] nowMs  Current millis() timestamp.
+ * @param[in] slot   The HK slot to transmit.
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot)
+{
+    ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
+    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
+
+    TelemetryPayload tm = {};
+    tm.timestampMs = static_cast<uint32_t>(nowMs);
+    tm.flightPhase = static_cast<uint8_t>(currentState_);
+    tm.statusBits  = buildStatusBitsLocked();
+
+    for (uint8_t i = 0; i < slot.fieldCount; i++)
+    {
+        applyHkFieldToPayloadLocked(slot.fields[i], tm);
+    }
+
+    finaliseHkPayloadLocked(tm, nowMs);
+    transmitHkFrameLocked(tm, "HK slot");
+}
+
+// ── finaliseHkPayloadLocked ────────────────────────────────────────────
+
+/**
+ * @brief Apply common post-field-population processing to a @c TelemetryPayload.
+ *
+ * Shared by @c sendHkReportLocked and @c sendHkReportSlotLocked after their
+ * respective field loops.  Fills the GPS satellite count, derives vertical
+ * velocity from consecutive altitude samples, runs ST[12] monitoring, and
+ * applies APUS-3.3 delta encoding.
+ *
+ * @param[in,out] tm     Payload with base fields already populated.
+ * @param[in]     nowMs  Current millis() timestamp.
+ * @pre  Caller holds the engine mutex.
+ * @post @c hkTxCount_ is incremented; delta baseline updated when required.
+ */
+void MissionScriptEngine::finaliseHkPayloadLocked(TelemetryPayload& tm, uint64_t nowMs)
+{
+    // ── GPS satellite count (APUS-6, gap #10) ──────────────────────────
     tm.gpsSats = readGpsSatsLocked();
 
-    // ── Vertical velocity (APUS-6, gap #9) ────────────────────────────────
+    // ── Vertical velocity (APUS-6, gap #9) ────────────────────────────
     // Derived from consecutive barometric altitude samples.  Suppressed on
     // the first sample to avoid a spurious spike from a zero baseline.
     if (hasPrevAlt_ && (nowMs != prevAltMs_))
@@ -102,7 +157,7 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readabili
     // Evaluate against the raw (pre-delta) values so limits are in real units.
     evaluateMonitoringLocked(tm, nowMs);
 
-    // ── Delta encoding (APUS-3.3, gap #12) ────────────────────────────────
+    // ── Delta encoding (APUS-3.3, gap #12) ────────────────────────────
     // Every kDeltaResyncInterval frames (or on first frame) transmit absolute
     // values and update the baseline.  All other frames transmit deltas with
     // StatusBits.deltaFrame = 1.  Force re-sync on saturation overflow.
@@ -123,7 +178,7 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readabili
         else
         {
             // Overflow: fall through to absolute; reset baseline below.
-            LOG_D(TAG, "HK delta overflow dAlt=%.1f dP=%.1f \u2014 forced resync",
+            LOG_D(TAG, "HK delta overflow dAlt=%.1f dP=%.1f — forced resync",
                   static_cast<double>(dAlt), static_cast<double>(dPress));
         }
     }
@@ -134,103 +189,20 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs) // NOLINT(readabili
         deltaBaseValid_ = true;
     }
     hkTxCount_++;
-
-    Frame frame = {};
-    frame.ver   = PROTOCOL_VERSION;
-    frame.flags = 0;
-    frame.node  = program_.nodeId;
-    frame.type  = MsgType::TELEMETRY;
-    frame.seq   = seq_++;
-    frame.len   = static_cast<uint8_t>(sizeof(TelemetryPayload));
-    memcpy(frame.payload, &tm, sizeof(tm));
-
-    if (!sendFrameLocked(frame))
-    {
-        LOG_W(TAG, "HK frame send failed");
-    }
-    else
-    {
-        LOG_D(TAG, "HK frame sent seq=%u delta=%u len=%u",
-              frame.seq, static_cast<unsigned>((tm.statusBits & STATUS_DELTA_FRAME) != 0U), frame.len);
-    }
 }
 
-// ── sendHkReportSlotLocked ───────────────────────────────────────────────────
+// ── transmitHkFrameLocked ────────────────────────────────────────────────
 
 /**
- * @brief Build and transmit a PUS TM Service 3 housekeeping frame for one slot.
+ * @brief Wrap a @c TelemetryPayload in an APUS @c Frame and transmit it.
  *
- * AMS-4.3.1: each @c every block creates an independent @c HkSlot.
- * This function builds a @c TelemetryPayload from the slot's field list
- * and transmits it, independent of the legacy single-slot path.
- *
- * @param[in] nowMs  Current millis() timestamp.
- * @param[in] slot   The HK slot to transmit.
+ * @param[in] tm        Fully-prepared payload (after delta encoding).
+ * @param[in] logLabel  Short label used in log messages, e.g. "HK" or "HK slot".
  * @pre  Caller holds the engine mutex.
+ * @post @c seq_ is advanced by one.
  */
-void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot) // NOLINT(readability-function-size)
+void MissionScriptEngine::transmitHkFrameLocked(const TelemetryPayload& tm, const char* logLabel)
 {
-    ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
-    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
-
-    TelemetryPayload tm = {};
-    tm.timestampMs = static_cast<uint32_t>(nowMs);
-    tm.flightPhase = static_cast<uint8_t>(currentState_);
-    tm.statusBits  = buildStatusBitsLocked();
-
-    for (uint8_t i = 0; i < slot.fieldCount; i++)
-    {
-        applyHkFieldToPayloadLocked(slot.fields[i], tm);
-    }
-
-    // ── GPS satellite count (APUS-6, gap #10) ──────────────────────────────
-    tm.gpsSats = readGpsSatsLocked();
-
-    // ── Vertical velocity (APUS-6, gap #9) ────────────────────────────────
-    if (hasPrevAlt_ && (nowMs != prevAltMs_))
-    {
-        const float dtS      = static_cast<float>(nowMs - prevAltMs_) * 0.001f;
-        const float dAlt     = tm.altitudeAglM - prevAltM_;
-        float       velMs    = dAlt / dtS;
-        if (velMs >  500.0f) { velMs =  500.0f; }
-        if (velMs < -500.0f) { velMs = -500.0f; }
-        tm.verticalVelMs = velMs;
-    }
-    prevAltM_   = tm.altitudeAglM;
-    prevAltMs_  = nowMs;
-    hasPrevAlt_ = true;
-    // ── ST[12] monitoring evaluation (APUS-12.4) ──────────────────────────
-    // Evaluate against the raw (pre-delta) values so limits are in real units.
-    evaluateMonitoringLocked(tm, nowMs);
-    // ── Delta encoding (APUS-3.3, gap #12) ────────────────────────────────
-    const bool forceResync = !deltaBaseValid_ ||
-                             ((hkTxCount_ % kDeltaResyncInterval) == 0U);
-    if (!forceResync)
-    {
-        const float dAlt   = tm.altitudeAglM - deltaBaseAlt_;
-        const float dPress = tm.pressurePa   - deltaBasePress_;
-        const bool  overflow = (dAlt   >  kMaxDeltaAltM)  || (dAlt   < -kMaxDeltaAltM) ||
-                               (dPress >  kMaxDeltaPressPa)|| (dPress < -kMaxDeltaPressPa);
-        if (!overflow)
-        {
-            tm.altitudeAglM          = dAlt;
-            tm.pressurePa            = dPress;
-            tm.statusBits           |= STATUS_DELTA_FRAME;
-        }
-        else
-        {
-            LOG_D(TAG, "HK slot delta overflow dAlt=%.1f dP=%.1f \u2014 forced resync",
-                  static_cast<double>(dAlt), static_cast<double>(dPress));
-        }
-    }
-    if (forceResync || (tm.statusBits & STATUS_DELTA_FRAME) == 0U)
-    {
-        deltaBaseAlt_   = tm.altitudeAglM;
-        deltaBasePress_ = tm.pressurePa;
-        deltaBaseValid_ = true;
-    }
-    hkTxCount_++;
-
     Frame frame = {};
     frame.ver   = PROTOCOL_VERSION;
     frame.flags = 0;
@@ -242,12 +214,14 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& s
 
     if (!sendFrameLocked(frame))
     {
-        LOG_W(TAG, "HK slot frame send failed");
+        LOG_W(TAG, "%s frame send failed", logLabel);
     }
     else
     {
-        LOG_D(TAG, "HK slot frame sent seq=%u delta=%u len=%u",
-              frame.seq, static_cast<unsigned>((tm.statusBits & STATUS_DELTA_FRAME) != 0U), frame.len);
+        LOG_D(TAG, "%s frame sent seq=%u delta=%u len=%u",
+              logLabel, frame.seq,
+              static_cast<unsigned>((tm.statusBits & STATUS_DELTA_FRAME) != 0U),
+              frame.len);
     }
 }
 
@@ -343,18 +317,21 @@ uint8_t MissionScriptEngine::readGpsSatsLocked() const
  *        member.
  *
  * GPS altitude is mapped to @c gpsAltDm (decimetres); BARO altitude to
- * @c altitudeAglM.  Individual IMU axes and speed have no dedicated payload
- * field (APUS-3.6 fixed layout) and are silently skipped for HK reports
- * (they appear in CSV LOG reports via appendLogReportLocked()).
+ * @c altitudeAglM.  All AMS sensor fields have a corresponding @c TelemetryPayload
+ * slot (APUS-3.6).  @c GPS.sats is populated by @c finaliseHkPayloadLocked
+ * directly from the GPS driver, not from HK field entries.
  *
  * @param[in]  f   HK field descriptor (alias + field enum).
  * @param[out] tm  Telemetry payload to update.
  * @pre  Caller holds the engine mutex.
  */
-void MissionScriptEngine::applyHkFieldToPayloadLocked(
+void MissionScriptEngine::applyHkFieldToPayloadLocked(  // NOLINT(readability-function-size)
     const HkField&               f,
     ares::proto::TelemetryPayload& tm) const
 {
+    // Variables have no fixed TelemetryPayload slot; included in LOG CSV only.
+    if (f.field == SensorField::VAR) { return; }
+
     const AliasEntry* ae = findAliasLocked(f.alias);
     float val = 0.0f;
     if (!readSensorFloatLocked(f.alias, f.field, val)) { return; }
@@ -381,21 +358,22 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(
 
     switch (f.field)
     {
-    case SensorField::LAT:      tm.latitudeE7  = static_cast<int32_t>(val * 10000000.0f); break;
-    case SensorField::LON:      tm.longitudeE7 = static_cast<int32_t>(val * 10000000.0f); break;
-    case SensorField::TEMP:     tm.temperatureC = val;  break;
-    case SensorField::PRESSURE: tm.pressurePa   = val;  break;
-    case SensorField::ACCEL_MAG:tm.accelMag     = val;  break;
-    // Individual accel/gyro axes and IMU temp have no dedicated field in
-    // TelemetryPayload (APUS-3.6 fixed layout); available in LOG reports.
-    case SensorField::ACCEL_X:
-    case SensorField::ACCEL_Y:
-    case SensorField::ACCEL_Z:
-    case SensorField::GYRO_X:
-    case SensorField::GYRO_Y:
-    case SensorField::GYRO_Z:
-    case SensorField::IMU_TEMP:
-    case SensorField::SPEED:
+    case SensorField::LAT:       tm.latitudeE7  = static_cast<int32_t>(val * 10000000.0f); break;
+    case SensorField::LON:       tm.longitudeE7 = static_cast<int32_t>(val * 10000000.0f); break;
+    case SensorField::TEMP:      tm.temperatureC = val;   break;
+    case SensorField::PRESSURE:  tm.pressurePa   = val;   break;
+    case SensorField::ACCEL_MAG: tm.accelMag     = val;   break;
+    case SensorField::ACCEL_X:   tm.accelX       = val;   break;
+    case SensorField::ACCEL_Y:   tm.accelY       = val;   break;
+    case SensorField::ACCEL_Z:   tm.accelZ       = val;   break;
+    case SensorField::GYRO_MAG:  tm.gyroMag      = val;   break;
+    case SensorField::GYRO_X:    tm.gyroX        = val;   break;
+    case SensorField::GYRO_Y:    tm.gyroY        = val;   break;
+    case SensorField::GYRO_Z:    tm.gyroZ        = val;   break;
+    case SensorField::IMU_TEMP:  tm.imuTempC     = val;   break;
+    case SensorField::SPEED:     tm.gpsSpeedMs   = val;   break;
+    case SensorField::HDOP:      tm.gpsHdop      = val;   break;
+    case SensorField::SATS:
     default:
         break;
     }
@@ -478,14 +456,21 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
                 if (n <= 0) { break; }
                 hPos += static_cast<uint32_t>(n);
             }
-            const int32_t nl = static_cast<int32_t>(snprintf(&hLine[hPos], sizeof(hLine) - hPos, "\n"));
-            if (nl > 0)
+            // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
+            if (hPos < sizeof(hLine) - 7U)  // need room for ",crc8\n\0" = 7 bytes
             {
-                const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
-                // Stage header append for deferred I/O outside the mutex (AMS-8.3).
-                queueAppendLocked(logPath_,
-                                  reinterpret_cast<const uint8_t*>(hLine), hTot);
-                logSlotHeaderWritten_[slotIdx] = true;
+                const int32_t nl = static_cast<int32_t>(
+                    snprintf(&hLine[hPos], sizeof(hLine) - hPos, ",crc8\n"));
+                if (nl > 0)
+                {
+                    const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
+                    // Stage header append for deferred I/O outside the mutex (AMS-8.3).
+                    // Pass &logSlotHeaderWritten_[slotIdx] so the flag is only raised
+                    // after a confirmed successful flush — enabling retry on NO_SPACE.
+                    queueAppendLocked(logPath_,
+                                      reinterpret_cast<const uint8_t*>(hLine), hTot,
+                                      &logSlotHeaderWritten_[slotIdx]);
+                }
             }
         }
     }
@@ -508,12 +493,20 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
         pos += static_cast<uint32_t>(n);
     }
 
-    const int32_t tail = static_cast<int32_t>(snprintf(&line[pos], sizeof(line) - pos, "\n"));
-    if (tail <= 0) { return; }
-    const uint32_t totalLen = pos + static_cast<uint32_t>(tail);
+    // CRC8/SMBUS of all row bytes detects rows truncated by short-write or
+    // power failure; the ground-station parser validates this field (AMS-4.3.2).
+    if (pos < sizeof(line) - 5U)  // need room for ",xx\n\0" = 5 bytes
+    {
+        const uint8_t crc = crc8Smbus(line, pos);
+        const int32_t tail = static_cast<int32_t>(
+            snprintf(&line[pos], sizeof(line) - pos, ",%02x\n",
+                     static_cast<unsigned>(crc)));
+        if (tail <= 0) { return; }
+        const uint32_t totalLen = pos + static_cast<uint32_t>(tail);
 
-    // Stage the data row for deferred I/O outside the mutex (AMS-8.3).
-    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), totalLen);
+        // Stage the data row for deferred I/O outside the mutex (AMS-8.3).
+        queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), totalLen);
+    }
 }
 
 bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
@@ -539,7 +532,12 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
         if (hPos >= sizeof(line) - 2U) { break; }
     }
 
-    const int32_t nl = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, "\n"));
+    // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
+    if (hPos >= sizeof(line) - 7U)  // need room for ",crc8\n\0" = 7 bytes
+    {
+        return false;
+    }
+    const int32_t nl = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, ",crc8\n"));
     if (nl <= 0)
     {
         return false;
@@ -547,8 +545,10 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
 
     const uint32_t hTot = hPos + static_cast<uint32_t>(nl);
     // Stage header append for deferred I/O outside the mutex (AMS-8.3).
-    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), hTot);
-    logHeaderWritten_ = true;
+    // Pass &logHeaderWritten_ so the flag is only raised after a confirmed
+    // successful flush — enabling retry on NO_SPACE (AMS-4.3.2).
+    queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), hTot,
+                      &logHeaderWritten_);
     return true;
 }
 
@@ -583,7 +583,16 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
         }
     }
 
-    const int32_t tail = static_cast<int32_t>(snprintf(&outLine[pos], outSize - pos, "\n"));
+    // CRC8/SMBUS checksum; ground station validates this field to detect
+    // rows truncated by a short-write or power failure (AMS-4.3.2).
+    if (pos >= outSize - 5U)  // need room for ",xx\n\0" = 5 bytes
+    {
+        return false;
+    }
+    const uint8_t crc = crc8Smbus(outLine, pos);
+    const int32_t tail = static_cast<int32_t>(
+        snprintf(&outLine[pos], outSize - pos, ",%02x\n",
+                 static_cast<unsigned>(crc)));
     if (tail <= 0)
     {
         return false;
@@ -664,11 +673,22 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
 {
     if (out == nullptr || outSize == 0U) { return false; }
 
+    // Variable reference: read from AMS var table instead of sensor driver.
+    if (f.field == SensorField::VAR)
+    {
+        const VarEntry* ve = findVarLocked(f.alias);
+        if (ve == nullptr || !ve->valid)
+        {
+            ares::util::copyZ(out, "nan", outSize);
+            return true;  // write placeholder so CSV columns stay aligned
+        }
+        return formatScaledFloat(ve->value, 2U, out, outSize);
+    }
+
     float val = 0.0f;
     if (!readSensorFloatLocked(f.alias, f.field, val))
     {
-        strncpy(out, "nan", outSize - 1U);
-        out[outSize - 1U] = '\0';
+        ares::util::copyZ(out, "nan", outSize);
         return true;  // write placeholder so CSV columns stay aligned
     }
 
@@ -685,6 +705,7 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
     case SensorField::GYRO_X:
     case SensorField::GYRO_Y:
     case SensorField::GYRO_Z:
+    case SensorField::GYRO_MAG:
         decimals = 3U; break;
     default:
         decimals = 2U; break;

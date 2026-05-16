@@ -371,12 +371,26 @@ bool LittleFsStorage::begin()
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);
     ARES_ASSERT(mutex_ != nullptr);
 
-    // Mount — formatOnFail=true ensures a clean filesystem after
-    // flash corruption or first boot.
-    if (!LittleFS.begin(true))
+    // Mount — formatOnFail=false prevents silent data loss: a transient
+    // single-sector corruption on power-loss must not silently erase the
+    // entire telemetry partition.  If the first mount attempt fails (blank
+    // partition on first boot, or unrecoverable multi-sector corruption),
+    // format explicitly so the event is logged and counted.
+    if (!LittleFS.begin(false))
     {
-        LOG_E(TAG, "mount failed");
-        return false;
+        LOG_W(TAG, "mount failed — formatting partition (session format_count will be 1)");
+        if (!LittleFS.format())
+        {
+            LOG_E(TAG, "format failed — storage unavailable");
+            return false;
+        }
+        health_.formatCount++;
+        LOG_W(TAG, "partition formatted (format_count=%" PRIu32 ")", health_.formatCount);
+        if (!LittleFS.begin(false))
+        {
+            LOG_E(TAG, "mount failed after format — storage unavailable");
+            return false;
+        }
     }
 
     mounted_ = true;

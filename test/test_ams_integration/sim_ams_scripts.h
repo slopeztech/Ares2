@@ -225,6 +225,44 @@ static const char kScriptFallback[] =
     "    EVENT.info \"SAFE\"\n";
 
 /**
+ * Script where on_timeout and fallback are declared in the same state with
+ * identical thresholds (3000 ms), exercising the tie-breaking rule AMS-5.1.
+ *
+ * Tick order: transitions → on_timeout (step 6) → fallback (step 7).
+ * When both are due at the same tick, on_timeout fires and TIMEOUT_WIN is
+ * entered; FALLBACK_WIN can never be reached.
+ *
+ * Flow:  WAIT --(LAUNCH)--> HOLD
+ *        HOLD --(on_timeout 3000 ms)--------> TIMEOUT_WIN  (wins)
+ *             --(fallback after 3000 ms)-----> FALLBACK_WIN (shadowed)
+ */
+static const char kScriptOnTimeoutVsFallbackTie[] =
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  transition to HOLD when TC.command == LAUNCH\n"
+    "\n"
+    "state HOLD:\n"
+    "  on_timeout 3000ms:\n"
+    "    EVENT.info \"TIMEOUT\"\n"
+    "    transition to TIMEOUT_WIN\n"
+    "  fallback transition to FALLBACK_WIN after 3000ms\n"
+    "\n"
+    "state TIMEOUT_WIN:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"TIMEOUT WIN\"\n"
+    "\n"
+    "state FALLBACK_WIN:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"FALLBACK WIN\"\n";
+
+/**
  * Script whose FLIGHT state has a guard condition that fails at ground level.
  *
  * Guard: BARO.alt > 1000 (holds when alt > 1000 m; violated at ground).
@@ -370,6 +408,36 @@ static const char kScriptConfirmLaunch[] =
     "  on_enter:\n"
     "    EVENT.info \"WAITING\"\n"
     "  transition to FLIGHT when TC.command == LAUNCH confirm 2\n"
+    "\n"
+    "state FLIGHT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"FLIGHT\"\n";
+
+/**
+ * Script that requires the LAUNCH TC to be injected three times before firing.
+ *
+ * Used by the ABORT-during-CONFIRM-N test: inject 2 of 3, then ABORT.
+ * The SAFE state is terminal with an HK slot so it satisfies no_silent_terminals.
+ *
+ * Flow:  WAIT --(LAUNCH confirm 3)--> FLIGHT
+ * ABORT (no explicit ABORT transition) force-deactivates the engine.
+ */
+static const char kScriptConfirm3Launch[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAITING confirm 3\"\n"
+    "  transition to FLIGHT when TC.command == LAUNCH confirm 3\n"
     "\n"
     "state FLIGHT:\n"
     "  on_enter:\n"
@@ -566,6 +634,278 @@ static const char kScriptOnExitSet[] =
     "state END:\n"
     "  on_enter:\n"
     "    EVENT.info \"END\"\n";
+
+/**
+ * Minimal script for sensor cache TTL tests (AMS-4.5.1).
+ *
+ * The condition BARO.alt > 9999 is intentionally unreachable so the engine
+ * stays RUNNING indefinitely, allowing the test to count baro driver calls
+ * across multiple ticks and verify the within-TTL cache-hit path.
+ */
+static const char kScriptBaroCacheTtl[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "state WAIT:\n"
+    "  transition to END when BARO.alt > 9999\n"
+    "state END:\n";
+
+/**
+ * @brief Minimal script with a log_every slot to exercise CSV-header retry.
+ *
+ * The WAIT state logs BARO.alt every 10 ms.  The transition condition
+ * (BARO.alt > 9999) is never satisfied by the sim driver (max ~300 m),
+ * so the engine stays RUNNING in WAIT indefinitely — ideal for
+ * single-tick instrumented tests (AMS-4.3.2).
+ */
+static const char kScriptLogHeaderRetry[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "state WAIT:\n"
+    "  log_every 10ms:\n"
+    "    LOG.report {\n"
+    "      baro_alt: BARO.alt\n"
+    "    }\n"
+    "  transition to END when BARO.alt > 9999\n"
+    "state END:\n";
+
+// ── AMS-4.13 Background Tasks — state-filter scripts ─────────────────────────
+
+/**
+ * @brief Task state-filter script: task fires in ACTIVE, skips in RECOVERY.
+ *
+ * ACTIVE transitions to RECOVERY after 500 ms (TIME.elapsed > 500).
+ * The 'watch' task runs every 100 ms only while the engine is in ACTIVE.
+ * The task if-condition (GPS.alt > -1) is always satisfied by the sim driver
+ * so each due tick in ACTIVE emits one EVENT.info frame (AMS-4.13.3).
+ */
+static const char kScriptTaskStateFilter[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "state ACTIVE:\n"
+    "  transition to RECOVERY when TIME.elapsed > 500\n"
+    "state RECOVERY:\n"
+    "task watch when in ACTIVE:\n"
+    "  every 100ms:\n"
+    "    if GPS.alt > -1:\n"
+    "      EVENT.info \"TASK_FIRED\"\n";
+
+/**
+ * @brief Task state-filter loop script: ACTIVE → RECOVERY → ACTIVE cycle.
+ *
+ * ACTIVE transitions to RECOVERY after 300 ms; RECOVERY transitions back
+ * to ACTIVE after 200 ms.  Used to verify that the per-task timer is reset
+ * during exclusion and the task fires promptly on re-entry (AMS-4.13.4).
+ */
+static const char kScriptTaskStateFilterLoop[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "state ACTIVE:\n"
+    "  transition to RECOVERY when TIME.elapsed > 300\n"
+    "state RECOVERY:\n"
+    "  transition to ACTIVE when TIME.elapsed > 200\n"
+    "task watch when in ACTIVE:\n"
+    "  every 100ms:\n"
+    "    if GPS.alt > -1:\n"
+    "      EVENT.info \"TASK_FIRED\"\n";
+
+// ── AMS-5.9 Adaptive Tick Scheduling — tick-scheduling scripts ────────────────
+
+/**
+ * @brief Pure-reporting state script for tick-scheduling tests.
+ *
+ * REPORT has a single HK slot (every 1000 ms) and no transitions or guard
+ * conditions.  This exercises the "no conditions" branch of nextWakeupMs,
+ * which should return nowMs + kRadioMaxSleepMs when the next HK slot is
+ * beyond the radio-cap window (AMS-5.9).
+ */
+static const char kScriptTickHkOnly[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "state REPORT:\n"
+    "  every 1000ms:\n"
+    "    HK.report {\n"
+    "      alt: BARO.alt\n"
+    "    }\n";
+
+/**
+ * @brief Fast HK slot script for tick-scheduling deadline tests.
+ *
+ * REPORT has a 100 ms HK slot and no transitions.  Used to verify that
+ * nextWakeupMs tightens the deadline when the next HK-slot due time falls
+ * inside the kRadioMaxSleepMs window (AMS-5.9 table row 4).
+ */
+static const char kScriptTickHkFast[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "state REPORT:\n"
+    "  every 100ms:\n"
+    "    HK.report {\n"
+    "      alt: BARO.alt\n"
+    "    }\n";
+
+/**
+ * @brief State-with-transition script for tick-scheduling tests.
+ *
+ * WAIT has a far-future TIME.elapsed transition (> 10 000 ms) that keeps the
+ * engine in WAIT for the duration of the test.  Because the state has an
+ * active transition, nextWakeupMs must return nowMs + SENSOR_RATE_MS
+ * regardless of HK cadence (AMS-5.9 table row 3).
+ */
+static const char kScriptTickWithTransition[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "pus.apid = 1\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "state WAIT:\n"
+    "  transition to END when TIME.elapsed > 10000\n"
+    "  every 1000ms:\n"
+    "    HK.report {\n"
+    "      alt: BARO.alt\n"
+    "    }\n"
+    "state END:\n";
+
+/**
+ * Guard condition whose RHS references a `var` that is never set by any
+ * set action.  Documents AMS-5.6 fail-safe: when the variable is not yet
+ * valid, `resolveVarThresholdLocked` returns false, `holds` stays true,
+ * the guard is silently skipped, and the engine remains RUNNING.
+ *
+ * Used by test_guard_skipped_when_var_not_set.
+ */
+static const char kScriptGuardVarNotSet[] =
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "\n"
+    "var min_alt = 0.0\n"
+    "\n"
+    "state WAIT:\n"
+    "  transition to FLIGHT when TC.command == LAUNCH\n"
+    "\n"
+    "state FLIGHT:\n"
+    "  conditions:\n"
+    "    BARO.alt > min_alt\n"
+    "  on_error:\n"
+    "    EVENT.error \"GUARD FAIL\"\n"
+    "  every 5000ms:\n"
+    "    HK.report {\n"
+    "      baro_alt: BARO.alt\n"
+    "    }\n"
+    "  transition to END when TIME.elapsed > 60000\n"
+    "\n"
+    "state END:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"END\"\n";
+
+/**
+ * Script where ASCENT has two sensor transitions that shadow each other:
+ *
+ *   transition to HIGH_ALT  when BARO.alt > 200   ← dominator (declared first)
+ *   transition to VERY_HIGH when BARO.alt > 500   ← shadowed  (never fires)
+ *
+ * Whenever alt > 500, alt > 200 is also true, so transition 0 fires first.
+ * The engine must parse without error and the dominator must fire at t=4000ms
+ * (where kVariantProfile delivers alt=210 m).
+ */
+static const char kScriptShadowedTransition[] =
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "pus.service 3 as HK\n"
+    "\n"
+    "state WAIT:\n"
+    "  transition to ASCENT when TC.command == LAUNCH\n"
+    "\n"
+    "state ASCENT:\n"
+    "  transition to HIGH_ALT  when BARO.alt > 200\n"
+    "  transition to VERY_HIGH when BARO.alt > 500\n"
+    "\n"
+    "state HIGH_ALT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"HIGH\"\n"
+    "\n"
+    "state VERY_HIGH:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"VERY HIGH\"\n";
+
+// ── Variable field in LOG.report script (AMS-4.8) ────────────────────────────
+
+/**
+ * @brief Script with a `var` field in a LOG.report block (AMS-4.8).
+ *
+ * WAIT state sets `ground_alt` to the current BARO.alt on entry, then
+ * FLIGHT state logs it every 10 ms via `LOG.report { ga: ground_alt }`.
+ * This exercises SensorField::VAR parsing and formatting in LOG CSV output.
+ *
+ * Used by test_var_field_in_log_report.
+ */
+static const char kScriptVarFieldInLog[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "var ground_alt = 0.0\n"
+    "\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    set ground_alt = BARO.alt\n"
+    "  transition to FLIGHT when TC.command == LAUNCH\n"
+    "\n"
+    "state FLIGHT:\n"
+    "  log_every 10ms:\n"
+    "    LOG.report {\n"
+    "      ga: ground_alt\n"
+    "    }\n"
+    "  transition to END when BARO.alt > 9999\n"
+    "\n"
+    "state END:\n";
 
 } // namespace sim
 } // namespace ares

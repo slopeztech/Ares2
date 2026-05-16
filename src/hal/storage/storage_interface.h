@@ -52,6 +52,9 @@ struct StorageHealth
     uint32_t removedTmp = 0;             ///< Incomplete .tmp files removed.
     uint32_t removedBak = 0;             ///< Old .bak files cleaned up.
     uint32_t recoveryErrors = 0;         ///< Errors during recovery process.
+    uint32_t formatCount = 0;            ///< Times the partition was explicitly
+                                         ///<   formatted since last power-on
+                                         ///<   (see LittleFsStorage::begin()).
 };
 
 /**

@@ -45,6 +45,9 @@ connect. The API must defend against:
 | Slowloris / stale conn   | Connection timeout                   | REST-10     |
 | Path traversal           | Whitelist routes, no FS path mapping | REST-11     |
 | Concurrent requests      | Mutex with bounded timeout (RTOS-4)  | REST-8      |
+| Unauthorised API access  | Optional bearer token (`X-ARES-Token`)| REST-12    |
+| Token timing side-channel| Constant-time comparison (XOR acc.)  | REST-12     |
+| Token leakage in logs    | Request bodies never logged          | REST-9.4    |
 
 ---
 
@@ -81,15 +84,16 @@ document this explicitly.
 
 ### REST-1.3 — Resource catalogue
 
-| Resource        | GET                | PUT          | POST              | DELETE       |
-|-----------------|--------------------|--------------|--------------------|--------------|
-| `/api/status`   | System status      | —            | —                  | —            |
-| `/api/config`   | Read config        | Update config| —                  | —            |
-| `/api/mode`     | —                  | —            | Change mode        | —            |
-| `/api/arm`      | —                  | —            | Arm flight FSM     | —            |
-| `/api/abort`    | —                  | —            | Abort flight       | —            |
-| `/api/logs`     | List log files     | —            | —                  | Delete logs  |
-| `/api/logs/:id` | Download log file  | —            | —                  | Delete log   |
+| Resource              | GET                      | PUT                  | POST              | DELETE       |
+|-----------------------|--------------------------|----------------------|--------------------|---------------|
+| `/api/status`         | System status            | —                    | —                  | —             |
+| `/api/config`         | Read runtime config      | Update runtime config| —                  | —             |
+| `/api/device/config`  | Read device security cfg | Update device security cfg | —          | —             |
+| `/api/mode`           | —                        | —                    | Change mode        | —             |
+| `/api/arm`            | —                        | —                    | Arm flight FSM     | —             |
+| `/api/abort`          | —                        | —                    | Abort flight       | —             |
+| `/api/logs`           | List log files           | —                    | —                  | Delete logs  |
+| `/api/logs/:id`       | Download log file        | —                    | —                  | Delete log   |
 
 ### Rules
 
@@ -372,18 +376,31 @@ browser-based ground station (served from a different origin or
 
 ### REST-7.1 — Required headers
 
-All responses must include:
+All responses must include CORS headers built from the live
+`DeviceConfig::corsOrigin()` value. The default produces:
 
 ```
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS
-Access-Control-Allow-Headers: Content-Type
+Access-Control-Allow-Headers: Content-Type, X-ARES-Token
 ```
+
+`X-ARES-Token` must always appear in `Access-Control-Allow-Headers` so
+browser preflight checks succeed when token auth is enabled. The origin
+value is runtime-configurable via `PUT /api/device/config`.
 
 ### REST-7.2 — Preflight handling
 
 `OPTIONS` requests on any route must return `204 No Content`
-with the CORS headers above. No body, no JSON.
+with the CORS headers above. No body, no JSON. OPTIONS requests
+are never subject to auth checks (REST-12.3).
+
+### REST-7.3 — CORS header buffer
+
+The full CORS header block is stored in a static char array
+(`s_corsHeadersBuf` in `api_server.cpp`) and rebuilt at `begin()`
+and after every successful `PUT /api/device/config`. It is written
+and read exclusively from the API task — no mutex required.
 
 ### Rules
 
@@ -391,7 +408,8 @@ with the CORS headers above. No body, no JSON.
 |-----------|-----------------------------------------------------------------|
 | REST-7.1  | Every response must include CORS headers.                       |
 | REST-7.2  | OPTIONS preflight must return 204 with CORS headers only.       |
-| REST-7.3  | `Access-Control-Allow-Origin` is `*` (no credential cookies).   |
+| REST-7.3  | `Access-Control-Allow-Headers` must include `X-ARES-Token`.     |
+| REST-7.4  | CORS headers must be generated from `DeviceConfig::buildCorsHeader()`, not hardcoded. |
 
 ---
 
@@ -505,15 +523,17 @@ validation and state guards prevent accidental misuse.
 
 ### REST-11.1 — Security controls
 
-| Control                    | Implementation                           |
-|----------------------------|-------------------------------------------|
-| Authentication             | WPA2-PSK (network-level, not API-level)   |
-| Input validation           | REST-5 (type, range, length)              |
-| State guards               | REST-6 (mode-locked operations)           |
-| Path traversal prevention  | Whitelist routing — no filesystem mapping  |
-| Injection prevention       | No eval, no SQL, no shell commands        |
-| Buffer overflow prevention | Fixed buffers, Content-Length check (REST-3)|
-| Information leakage        | No stack traces, no internal paths in errors|
+| Control                     | Implementation                                |
+|-----------------------------|-----------------------------------------------|
+| Network authentication      | WPA2-PSK (AP password, configurable)          |
+| API authentication          | Optional `X-ARES-Token` bearer token (REST-12)|
+| Input validation            | REST-5 (type, range, length)                  |
+| State guards                | REST-6 (mode-locked operations)               |
+| Path traversal prevention   | Whitelist routing — no filesystem mapping      |
+| Injection prevention        | No eval, no SQL, no shell commands            |
+| Buffer overflow prevention  | Fixed buffers, Content-Length check (REST-3)  |
+| Information leakage         | No stack traces, no internal paths in errors  |
+| Timing side-channel         | Constant-time token comparison (REST-12.2)    |
 
 ### REST-11.2 — Route handling
 
@@ -536,6 +556,8 @@ else                              { sendError(client, 404, "not found"); }
 | Change mode         | Transition matrix validation (REST-6.1)      |
 | Delete logs         | Only in IDLE mode                            |
 | Config update       | Locked in FLIGHT/RECOVERY (REST-6.2)         |
+| Device config update| Requires valid token when auth enabled (REST-12) |
+| `api_token` field   | Never returned in GET responses (write-only) |
 
 ### Rules
 
@@ -546,6 +568,92 @@ else                              { sendError(client, 404, "not found"); }
 | REST-11.3  | Error messages must not reveal file paths or stack traces.      |
 | REST-11.4  | No shell command execution from API input.                      |
 | REST-11.5  | Request data must never be used in `snprintf` format strings.   |
+| REST-11.6  | Security-sensitive fields (`api_token`) must never appear in responses. |
+
+---
+
+## REST-12 — Token Authentication
+
+The API supports an optional bearer token that adds an application-level
+authentication factor on top of the WPA2-PSK network password.
+The token is configured via `PUT /api/device/config` and stored in
+LittleFS as part of the `DeviceConfig` object.
+
+### REST-12.1 — Token lifecycle
+
+| Event                            | Behaviour                                         |
+|----------------------------------|---------------------------------------------------|
+| No `api_token` configured        | Auth disabled — all endpoints open (legacy mode) |
+| `api_token` set (8–64 chars)      | Auth enabled — protected endpoints require header |
+| `api_token` set to `""`          | Auth disabled — reverts to open mode             |
+| Device reboots                   | Token reloaded from LittleFS — no reset           |
+| `/ares_device.json` absent       | `setDefaults()` runs — open mode, factory password|
+
+### REST-12.2 — Token validation
+
+The `X-ARES-Token` header value must be compared against the stored
+token using a **constant-time** algorithm to prevent timing
+side-channel attacks (OWASP A07:2021):
+
+```cpp
+// ✔️ Constant-time comparison — always iterates full stored-token length
+uint8_t diff = 0;
+for (uint8_t i = 0; i < storedLen; i++)
+{
+    diff |= static_cast<uint8_t>(stored[i]) ^
+            static_cast<uint8_t>(
+                (i < providedLen) ? provided[i] : 0x00);
+}
+diff |= static_cast<uint8_t>(storedLen ^ providedLen);
+return diff == 0;
+```
+
+A variable-time comparison (`strcmp`, `strncmp`) is forbidden for
+token validation.
+
+### REST-12.3 — Public endpoints
+
+The following endpoints are always accessible regardless of token state:
+
+| Endpoint          | Reason                                       |
+|-------------------|----------------------------------------------|
+| `OPTIONS *`       | CORS preflight — must precede auth            |
+| `GET /api/status` | Ground station heartbeat                     |
+| `GET /api/imu`    | Passive sensor read                          |
+| `GET /api/imu/*`  | IMU sub-paths                                |
+
+All other endpoints require the token when auth is enabled.
+
+### REST-12.4 — Token constraints
+
+| Constraint         | Value                                               |
+|--------------------|-----------------------------------------------------|
+| Minimum length     | 8 characters                                        |
+| Maximum length     | 64 characters                                       |
+| Character set      | Printable ASCII (0x20–0x7E, excluding control chars)|
+| Storage            | Plain-text in LittleFS JSON (physical security only)|
+| Transport          | HTTP header (WPA2 encrypted at network layer)       |
+| Logging            | Never — request bodies must not be logged (REST-9.4)|
+
+### REST-12.5 — Response on auth failure
+
+```json
+{ "error": "unauthorized — missing or invalid X-ARES-Token" }
+```
+
+HTTP status: `401 Unauthorized`. Log at `WARNING` level with method and
+path but **not** the supplied token value.
+
+### Rules
+
+| ID         | Rule                                                              |
+|------------|-------------------------------------------------------------------|
+| REST-12.1  | Token comparison must be constant-time (XOR accumulator).         |
+| REST-12.2  | `strcmp`/`strncmp` are forbidden for token comparison.            |
+| REST-12.3  | When auth is disabled (empty token) all endpoints are open.       |
+| REST-12.4  | OPTIONS preflight must never be subject to auth checks.           |
+| REST-12.5  | 401 responses must not reveal whether the token is wrong vs absent.|
+| REST-12.6  | `api_token` must never appear in any GET response or log entry.   |
 
 ---
 

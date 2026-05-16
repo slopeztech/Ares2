@@ -43,6 +43,7 @@
 #include "hal/pulse/pulse_interface.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
+#include "sys/device_config/device_config.h"
 #include "sys/wifi/wifi_ap.h"
 
 class StatusLed;  ///< Forward declaration — avoids circular headers.
@@ -91,6 +92,7 @@ public:
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
               GpsInterface& gps, ImuInterface& imu,
+              DeviceConfig& devCfg,
               StorageInterface* storage = nullptr,
               ares::ams::MissionScriptEngine* mission = nullptr,
               StatusLed* statusLed = nullptr,
@@ -178,6 +180,10 @@ private:
     void handleConfigGet(class WiFiClient& client);
     void handleConfigPut(class WiFiClient& client,
                          const char* body, uint32_t bodyLen);
+    // device/ — persistent device security configuration
+    void handleDeviceConfigGet(class WiFiClient& client);
+    void handleDeviceConfigPut(class WiFiClient& client,
+                               const char* body, uint32_t bodyLen);
     // flight/
     void handleMode(class WiFiClient& client,
                     const char* body, uint32_t bodyLen);
@@ -217,12 +223,18 @@ private:
     // ── Request routing (PO10-4.1: decomposed from handleClient) ─
     void routeRequest(class WiFiClient& client,
                       const char* method, const char* path,
-                      const char* body, uint32_t bodyLen);
+                      const char* body, uint32_t bodyLen,
+                      const char* authToken);
     bool routeStatusAndConfigRequest(class WiFiClient& client,
                                      const char* method,
                                      const char* path,
                                      const char* body,
                                      uint32_t bodyLen);
+    bool routeDeviceConfigRequest(class WiFiClient& client,
+                                  const char* method,
+                                  const char* path,
+                                  const char* body,
+                                  uint32_t bodyLen);
     bool routeFlightRequest(class WiFiClient& client,
                             const char* method,
                             const char* path,
@@ -269,6 +281,10 @@ private:
     /// Check if current mode forbids write operations (REST-6.2).
     bool isFlightLocked() const;
 
+    /// Refresh the global CORS header buffer from the current DeviceConfig.
+    /// Call once at begin() and after every successful PUT /api/device/config.
+    void refreshCorsHeaders();
+
     /// Convert OperatingMode to string.
     static const char* modeToString(ares::OperatingMode mode);
 
@@ -277,6 +293,7 @@ private:
     BarometerInterface&  baro_;
     GpsInterface&        gps_;
     ImuInterface&        imu_;
+    DeviceConfig&        devCfg_;   ///< Persistent device security configuration.
     StorageInterface*    storage_;  ///< Nullable — logs disabled if null.
     ares::ams::MissionScriptEngine* mission_; ///< Nullable — AMS disabled if null.
     StatusLed*           statusLed_; ///< Nullable — LED updates disabled if null.
@@ -302,6 +319,7 @@ private:
     std::atomic<bool> armed_{false};
 
     // ── RTOS task (static allocation) ───────────────────────
-    StackType_t stack_[ares::TASK_STACK_SIZE_API / sizeof(StackType_t)] = {};
-    StaticTask_t tcb_ = {};
+    StackType_t  stack_[ares::TASK_STACK_SIZE_API / sizeof(StackType_t)] = {};
+    StaticTask_t tcb_        = {};
+    TaskHandle_t taskHandle_ = nullptr;  ///< Set by begin(); used to assert single-task access.
 };

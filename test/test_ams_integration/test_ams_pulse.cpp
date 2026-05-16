@@ -200,7 +200,6 @@ void test_pulse_fire_only_when_execution_enabled()
     PulseFixture f;
     f.init("/missions/pulse.ams", ares::sim::kScriptPulseFire);
 
-    ares::sim::clock::reset();
     (void)f.engine.activate("pulse.ams");
     (void)f.engine.arm();          // sets RUNNING + pre-queues LAUNCH TC
 
@@ -249,7 +248,6 @@ void test_pulse_fire_no_driver_no_crash()
     (void)radio.begin();
     (void)engine.begin();
 
-    ares::sim::clock::reset();
     (void)engine.activate("pulse.ams");
     (void)engine.arm();
     // arm() pre-queues LAUNCH → first tick transitions WAIT→DEPLOY and runs

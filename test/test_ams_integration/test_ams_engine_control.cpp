@@ -106,7 +106,6 @@ void test_abort_tc_deactivates_engine()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
@@ -136,7 +135,6 @@ void test_abort_tc_consumed_by_explicit_transition()
 {
     ControlFixture f;
     f.init("/missions/ctrl.ams", ares::sim::kScriptAbortTransition);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("ctrl.ams");
     (void)f.engine.arm();
@@ -167,7 +165,6 @@ void test_pause_stops_tick_execution()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
@@ -200,7 +197,6 @@ void test_resume_restores_running_status()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
@@ -227,7 +223,6 @@ void test_pause_clears_transition_hold_windows()
 {
     ControlFixture f;
     f.init("/missions/hold.ams", ares::sim::kScriptHoldWindow);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("hold.ams");
     (void)f.engine.arm();
@@ -259,6 +254,49 @@ void test_pause_clears_transition_hold_windows()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Bug #5 regression (short pause ≤ hold window): pausing when the hold timer
+// is only 1 ms from completing must NOT auto-complete the transition on the
+// first resume tick.  Pause clears transitionCondHolding_; the hold restarts
+// from zero on the next tick rather than inheriting the stale condMetMs.
+//
+// Without the Bug #5 fix, at tick(t=5000):
+//   elapsed = 5000 − condMetMs(4000) = 1000 ms ≥ 1000 ms → would fire.
+// With the fix, condMetMs was reset to 0 on pause, hold re-arms at t=5000:
+//   elapsed = 5000 − 5000 = 0 ms < 1000 ms → must NOT fire.
+// ─────────────────────────────────────────────────────────────────────────────
+void test_pause_short_hold_window_not_auto_completed()
+{
+    ControlFixture f;
+    f.init("/missions/hold.ams", ares::sim::kScriptHoldWindow);
+
+    (void)f.engine.activate("hold.ams");
+    (void)f.engine.arm();
+
+    // t=0: enter FLIGHT via LAUNCH TC.
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    // t=4000: BARO.alt = 210 m > 50 m → hold window armed at t=4000.
+    ares::sim::clock::advanceMs(4000U);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    // Pause immediately — hold cleared (Bug #5 fix).
+    f.engine.setExecutionEnabled(false);
+
+    // Advance exactly 1000 ms — equal to the hold window duration.
+    // If transitionCondMetMs_ were NOT reset, elapsed at tick(5000) would be
+    // exactly 1000 ms, and the transition would fire spuriously.
+    ares::sim::clock::advanceMs(1000U);
+
+    // Resume: hold re-arms from t=5000 → elapsed = 0 < 1000 ms → no fire.
+    f.engine.setExecutionEnabled(true);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_STRING("FLIGHT", snap.stateName);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // requestTelemetry: emits exactly one HK frame on demand (AMS-4.3.1).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -266,7 +304,6 @@ void test_request_telemetry_emits_hk()
 {
     ControlFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
-    ares::sim::clock::reset();
 
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();

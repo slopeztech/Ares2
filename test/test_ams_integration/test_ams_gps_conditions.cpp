@@ -118,7 +118,6 @@ void test_gps_sats_transition_fires_above_threshold()
     TEST_ASSERT_TRUE(f.engine.activate("sats.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
 
-    ares::sim::clock::reset();
     f.engine.tick(ares::sim::clock::nowMs());
 
     EngineSnapshot snap{};
@@ -139,7 +138,6 @@ void test_gps_hdop_transition_fires_below_threshold()
     TEST_ASSERT_TRUE(f.engine.activate("hdop.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
 
-    ares::sim::clock::reset();
     f.engine.tick(ares::sim::clock::nowMs());
 
     EngineSnapshot snap{};
@@ -159,8 +157,6 @@ void test_gps_sats_blocks_when_below_threshold()
     f.init("/missions/sats_block.ams", ares::sim::kScriptGpsSatsBlock);
     TEST_ASSERT_TRUE(f.engine.activate("sats_block.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
-
-    ares::sim::clock::reset();
 
     // Run 5 ticks at t=0 ms — sats stay at 4, threshold never crossed.
     for (uint8_t i = 0U; i < 5U; i++)
@@ -186,8 +182,6 @@ void test_gps_hdop_blocks_when_above_threshold()
     f.init("/missions/hdop_block.ams", ares::sim::kScriptGpsHdop);
     TEST_ASSERT_TRUE(f.engine.activate("hdop_block.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
-
-    ares::sim::clock::reset();
 
     for (uint8_t i = 0U; i < 5U; i++)
     {

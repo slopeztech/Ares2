@@ -89,6 +89,42 @@ void test_itw_strtoul_suffix_residuo_returns_false()
     TEST_ASSERT_FALSE(isOnlyTrailingWhitespace(end));
 }
 
+/// After strtoul("500 ", &end), end points at " " — a single trailing space
+/// is acceptable whitespace that the parser should allow.
+void test_itw_strtoul_trailing_space_returns_true()
+{
+    char buf[] = "500 ";
+    char* end   = nullptr;
+    (void)strtoul(buf, &end, 10);
+    // end now points at buf[3] == ' '
+    TEST_ASSERT_NOT_NULL(end);
+    TEST_ASSERT_TRUE(isOnlyTrailingWhitespace(end));
+}
+
+/// After strtoul("500\t", &end), end points at "\t" — a single trailing tab
+/// is acceptable whitespace that the parser should allow.
+void test_itw_strtoul_trailing_tab_returns_true()
+{
+    char buf[] = "500\t";
+    char* end   = nullptr;
+    (void)strtoul(buf, &end, 10);
+    // end now points at buf[3] == '\t'
+    TEST_ASSERT_NOT_NULL(end);
+    TEST_ASSERT_TRUE(isOnlyTrailingWhitespace(end));
+}
+
+/// After strtoul("500  ms", &end), end points at "  ms" — whitespace followed
+/// by letters is not purely whitespace.  The parser must reject "500  ms".
+void test_itw_strtoul_spaces_then_letters_returns_false()
+{
+    char buf[] = "500  ms";
+    char* end   = nullptr;
+    (void)strtoul(buf, &end, 10);
+    // end now points at buf[3] == ' '; "  ms" contains non-whitespace
+    TEST_ASSERT_NOT_NULL(end);
+    TEST_ASSERT_FALSE(isOnlyTrailingWhitespace(end));
+}
+
 /// A string with leading non-whitespace must return false regardless of trailing content.
 void test_itw_leading_nonwhitespace_returns_false()
 {

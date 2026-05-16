@@ -51,11 +51,11 @@ DRIVER_REGISTRY: dict[str, str] = {
 
 # ── Valid sensor fields per peripheral kind ──────────────────────────────────
 SENSOR_FIELDS: dict[str, set[str]] = {
-    "GPS":  {"lat", "lon", "alt", "speed"},
+    "GPS":  {"lat", "lon", "alt", "speed", "sats", "hdop"},
     "BARO": {"alt", "temp", "pressure"},
     "COM":  set(),
     "IMU":  {"accel_x", "accel_y", "accel_z", "accel_mag",
-             "gyro_x", "gyro_y", "gyro_z", "temp"},
+             "gyro_x", "gyro_y", "gyro_z", "gyro_mag", "temp"},
 }
 
 # ── APID → node mapping (mapApidToNode) ──────────────────────────────────────
@@ -119,6 +119,7 @@ class AmsParser:
         self._block: Optional[str] = None   # "HK" | "LOG" | None
         self._apid: Optional[int] = None
         self._aliases: dict[str, str] = {}  # alias -> peripheral kind
+        self._declared_vars: set[str] = {}  # AMS variable names declared with 'var'
         self._hk_alias: str = "HK"
         self._event_alias: str = "EVENT"
         self._tc_alias: str = "TC"
@@ -198,6 +199,13 @@ class AmsParser:
 
         # Top-level var/const declarations
         if line.startswith("var ") or line.startswith("const "):
+            if self._current is not None:
+                kw = "var" if line.startswith("var ") else "const"
+                self._error(ln, f"{kw} declaration must appear before any state block")
+            elif line.startswith("var "):
+                m = re.match(r"var\s+(\w{1,15})\s*=", line)
+                if m:
+                    self._declared_vars.add(m.group(1))
             return
 
         # State header
@@ -216,6 +224,9 @@ class AmsParser:
     # ── Top-level parsers ─────────────────────────────────────────────────────
 
     def _parse_include(self, line: str, ln: int) -> None:
+        if self._current is not None:
+            self._error(ln, "include directive must appear before any state block")
+            return
         m = re.match(r"include\s+(\S+)\s+as\s+(\S+)", line)
         if not m:
             self._error(ln, "invalid include syntax (expected: include MODEL as ALIAS)")
@@ -319,8 +330,16 @@ class AmsParser:
         assert self._current is not None
 
         # Block headers that reset block context
-        if line in ("on_enter:", "on_exit:", "on_error:", "conditions:"):
+        if line in ("on_enter:", "on_exit:"):
             self._block = None
+            return
+
+        if line == "on_error:":
+            self._block = "ON_ERROR"
+            return
+
+        if line == "conditions:":
+            self._block = "CONDITIONS"
             return
 
         if re.match(r"on_timeout\s+\d+\s*ms:", line):
@@ -334,7 +353,14 @@ class AmsParser:
             elif line.startswith("set "):
                 pass  # validated by firmware
             elif line.startswith("transition to "):
-                self._parse_transition(line, ln)
+                # Inside on_timeout/on_error, transition has no 'when' clause
+                m = re.match(r"transition\s+to\s+(\S{1,15})\s*$", line)
+                if not m:
+                    self._error(ln, "invalid forced-transition syntax (expected: 'transition to STATE')")
+                    return
+                assert self._current is not None
+                self._current.has_transition = True
+                self._current.transition_target = m.group(1)
             # ignore other lines inside these blocks
             return
 
@@ -386,6 +412,10 @@ class AmsParser:
             self._parse_field(line, ln, "LOG")
             return
 
+        if self._block == "CONDITIONS":
+            self._parse_condition(line, ln)
+            return
+
         if line.startswith("transition to "):
             self._parse_transition(line, ln)
             return
@@ -396,10 +426,41 @@ class AmsParser:
 
         self._error(ln, f"unsupported statement: '{line}'")
 
+    def _parse_condition(self, line: str, ln: int) -> None:
+        """Parse a single conditions: block line (LHS OP RHS, no 'when' keyword)."""
+        if line in ("{", "}"):
+            return
+        parts = line.split(None, 2)
+        if len(parts) < 2:
+            self._error(ln, "invalid condition syntax (expected: ALIAS.field OP VALUE)")
+            return
+        lhs = parts[0]
+        if lhs.startswith("TIME."):
+            return  # TIME.elapsed — always valid, no alias needed
+        dot = lhs.find(".")
+        if dot <= 0:
+            self._error(ln, f"invalid condition LHS '{lhs}' (expected ALIAS.field or TIME.elapsed)")
+            return
+        alias = lhs[:dot]
+        field = lhs[dot + 1:]
+        if alias not in self._aliases:
+            self._error(ln, f"unknown alias '{alias}' in condition — add 'include MODEL as {alias}'")
+            return
+        kind = self._aliases[alias]
+        if kind == "UNKNOWN":
+            return
+        valid_fields = SENSOR_FIELDS.get(kind, set())
+        if field not in valid_fields:
+            self._error(
+                ln,
+                f"field '{field}' not valid for alias '{alias}' (kind={kind}, "
+                f"valid: {sorted(valid_fields)})",
+            )
+
     def _parse_event(self, line: str, ln: int) -> None:
         # <ALIAS>.<verb> "<text>"
         pfx = re.escape(self._event_alias)
-        m = re.match(rf'{pfx}\.(\w+)\s+"([^"]{{0,63}})"', line)
+        m = re.match(rf'{pfx}\.(\w+)\s+"([^"]*)"', line)
         if not m:
             # Check common mistakes
             if '"' not in line:
@@ -493,7 +554,7 @@ class AmsParser:
         # key: ALIAS.field
         m = re.match(r"^([^:]{1,19}):\s+(\S+)$", line)
         if not m:
-            self._error(ln, f"invalid {ctx} field syntax (expected 'label: ALIAS.field')")
+            self._error(ln, f"invalid {ctx} field syntax (expected 'label: ALIAS.field' or 'label: varname')")
             return
 
         expr = m.group(2)
@@ -633,12 +694,16 @@ class AmsParser:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _validate_sensor_expr(self, expr: str, ln: int, ctx: str) -> None:
-        """Validate an ALIAS.field expression against registered aliases."""
+        """Validate an ALIAS.field expression or AMS variable name against declared identifiers."""
         dot = expr.find(".")
         if dot <= 0:
+            # No dot — try as a variable name (AMS-4.8).
+            if expr in self._declared_vars:
+                return
             self._error(
                 ln,
-                f"invalid {ctx} expression '{expr}' (expected ALIAS.field)",
+                f"invalid {ctx} expression '{expr}' "
+                f"(expected ALIAS.field or declared variable name)",
             )
             return
 

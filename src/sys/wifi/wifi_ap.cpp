@@ -21,7 +21,7 @@ static constexpr const char* TAG = "WIFI";
 
 // ── Public API ──────────────────────────────────────────────
 
-bool WifiAp::begin()
+bool WifiAp::begin(const DeviceConfig& cfg)
 {
     ARES_ASSERT(!ready_.load());  // Double-init guard (CERT-18.3)
 
@@ -31,12 +31,13 @@ bool WifiAp::begin()
     snprintf(ssid_, sizeof(ssid_), "ARES-%02X%02X",
              mac[4], mac[5]);
 
-    // Configure soft-AP
+    // Configure soft-AP — password from device config (may be the
+    // factory default "ares1234" if no config file has been deployed).
     WiFi.mode(WIFI_AP);
 
     const bool ok = WiFi.softAP(
         ssid_,
-        ares::WIFI_AP_PASSWORD,
+        cfg.wifiPassword(),
         ares::WIFI_AP_CHANNEL,
         0,                          // SSID not hidden
         ares::WIFI_AP_MAX_CLIENTS);

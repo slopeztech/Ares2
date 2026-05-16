@@ -35,6 +35,7 @@ DEFAULT_PORT = 80
 DEFAULT_TIMEOUT_S = 2.0
 DEFAULT_REFRESH_S = 2.0
 DEFAULT_SSID_PREFIX = "ARES-"
+DEFAULT_TOKEN = ""
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class AppConfig:
     refresh_s: float
     ssid_prefix: str
     enforce_ssid_check: bool
+    token: str = ""
 
 
 @dataclass(frozen=True)
@@ -103,18 +105,30 @@ ENDPOINTS: list[EndpointDef] = [
     ),
     EndpointDef("Scan I2C buses", "POST", "/api/scans/i2c", "", "application/json", "Probe I2C0 and I2C1 buses"),
     EndpointDef("Scan UART ports", "POST", "/api/scans/uart", "", "application/json", "Inspect GPS/LoRa UART state"),
+    EndpointDef("Get device config", "GET", "/api/device/config", "", "application/json", "WiFi/token/CORS settings"),
+    EndpointDef(
+        "Put device config",
+        "PUT",
+        "/api/device/config",
+        '{"wifi_password":"","api_token":"","cors_origin":"*"}',
+        "application/json",
+        "Set password/token/CORS (token/CORS: no reboot)",
+    ),
 ]
 
 
 class ApiClient:
-    def __init__(self, host: str, port: int, timeout_s: float) -> None:
+    def __init__(self, host: str, port: int, timeout_s: float, token: str = "") -> None:
         self.base = f"http://{host}:{port}"
         self.timeout_s = timeout_s
+        self._token = token
 
     def request(self, method: str, path: str, body: bytes = b"", content_type: str = "application/json") -> tuple[int, bytes]:
         headers: dict[str, str] = {}
         if len(body) > 0:
             headers["Content-Type"] = content_type
+        if self._token:
+            headers["X-ARES-Token"] = self._token
 
         req = Request(self.base + path, data=(body if len(body) > 0 else None), method=method, headers=headers)
         try:
@@ -282,7 +296,7 @@ class AresApiApp(App[None]):
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
         self.config = config
-        self.api = ApiClient(config.host, config.port, config.timeout_s)
+        self.api = ApiClient(config.host, config.port, config.timeout_s, token=config.token)
         self.connected_ssid: Optional[str] = None
         self._last_disconnect_log_s = 0.0
 
@@ -346,6 +360,7 @@ class AresApiApp(App[None]):
         on_ares = self.is_on_expected_wifi()
         state = "[green]CONNECTED[/]" if on_ares else "[bold red]NOT ARES[/]"
 
+        auth_line = "[green]token set[/]" if self.config.token else "[yellow]open (no token)[/]"
         panel.update(
             "\n".join(
                 [
@@ -354,6 +369,7 @@ class AresApiApp(App[None]):
                     f"Expected prefix: [yellow]{self.config.ssid_prefix}[/]",
                     f"State: {state}",
                     f"API Host: [cyan]{self.config.host}:{self.config.port}[/]",
+                    f"Auth: {auth_line}",
                 ]
             )
         )
@@ -580,6 +596,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not require SSID prefix match before API calls",
     )
+    parser.add_argument(
+        "--token",
+        default=DEFAULT_TOKEN,
+        metavar="TOKEN",
+        help="API bearer token (X-ARES-Token header). Leave empty for open mode.",
+    )
     return parser
 
 
@@ -592,6 +614,7 @@ def main() -> None:
         refresh_s=args.refresh,
         ssid_prefix=args.ssid_prefix,
         enforce_ssid_check=not args.ignore_ssid_check,
+        token=args.token,
     )
     AresApiApp(cfg).run()
 

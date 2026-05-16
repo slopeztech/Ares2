@@ -96,8 +96,18 @@ constexpr uint32_t LORA_UART_BAUD         = 9600;     ///< Module serial baud ra
 constexpr uint32_t LORA_AUX_TIMEOUT_MS    = 50;       ///< Max AUX wait before TX proceeds in degraded mode.
 constexpr uint32_t TELEMETRY_INTERVAL_MS  = 500;      ///< Downlink interval.
 
+// ── Device security configuration (persisted in LittleFS) ──
+/// LittleFS path where the device security config JSON is stored.
+constexpr const char* DEVICE_CONFIG_PATH     = "/ares_device.json";
+/// Max WPA2-PSK length including NUL (WPA2 allows 8-63 printable chars).
+constexpr uint8_t     DEVICE_WIFI_PASS_MAX   = 64U;
+/// Max API token length including NUL (0 = auth disabled; otherwise 8-64 printable chars).
+constexpr uint8_t     DEVICE_TOKEN_MAX       = 65U;
+/// Max CORS origin string length including NUL.
+constexpr uint8_t     DEVICE_CORS_ORIGIN_MAX = 128U;
+
 // ── WiFi AP (ground configuration) ─────────────────────────
-constexpr const char* WIFI_AP_PASSWORD    = "ares1234"; ///< AP WPA2 password.
+constexpr const char* WIFI_AP_PASSWORD    = "ares1234"; ///< AP WPA2 factory-default password.
 constexpr uint16_t    WIFI_API_PORT       = 80;         ///< HTTP REST API port.
 constexpr uint8_t     WIFI_AP_CHANNEL     = 1;          ///< WiFi radio channel.
 constexpr uint8_t     WIFI_AP_MAX_CLIENTS = 4;          ///< Max simultaneous clients.
@@ -147,6 +157,7 @@ constexpr uint16_t    AMS_MUTEX_TIMEOUT_MS = 500;          ///< Mutex timeout fo
 constexpr const char* AMS_RESUME_PATH      = "/missions/.ams_resume.chk"; ///< Persistent AMS checkpoint file.
 constexpr uint32_t    AMS_CHECKPOINT_INTERVAL_MS        = 1000;   ///< Checkpoint cadence when material state changed (dirty flag set).
 constexpr uint32_t    AMS_CHECKPOINT_STABLE_INTERVAL_MS = 30000U; ///< Checkpoint cadence when no material change since last write (flash wear reduction).
+constexpr uint32_t    AMS_SENSOR_CACHE_TTL_MS           = 5U;     ///< Maximum age of a cached sensor reading (AMS-4.5.1). Within a tick, multiple conditions can reuse the same read. Shorter than SENSOR_RATE_MS so the cache always expires between ticks, guaranteeing fresh data at the first field access of each tick even when the adaptive sleep delays the tick.
 
 // ── Config field validation bounds (REST-5.4) ───────────────
 constexpr uint32_t    TELEMETRY_INTERVAL_MIN = 100;     ///< Min telemetry interval ms.
@@ -180,6 +191,7 @@ constexpr UBaseType_t TASK_PRIORITY_API   = 1;  ///< Low    — REST API polling
 constexpr UBaseType_t TASK_PRIORITY_LED   = 1;  ///< Low    — status heartbeat.
 constexpr uint32_t SENSOR_RATE_MS    = 10;   ///< 100 Hz.
 constexpr uint32_t FLIGHT_RATE_MS    = 20;   ///<  50 Hz.
+constexpr uint32_t LOOP_TICK_WARN_MS = 50;   ///< Max tick work duration (ms) before a LOG_W overrun warning is emitted.
 constexpr uint32_t LOG_RATE_MS       = 100;  ///<  10 Hz.
 constexpr uint32_t TELEMETRY_RATE_MS = 2000; ///< 0.5 Hz — must exceed air TX time (~1.85 s @ 2.4 kbps).
 constexpr uint32_t API_RATE_MS       = 50;   ///<  20 Hz.

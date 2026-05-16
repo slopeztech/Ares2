@@ -21,7 +21,8 @@
  *     - Rejection on reserved flags set
  *     - Rejection on unknown node ID
  *     - Rejection on corrupt CRC (APUS-1)
- *     - Rejection on buffer shorter than declared frame
+ *     - Rejection when bufLen < MIN_FRAME_LEN (initial guard)
+ *     - Rejection when declared payloadLen makes totalLen exceed bufLen (HEADER_LEN+payloadLen+CRC_LEN > bufLen)
  *     - Acceptance for every known node ID
  *     - Payload bytes are preserved exactly
  */
@@ -376,6 +377,47 @@ void test_decode_rejects_oversized_payload_len()
     TEST_ASSERT_FALSE(decode(buf, sizeof(buf), rx));
 }
 
+/**
+ * decode() must reject when buf[9] declares a payload length that is
+ * individually valid (≤ MAX_PAYLOAD_LEN, meets the type minimum) but makes
+ * HEADER_LEN + payloadLen + CRC_LEN exceed the actual buffer size by one byte.
+ *
+ * This exercises the `bufLen < totalLen` guard in validateDecodeHeader(),
+ * which is distinct from:
+ *   - the `bufLen < MIN_FRAME_LEN` initial check (tested by
+ *     test_decode_rejects_short_buffer), and
+ *   - the `payloadLen > MAX_PAYLOAD_LEN` check (tested by
+ *     test_decode_rejects_oversized_payload_len).
+ *
+ * Construction: encode a HEARTBEAT with payloadLen=1 → wireLen=15.  Pass
+ * bufLen = wireLen − 1 = 14 = MIN_FRAME_LEN.  The declared totalLen (15)
+ * exceeds bufLen (14) by exactly one byte, so decode() must return false.
+ */
+void test_decode_rejects_declared_len_exceeds_actual_buffer()
+{
+    // Build a properly encoded HEARTBEAT with one payload byte so that
+    // wireLen = HEADER_LEN + 1 + CRC_LEN = 15.  The CRC is valid.
+    Frame tx = {};
+    tx.ver      = PROTOCOL_VERSION;
+    tx.node     = NODE_ROCKET;
+    tx.type     = MsgType::HEARTBEAT;
+    tx.seq      = 0U;
+    tx.len      = 1U;
+    tx.payload[0] = 0xAAU;  // arbitrary content
+
+    uint8_t buf[MAX_FRAME_LEN];
+    const uint16_t wireLen = encode(tx, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_UINT16(
+        static_cast<uint16_t>(HEADER_LEN + 1U + CRC_LEN), wireLen);
+
+    // payloadLen (1) ≤ MAX_PAYLOAD_LEN and ≥ HEARTBEAT min (0): valid on its own.
+    // But HEADER_LEN + 1 + CRC_LEN = wireLen > wireLen - 1 = bufLen.
+    // validateDecodeHeader() must reject at the `bufLen < totalLen` check.
+    Frame rx = {};
+    TEST_ASSERT_FALSE(
+        decode(buf, static_cast<uint16_t>(wireLen - 1U), rx));
+}
+
 // ── Round-trip tests for typed message payloads ─────────────
 
 /// TELEMETRY (ST[3]) round-trip: all TelemetryPayload fields preserved (APUS-6).
@@ -486,4 +528,30 @@ void test_encode_decode_roundtrip_ack()
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
                             static_cast<uint8_t>(rx.type));
     TEST_ASSERT_EQUAL_MEMORY(tx.payload, rx.payload, tx.len);
+}
+
+/// All three valid flags (FLAG_ACK_REQ | FLAG_RETRANSMIT | FLAG_PRIORITY) must
+/// survive a full encode → decode round-trip without any bits dropped or added.
+/// Verifies that the flags byte is stored verbatim in the wire frame (APUS-4.2).
+void test_encode_decode_combined_flags_roundtrip()
+{
+    constexpr uint8_t kFlags =
+        static_cast<uint8_t>(FLAG_ACK_REQ | FLAG_RETRANSMIT | FLAG_PRIORITY);
+
+    Frame tx = {};
+    tx.ver   = PROTOCOL_VERSION;
+    tx.flags = kFlags;
+    tx.node  = NODE_ROCKET;
+    tx.type  = MsgType::HEARTBEAT;
+    tx.seq   = 42U;
+    tx.len   = 0U;
+
+    uint8_t buf[MAX_FRAME_LEN];
+    const uint16_t len = encode(tx, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
+
+    Frame rx = {};
+    TEST_ASSERT_TRUE(decode(buf, len, rx));
+    TEST_ASSERT_EQUAL_UINT8(kFlags, rx.flags);
+    TEST_ASSERT_EQUAL_UINT8(42U, rx.seq);
 }

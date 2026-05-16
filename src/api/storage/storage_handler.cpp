@@ -16,6 +16,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "api/storage/storage_pure.h"
 #include "debug/ares_log.h"
 
 #include <ArduinoJson.h>
@@ -32,59 +33,9 @@ static FileEntry g_logEntries[ares::MAX_LOG_FILES] = {};
 static char g_jsonBuf[ares::API_MAX_RESPONSE_BODY] = {};
 
 // ── Path safety (REST-11, REST-12.4) ────────────────────────
-
-/**
- * Validate that a log filename contains no path traversal
- * characters.  Only alphanumeric, underscore, hyphen, and dot
- * are allowed.  The name must not start with a dot.
- *
- * @return true if the filename is safe to use.
- */
-static bool isValidLogFilename(const char* name)
-{
-    if (name == nullptr || name[0] == '\0' || name[0] == '.')
-    {
-        return false;
-    }
-
-    const uint32_t len = static_cast<uint32_t>(
-        strnlen(name, ares::LOG_FILENAME_MAX + 1U));
-
-    if (len > ares::LOG_FILENAME_MAX)
-    {
-        return false;
-    }
-
-    for (uint32_t i = 0; i < len; i++)
-    {
-        const char c = name[i];
-        const bool ok = (c >= 'a' && c <= 'z')
-                     || (c >= 'A' && c <= 'Z')
-                     || (c >= '0' && c <= '9')
-                     || c == '_' || c == '-' || c == '.';
-        if (!ok)
-        {
-            return false;
-        }
-    }
-
-    return strstr(name, "..") == nullptr;
-}
-
-/**
- * Build the full LittleFS path from a log filename.
- * @param[in]  filename  Validated filename (no path separators).
- * @param[out] out       Buffer for the full path.
- * @param[in]  outSize   Size of @p out in bytes.
- * @return true if the path fits in the buffer.
- */
-static bool buildLogPath(const char* filename, char* out, uint32_t outSize)
-{
-    const int32_t written = static_cast<int32_t>(snprintf(out, outSize, "%s/%s",
-                                  ares::LOG_DIR, filename));
-    return (written > 0
-            && static_cast<uint32_t>(written) < outSize);
-}
+// Pure helpers delegated to storage_pure.h.
+using ares::api::isValidLogFilename;
+using ares::api::buildLogPath;
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -150,7 +101,7 @@ void ApiServer::sendFileChunked(WiFiClient& client,
     client.printf("Content-Type: %s\r\n", contentType);
     client.printf("Content-Length: %" PRIu32 "\r\n", fileSize);
     client.printf("Content-Disposition: attachment; filename=\"%s\"\r\n", filename);
-    client.print(CORS_HEADERS);
+    client.print(getCorsHeaders());
     client.print("Connection: close\r\n");
     client.print("\r\n");
 
@@ -365,6 +316,7 @@ void ApiServer::handleStorageHealth(WiFiClient& client)
     doc["removed_tmp"] = health.removedTmp;
     doc["removed_bak"] = health.removedBak;
     doc["recovery_errors"] = health.recoveryErrors;
+    doc["format_count"] = health.formatCount;
 
     memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
     const size_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));

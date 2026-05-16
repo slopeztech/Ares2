@@ -122,8 +122,6 @@ void test_on_exit_set_variable_used_in_next_state_condition()
     TEST_ASSERT_TRUE(f.engine.activate("exit_set2.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
 
-    ares::sim::clock::reset();
-
     // First tick at t=0: WAIT on_enter fires.
     f.engine.tick(ares::sim::clock::nowMs());
 

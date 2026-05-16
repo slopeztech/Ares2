@@ -98,6 +98,19 @@ Restore rules:
 - v3 checkpoints restore global variable state and precise per-slot HK/LOG timers
 - Checkpoint is discarded if `!(running && executionEnabled && status == RUNNING)`
 
+**State NOT persisted (always reset on restore):**
+
+| Field | Reset behaviour |
+|---|---|
+| `tcConfirmCount_[]` | Zeroed on every `enterStateLocked()` call — TC confirm counters always restart from 0 after a power cycle |
+| `transitionCondHolding_[]` / `transitionCondMetMs_[]` | Reset on every `enterStateLocked()` — any in-progress `for Nms` hold window restarts from zero after restore |
+| Sensor cache (`imuCacheValid_`, etc.) | Marked invalid on restore — the first tick after restore will re-read all sensors from the HAL |
+
+Consequence: a `for Nms` hold window that was partially elapsed at power-down will
+restart from zero after restore.  A `TC.command confirm N` counter that had
+accumulated partial confirmations is also lost.  Mission scripts that depend on
+these counters must account for this after a power cycle.
+
 ---
 
 ## AMS-3 Engine Lifecycle
@@ -137,6 +150,25 @@ Boot restore integration:
 ---
 
 ## AMS-4 Language Grammar (Current Profile)
+
+### AMS-4.0 Comments
+
+Two single-line comment styles are supported.  There are no multi-line comments.
+
+| Style | Syntax | Notes |
+|-------|--------|-------|
+| C-style | `// text` | Line must start with `//` after leading whitespace is stripped |
+| Shell-style | `# text` | Line must start with `#` after leading whitespace is stripped |
+
+Comment lines are discarded by the parser before any directive is evaluated.  A comment may appear anywhere a full line is expected — in the metadata section, between state blocks, or inside a state block.  Inline (end-of-line) comments are not supported; the entire line must be a comment.
+
+```ams
+// This is a C-style comment
+# This is a shell-style comment
+
+state INIT:       // NOT valid — inline comments are not supported
+  transition to END when TIME.elapsed > 1000  # also NOT valid inline
+```
 
 ### AMS-4.1 Metadata
 
@@ -244,6 +276,15 @@ State defaults:
 - `logPriority = 1`
 - `actionBudget = 2`
 
+#### Terminology
+
+- **Action slot** — one `every Nms:` reporting block within a state.  A state
+  may have up to `AMS_MAX_HK_SLOTS` HK slots and the same number of LOG slots,
+  each with its own independent cadence timer.
+- **Action group** — one of the three logical dispatch units: EVENT, HK, and
+  LOG.  All HK slots belong to the HK group; all LOG slots belong to the LOG
+  group.  The `budget` counter tracks **groups**, not individual slots.
+
 #### Action groups
 
 The engine defines exactly **three action groups** per state:
@@ -296,11 +337,12 @@ Supported expressions in both HK and LOG blocks:
 - `IMU.accel_x` — acceleration X axis (m/s²)
 - `IMU.accel_y` — acceleration Y axis (m/s²)
 - `IMU.accel_z` — acceleration Z axis (m/s²)
-- `IMU.accel_mag` — acceleration vector magnitude √(x²+y²+z²) (m/s²), also mapped to TelemetryPayload
+- `IMU.accel_mag` — acceleration vector magnitude √(x²+y²+z²) (m/s²)
 - `IMU.gyro_x` — angular rate X axis (deg/s)
 - `IMU.gyro_y` — angular rate Y axis (deg/s)
 - `IMU.gyro_z` — angular rate Z axis (deg/s)
-- `IMU.temp` — on-chip IMU temperature (°C), LOG only
+- `IMU.gyro_mag` — angular rate vector magnitude √(gx²+gy²+gz²) (deg/s)
+- `IMU.temp` — on-chip IMU temperature (°C)
 
 ### AMS-4.6 Transitions
 
@@ -354,6 +396,7 @@ Supported fields for standard comparisons:
 - `IMU.accel_y < x`, `IMU.accel_y > x`
 - `IMU.accel_z < x`, `IMU.accel_z > x`
 - `IMU.accel_mag < x`, `IMU.accel_mag > x`
+- `IMU.gyro_mag < x`, `IMU.gyro_mag > x`
 
 Transition targets are resolved after parse.
 Unknown targets cause `ERROR` status.
@@ -593,6 +636,19 @@ Rules:
 - If all reads fail (sensor error / NaN): the variable is left unchanged, an
   `EVENT.warning` is queued, and execution continues (NaN guard — AMS-5.7).
 - `enterStateLocked()` resets the calibration accumulator on every state entry
+
+> **Warning — synchronous blocking:** Non-CALIBRATE `set` actions execute in the
+> same tick as state entry.  If the sensor HAL takes significant time (e.g. I²C
+> bus reads up to ~25 ms per read), back-to-back `set` actions stall the tick for
+> their cumulative duration.  Keep the number of synchronous `set` actions small
+> (≤ 2 fast reads) and use `CALIBRATE` for multi-sample or slow sensors.
+
+> **Warning — CALIBRATE latency:** The calibrated variable is **not available**
+> until all N samples have been collected (N × `SENSOR_RATE_MS` ms after state
+> entry).  Transition conditions that reference the variable evaluate to **false**
+> until then (NaN guard, AMS-4.8.3).  If the mission logic depends on the
+> calibrated value immediately, use a `for Nms` hold window on the transition to
+> guarantee the calibration has completed before the condition is tested.
   (including re-entries), so CALIBRATE always restarts from scratch.
 - On state transitions the previous state's in-progress calibration is abandoned;
   the new state's set actions start their own accumulation.
@@ -638,6 +694,39 @@ on_enter:
 ```
 
 Same rules as AMS-4.8.5 with `min` semantics.
+
+### AMS-4.8.7 Variables in HK / LOG Field Lists
+
+Declared variables may appear as fields in `HK.report` and `LOG.report` blocks
+using the bare variable name (no `ALIAS.` prefix) as the expression:
+
+```ams
+var ground_alt = 0.0
+
+state WAIT:
+  on_enter:
+    set ground_alt = BARO.alt
+  transition to FLIGHT when TC.command == LAUNCH
+
+state FLIGHT:
+  log_every 50ms:
+    LOG.report {
+      ga: ground_alt
+    }
+```
+
+Rules:
+
+- The variable must be declared with `var` before the first `state` block.
+- A bare identifier in a field expression that contains no `.` is treated as a
+  variable reference; any alias lookup is skipped.
+- In `LOG.report` (CSV): the current floating-point value of the variable is
+  formatted with 2 decimal places.  If the variable is not yet valid (no `set`
+  action has fired), the placeholder `nan` is written to keep CSV columns aligned.
+- In `HK.report` (binary TM frame): the variable has no fixed slot in
+  `TelemetryPayload`; the field is silently omitted from the radio frame.  Use
+  `LOG.report` when variable values must be persisted.
+- The variable name is limited to 15 characters (`AMS_VAR_NAME_LEN - 1`).
 
 ---
 
@@ -740,6 +829,11 @@ Rules:
   the fallback transition on each tick.
 - `on_timeout` fires even if the engine has a fallback transition; they are
   independent mechanisms with different evaluation order.
+- **Tie-breaking (equal threshold):** If `on_timeout Nms` and `fallback after Nms`
+  are both defined with the same value of N, `on_timeout` always fires because
+  it is evaluated at step 6 of AMS-5.1 before the fallback at step 7.
+  The `fallback` target is then permanently unreachable from that state.
+  Authors should use distinct values to express independent safety nets.
 - When `on_timeout` fires: the optional EVENT is sent, `on_exit:` executes
   for the current state, then the engine enters the target state.
 - The transition is resolved at parse time; an unknown target state is a
@@ -793,12 +887,21 @@ Tick execution order:
 4. If `for Nms` is active and the compound is true: arm/check hold timer; proceed
    only when the window has fully elapsed (AMS-4.6.1).  If compound drops false,
    reset the hold timer.
-5. If transition fires: execute on_exit set actions and EVENT for the current
-   state (AMS-4.16); consume TC token (if any); enter next state; end tick.
-6. If `on_timeout` is defined and elapsed time ≥ `onTimeoutMs`: emit optional EVENT,
-   execute on_exit, enter timeout target state; end tick (AMS-4.10.3).
-7. If fallback transition is defined and elapsed time ≥ fallback threshold: enter
-   fallback target state; end tick (AMS-4.9.2).
+5. If transition fires:
+   a. Consume TC token (if the firing condition included a `TC.command` match).
+   b. Execute `on_exit:` set actions and EVENT for the current state (AMS-4.16).
+   c. Enter next state: reset all per-state counters and timers; execute `on_enter:`
+      set actions synchronously; fire `PULSE.fire` channels (AMS-4.17); queue
+      `on_enter:` EVENT for next arbitration cycle (AMS-5.2).
+   d. End tick.
+6. If `on_timeout` is defined and elapsed time ≥ `onTimeoutMs`: emit on_timeout
+   EVENT; execute `on_exit:` set actions and EVENT (AMS-4.16); enter timeout target
+   state (steps c–d above); end tick (AMS-4.10.3).
+7. If fallback transition is defined and elapsed time ≥ fallback threshold: execute
+   `on_exit:` set actions and EVENT (AMS-4.16); enter fallback target state
+   (steps c–d above); end tick (AMS-4.9.2).
+   **Note:** When both `on_timeout` and `fallback` share the same threshold N,
+   step 6 fires first; the fallback target is then unreachable (see AMS-4.10.3).
 8. Evaluate guard conditions (`conditions:`)
 9. If any condition is violated, emit `on_error` event (if defined) and set engine `ERROR`
    (or enter recovery state if `transition to` is defined — AMS-4.10.2).
@@ -817,15 +920,24 @@ It is consumed by arbitration as an EVENT due action.
 
 `on_exit:` set actions and EVENT are executed **synchronously and immediately**
 (not queued) inside `exitStateLocked()`, which runs **before**
-`enterStateLocked()` of the incoming state.  The ordering guarantee is:
+`enterStateLocked()` of the incoming state.  The full ordering guarantee across
+every transition site is:
 
 ```
-exitStateLocked(old)  →  enterStateLocked(new)  →  [queued on_enter event]
+[consume TC token if TC-triggered]
+  → exitStateLocked(old state)
+      ├─ on_exit: set actions  (synchronous)
+      └─ on_exit: EVENT        (synchronous, transmitted immediately)
+  → enterStateLocked(new state)
+      ├─ reset per-state counters and timers
+      ├─ on_enter: set actions (synchronous, AMS-4.8.2)
+      ├─ PULSE.fire channels   (synchronous, AMS-4.17)
+      └─ queue on_enter: EVENT (dispatched on next arbitration cycle, AMS-5.2)
 ```
 
 This means the `on_exit:` EVENT frame is transmitted on the bus before the
 new state's `on_enter:` event is queued, which in turn fires on the next
-arbitration cycle.
+arbitration cycle.  TC token consumption precedes both exit and entry handlers.
 
 ### AMS-5.7 Variable NaN Guard
 

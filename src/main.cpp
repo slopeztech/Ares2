@@ -26,6 +26,7 @@
 #include "sys/led/status_led.h"
 #include "sys/wifi/wifi_ap.h"
 #include "sys/storage/littlefs_storage.h"
+#include "sys/device_config/device_config.h"
 #include "api/api_server.h"
 #include "ams/mission_script_engine.h"
 #include "hal/millis64.h"
@@ -36,6 +37,7 @@
 #include <freertos/task.h>
 #include <Wire.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
 
 #include "debug/ares_log.h"
 
@@ -60,6 +62,10 @@ static PulseDriver    pulse(ares::PIN_DROGUE, ares::PIN_MAIN);
 
 // WiFi Access Point (sys layer) — ground configuration link.
 static WifiAp wifiAp;
+
+// Persistent device security configuration (WiFi password, API token, CORS).
+// Loaded from LittleFS (/ares_device.json) in setup() before wifiAp.begin().
+static DeviceConfig deviceConfig;
 
 // On-board flash filesystem for flight logs.
 static LittleFsStorage storage;
@@ -88,6 +94,7 @@ static ares::ams::MissionScriptEngine missionEngine(
     kImuDrivers,  static_cast<uint8_t>(2),
     &pulse);
 static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
+                           deviceConfig,
                            &storageIf, &missionEngine,
                            &statusLed,
                            &Wire, &imuWire,
@@ -128,11 +135,17 @@ void setup()
     // On-board flash storage (LittleFS)
     (void)storageIf.begin();
 
+    // Device security configuration — load before WiFi AP starts so the
+    // correct password and token are live from the first connection.
+    // Falls back silently to open-mode defaults if the file is absent.
+    (void)deviceConfig.load(&storageIf);
+
     // LoRa radio transceiver (UART2)
     (void)radioIf.begin();
 
-    // WiFi AP — must be up before API server
-    (void)wifiAp.begin();
+    // WiFi AP — must be up before API server.
+    // Password comes from deviceConfig (factory default when no file present).
+    (void)wifiAp.begin(deviceConfig);
 
     // AMS runtime (IDLE by default, waits for API activation)
     (void)missionEngine.begin();
@@ -171,13 +184,24 @@ void setup()
         // All subsystems ready — exit boot blink, go solid green (IDLE)
         statusLed.setMode(ares::OperatingMode::IDLE);
     }
+
+    // Subscribe loop() to the TWDT — registered last to avoid false trips
+    // during the subsystem init sequence above.
+    (void)esp_task_wdt_add(nullptr);
 }
 
 // ═══════════════════════════════════════════════════════════
 void loop()
 {
+    // [P1] Explicitly reset the TWDT for the loop task each iteration.
+    // Prevents a false WDT trip when nextWakeupMs() returns 0 and sleepMs
+    // collapses to 1 ms, which would otherwise near-busy-loop without
+    // yielding to the IDLE task long enough for it to reset its own WDT.
+    esp_task_wdt_reset();
+
     const uint32_t now      = static_cast<uint32_t>(millis());  // radio dispatcher (stays uint32_t)
     const uint64_t nowAms   = millis64();                        // AMS engine (uint64_t)
+    const uint64_t tickStart = nowAms;                           // [P2] Tick budget start.
 
     // GPS bytes must be consumed every iteration to keep
     // the UART FIFO from overflowing (72-byte HW FIFO).
@@ -192,17 +216,34 @@ void loop()
     // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(nowAms);
 
-    // Auto-return to IDLE when the AMS mission finishes or faults.
-    // Only act once per transition: check that we are currently in FLIGHT.
+    // [P3] Auto-return to IDLE when the AMS mission finishes or faults.
+    // Cache the last-notified status so notifyMissionComplete() is only
+    // invoked once per status transition (COMPLETE/ERROR), not every tick.
+    static ares::ams::EngineStatus lastNotifiedStatus_ = ares::ams::EngineStatus::IDLE;
     if (apiServer.getMode() == ares::OperatingMode::FLIGHT)
     {
         ares::ams::EngineSnapshot snap = {};
         missionEngine.getSnapshot(snap);
-        if (snap.status == ares::ams::EngineStatus::COMPLETE
-            || snap.status == ares::ams::EngineStatus::ERROR)
+        if ((snap.status == ares::ams::EngineStatus::COMPLETE
+             || snap.status == ares::ams::EngineStatus::ERROR)
+            && snap.status != lastNotifiedStatus_)
         {
             apiServer.notifyMissionComplete();
+            lastNotifiedStatus_ = snap.status;
         }
+    }
+    else
+    {
+        // Mode left FLIGHT — reset cache so the next mission can notify again.
+        lastNotifiedStatus_ = ares::ams::EngineStatus::IDLE;
+    }
+
+    // [P2] Warn if the tick work budget was exceeded.
+    const uint32_t tickMs = static_cast<uint32_t>(millis64() - tickStart);
+    if (tickMs > ares::LOOP_TICK_WARN_MS)
+    {
+        LOG_W("LOOP", "tick overrun: %" PRIu32 " ms (budget=%" PRIu32 " ms)",
+              tickMs, ares::LOOP_TICK_WARN_MS);
     }
 
     // Adaptive sleep: wake up exactly when the next engine event is due.

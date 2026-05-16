@@ -223,16 +223,26 @@ struct TelemetryPayload
     float      altitudeAglM;    ///< Altitude above ground level in metres.       PTC=5, PFC=1
     float      verticalVelMs;   ///< Vertical velocity in m/s.                    PTC=5, PFC=1
     float      accelMag;        ///< Accelerometer magnitude in m/s².             PTC=5, PFC=1
+    float      accelX;          ///< Accelerometer X axis (m/s²).                 PTC=5, PFC=1
+    float      accelY;          ///< Accelerometer Y axis (m/s²).                 PTC=5, PFC=1
+    float      accelZ;          ///< Accelerometer Z axis (m/s²).                 PTC=5, PFC=1
+    float      gyroMag;         ///< Gyroscope magnitude √(gx²+gy²+gz²) (deg/s). PTC=5, PFC=1
+    float      gyroX;           ///< Gyroscope X axis (deg/s).                    PTC=5, PFC=1
+    float      gyroY;           ///< Gyroscope Y axis (deg/s).                    PTC=5, PFC=1
+    float      gyroZ;           ///< Gyroscope Z axis (deg/s).                    PTC=5, PFC=1
+    float      imuTempC;        ///< IMU die temperature (°C).                    PTC=5, PFC=1
+    float      gpsSpeedMs;      ///< GPS ground speed (m/s).                      PTC=5, PFC=1
+    float      gpsHdop;         ///< GPS horizontal dilution of precision.        PTC=5, PFC=1
     float      pressurePa;      ///< Barometric pressure in Pascals.              PTC=5, PFC=1
-    float      temperatureC;    ///< Temperature in degrees Celsius.              PTC=5, PFC=1
+    float      temperatureC;    ///< Barometric temperature in degrees Celsius.   PTC=5, PFC=1
     int32_t    latitudeE7;      ///< Latitude × 10⁷ (degrees × 1e7).             PTC=4, PFC=14
     int32_t    longitudeE7;     ///< Longitude × 10⁷ (degrees × 1e7).            PTC=4, PFC=14
     uint16_t   gpsAltDm;        ///< GPS altitude in decimetres.                  PTC=3, PFC=12
     uint8_t    gpsSats;         ///< Number of GPS satellites in use.             PTC=3, PFC=8
     uint8_t    batteryPct;      ///< Battery level percentage (0–100).            PTC=3, PFC=8
 } __attribute__((packed));
-static_assert(sizeof(TelemetryPayload) == 38,
-              "APUS-3.6: TelemetryPayload must be 38 bytes");
+static_assert(sizeof(TelemetryPayload) == 78,
+              "APUS-3.6: TelemetryPayload must be 78 bytes");
 
 /**
  * Command payload header for ST[8] function management (APUS-7).

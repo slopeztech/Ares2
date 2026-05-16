@@ -34,9 +34,26 @@ static constexpr uint32_t API_STACK_WARN_BYTES = 1024;
 // ── Static WiFiServer instance (one per firmware) ───────────
 static WiFiServer httpServer(ares::WIFI_API_PORT);
 
+// ── CORS header buffer (updated from DeviceConfig) ───────────
+// Initialised with the open-mode default; refreshed by ApiServer::refreshCorsHeaders()
+// at begin() and after every successful PUT /api/device/config.
+// Written exclusively from setup() (before tasks start) and the API task
+// (single-threaded) — no mutex required.
+static char s_corsHeadersBuf[256] =
+    "Access-Control-Allow-Origin: *\r\n"
+    "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
+    "Access-Control-Allow-Headers: Content-Type, X-ARES-Token\r\n";
+
+const char* getCorsHeaders() noexcept
+{
+    return s_corsHeadersBuf;
+}
+
 // Mission file uploads exceed API_MAX_REQUEST_BODY; keep in static storage
 // so the body does not live on the API-task stack.  The API server is
 // single-threaded (one request at a time), so no mutex is needed here.
+// handleClient() asserts xTaskGetCurrentTaskHandle() == taskHandle_ to
+// enforce this invariant at runtime (see ARES_ASSERT below).
 static char g_missionUploadBuf[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
 
 static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
@@ -55,6 +72,7 @@ static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
 
 ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
                      GpsInterface& gps, ImuInterface& imu,
+                     DeviceConfig& devCfg,
                      StorageInterface* storage,
                      ares::ams::MissionScriptEngine* mission,
                      StatusLed* statusLed,
@@ -65,6 +83,7 @@ ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
                      RadioInterface* radio,
                      PulseInterface* pulse)
         : wifi_(wifi), baro_(baro), gps_(gps), imu_(imu),
+          devCfg_(devCfg),
           storage_(storage), mission_(mission), statusLed_(statusLed),
           i2c0_(i2c0), i2c1_(i2c1), gpsUart_(gpsUart),
           loraUart_(loraUart), radio_(radio), pulse_(pulse)
@@ -73,8 +92,17 @@ ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
 
 // ── Public API ──────────────────────────────────────────────
 
+void ApiServer::refreshCorsHeaders()
+{
+    devCfg_.buildCorsHeader(s_corsHeadersBuf, sizeof(s_corsHeadersBuf));
+}
+
 bool ApiServer::begin()
 {
+    // Populate CORS header buffer from the loaded DeviceConfig before
+    // the task starts accepting connections.
+    refreshCorsHeaders();
+
     // Create config mutex with priority inheritance (RTOS-4.1)
     cfgMtx_ = xSemaphoreCreateMutexStatic(&cfgMtxBuf_);
     ARES_ASSERT(cfgMtx_ != nullptr);
@@ -82,7 +110,7 @@ bool ApiServer::begin()
     httpServer.begin();
     httpServer.setNoDelay(true);
 
-    TaskHandle_t handle = xTaskCreateStaticPinnedToCore(
+    taskHandle_ = xTaskCreateStaticPinnedToCore(
         taskFn,
         "api",                              // REST-13.1
         sizeof(stack_),                     // RTOS-7.2: bytes
@@ -92,14 +120,14 @@ bool ApiServer::begin()
         &tcb_,
         tskNO_AFFINITY);                   // RTOS-13
 
-    ARES_ASSERT(handle != nullptr);
+    ARES_ASSERT(taskHandle_ != nullptr);
 
     LOG_I(TAG, "task started (stack=%u pri=%u port=%u)",
           static_cast<uint32_t>(sizeof(stack_)),
           static_cast<uint32_t>(ares::TASK_PRIORITY_API),
           static_cast<uint32_t>(ares::WIFI_API_PORT));
 
-    return handle != nullptr;
+    return taskHandle_ != nullptr;
 }
 
 void ApiServer::setMode(ares::OperatingMode mode)
@@ -256,16 +284,23 @@ static bool parseRequestLine(WiFiClient& client,
 }
 
 /**
- * Read HTTP headers, extracting Content-Length and Content-Type.
+ * Read HTTP headers, extracting Content-Length, Content-Type, and
+ * the X-ARES-Token authentication header.
  * Stops at the first empty line (end of headers) or when
  * HTTP_MAX_HEADERS headers have been read (REST-3.1, PO10-2).
+ *
+ * @param authToken     Output buffer for the X-ARES-Token value.
+ * @param authTokenMax  Capacity of @p authToken (including NUL).
  */
 static void parseHeaders(WiFiClient& client,
                           uint32_t& contentLength,
-                          bool& hasJsonContentType)
+                          bool& hasJsonContentType,
+                          char* authToken,
+                          uint8_t authTokenMax)
 {
     contentLength = 0;
     hasJsonContentType = false;
+    authToken[0] = '\0';
     uint8_t headerCount = 0;
 
     while (headerCount < HTTP_MAX_HEADERS)  // PO10-2: bounded
@@ -298,6 +333,22 @@ static void parseHeaders(WiFiClient& client,
             hasJsonContentType =
                 (strncasecmp(val, "application/json", 16) == 0);
         }
+        // X-ARES-Token: bearer token for API authentication
+        else if (strncasecmp(hdr, "X-ARES-Token:", 13) == 0)
+        {
+            const char* val = hdr + 13;
+            uint8_t skip = 0;
+            while (*val == ' ' && skip < 4U) { val++; skip++; }
+            // Copy at most authTokenMax-1 chars (CERT-4.1: bounded copy).
+            uint8_t tIdx = 0;
+            while (*val != '\0' && tIdx < (authTokenMax - 1U))
+            {
+                authToken[tIdx] = *val;
+                tIdx++;
+                val++;
+            }
+            authToken[tIdx] = '\0';
+        }
 
         headerCount++;
     }
@@ -305,8 +356,10 @@ static void parseHeaders(WiFiClient& client,
 
 /**
  * Read the request body into a caller-provided buffer.
- * @return true if the body was read within the timeout,
- *         false on timeout (PO10-2).
+ * @return true  if exactly toRead bytes were received.
+ *         false if the client closed early or the socket timed out before
+ *               all bytes arrived (premature EOF).  The caller must send
+ *               a 4xx response in this case — do NOT process a partial body.
  */
 static bool readRequestBody(WiFiClient& client,
                              char* body, uint32_t maxLen,
@@ -317,7 +370,7 @@ static bool readRequestBody(WiFiClient& client,
     const uint32_t toRead =
         (contentLength < maxLen) ? contentLength : maxLen;
     bodyLen = static_cast<uint32_t>(client.readBytes(body, toRead));
-    body[bodyLen] = '\0';
+    body[bodyLen] = '\0';   // safe: buffer is always toRead+1 or larger
     return bodyLen == toRead;
 }
 
@@ -331,6 +384,11 @@ static bool allowNonJsonBody(const char* method, const char* path)
 
 void ApiServer::handleClient(WiFiClient& client)
 {
+    // Guard: g_missionUploadBuf is unprotected; enforce the single-task
+    // invariant so a future refactor that spawns a second handler task is
+    // caught immediately rather than causing a data race.
+    ARES_ASSERT(xTaskGetCurrentTaskHandle() == taskHandle_);
+
     // Phase 1: Parse request line (PO10-4.1)
     char method[HTTP_METHOD_MAX] = {};
     char path[HTTP_PATH_MAX]     = {};
@@ -340,10 +398,12 @@ void ApiServer::handleClient(WiFiClient& client)
         return;  // Empty or timed-out request
     }
 
-    // Phase 2: Parse headers
+    // Phase 2: Parse headers (including auth token)
     uint32_t contentLength = 0;
     bool hasJsonContent = false;
-    parseHeaders(client, contentLength, hasJsonContent);
+    char authToken[HTTP_TOKEN_MAX] = {};
+    parseHeaders(client, contentLength, hasJsonContent,
+                 authToken, static_cast<uint8_t>(sizeof(authToken)));
 
     // Phase 3: Read body if present
     //
@@ -376,7 +436,9 @@ void ApiServer::handleClient(WiFiClient& client)
         }
         if (!readRequestBody(client, body, bodyLimit, contentLength, bodyLen))
         {
-            LOG_W(TAG, "%s %s: body read timeout", method, path);
+            sendError(client, 400, "request body incomplete");
+            LOG_W(TAG, "%s %s 400: body incomplete (got %" PRIu32 " of %" PRIu32 " bytes)",
+                  method, path, bodyLen, contentLength);
             return;
         }
     }
@@ -392,15 +454,18 @@ void ApiServer::handleClient(WiFiClient& client)
     }
 
     // Phase 4: Route request (REST-11.1: whitelist)
-    routeRequest(client, method, path, body, bodyLen);
+    routeRequest(client, method, path, body, bodyLen, authToken);
 }
 
 void ApiServer::routeRequest(WiFiClient& client,
                              const char* method,
                              const char* path,
                              const char* body,
-                             uint32_t    bodyLen)
+                             uint32_t    bodyLen,
+                             const char* authToken)
 {
+    // OPTIONS preflight: always allowed (must respond before auth check so
+    // the browser can learn which headers are permitted).
     if (strcmp(method, "OPTIONS") == 0)
     {
         sendNoContent(client, 204);
@@ -408,7 +473,28 @@ void ApiServer::routeRequest(WiFiClient& client,
         return;
     }
 
+    // ── Authentication guard ──────────────────────────────────
+    // When an api_token is configured, all endpoints except a small set of
+    // read-only GET paths require a valid X-ARES-Token header.
+    if (devCfg_.isAuthEnabled())
+    {
+        // Public read-only endpoints that do not require authentication.
+        const bool isPublicGet =
+            (strcmp(method, "GET") == 0)
+            && (strcmp(path, "/api/status")     == 0
+                || strcmp(path, "/api/imu")     == 0
+                || strncmp(path, "/api/imu/", 9) == 0);
+
+        if (!isPublicGet && !devCfg_.checkToken(authToken))
+        {
+            sendError(client, 401, "unauthorized — missing or invalid X-ARES-Token");
+            LOG_W(TAG, "%s %s 401: bad token", method, path);
+            return;
+        }
+    }
+
     if (routeStatusAndConfigRequest(client, method, path, body, bodyLen)) { return; }
+    if (routeDeviceConfigRequest(client, method, path, body, bodyLen))    { return; }
     if (routeFlightRequest(client, method, path, body, bodyLen)) { return; }
 
     if (strncmp(path, "/api/pulse", 10) == 0)
@@ -502,6 +588,31 @@ bool ApiServer::routeStatusAndConfigRequest(WiFiClient& client,
         return true;
     }
     return false;
+}
+
+bool ApiServer::routeDeviceConfigRequest(WiFiClient& client,
+                                          const char* method,
+                                          const char* path,
+                                          const char* body,
+                                          uint32_t    bodyLen)
+{
+    if (strcmp(path, "/api/device/config") != 0) { return false; }
+
+    if (strcmp(method, "GET") == 0)
+    {
+        handleDeviceConfigGet(client);
+        LOG_D(TAG, "GET /api/device/config 200");
+    }
+    else if (strcmp(method, "PUT") == 0)
+    {
+        handleDeviceConfigPut(client, body, bodyLen);
+    }
+    else
+    {
+        sendError(client, 405, "method not allowed");
+        LOG_W(TAG, "%s %s 405", method, path);
+    }
+    return true;
 }
 
 bool ApiServer::routeFlightRequest(WiFiClient& client,
@@ -751,7 +862,7 @@ void ApiServer::sendJson(WiFiClient& client, uint16_t code,
     client.printf("HTTP/1.1 %u OK\r\n", code);
     client.print("Content-Type: application/json\r\n");
     client.printf("Content-Length: %" PRIu32 "\r\n", len);
-    client.print(CORS_HEADERS);
+    client.print(getCorsHeaders());
     client.print("Connection: close\r\n");
     client.print("\r\n");
     client.write(json, len);
@@ -783,7 +894,7 @@ void ApiServer::sendError(WiFiClient& client, uint16_t code,
     client.printf("HTTP/1.1 %u %s\r\n", code, reason);
     client.print("Content-Type: application/json\r\n");
     client.printf("Content-Length: %" PRIu32 "\r\n", static_cast<uint32_t>(len));
-    client.print(CORS_HEADERS);
+    client.print(getCorsHeaders());
     client.print("Connection: close\r\n");
     client.print("\r\n");
     client.write(buf, len);
@@ -792,7 +903,7 @@ void ApiServer::sendError(WiFiClient& client, uint16_t code,
 void ApiServer::sendNoContent(WiFiClient& client, uint16_t code)
 {
     client.printf("HTTP/1.1 %u No Content\r\n", code);
-    client.print(CORS_HEADERS);
+    client.print(getCorsHeaders());
     client.print("Connection: close\r\n");
     client.print("\r\n");
 }

@@ -12,6 +12,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "api/mission/mission_pure.h"
 #include "debug/ares_log.h"
 
 #include <ArduinoJson.h>
@@ -27,55 +28,11 @@ static constexpr uint8_t MAX_COMMAND_TEXT = 16;
 static FileEntry g_missionEntries[ares::MAX_LOG_FILES] = {};
 static char g_missionJsonBuf[ares::API_MAX_RESPONSE_BODY] = {};
 
-static bool isValidMissionFilename(const char* name)
-{
-    if (name == nullptr || name[0] == '\0' || name[0] == '.')
-    {
-        return false;
-    }
-
-    const uint32_t len = static_cast<uint32_t>(
-        strnlen(name, ares::MISSION_FILENAME_MAX + 1U));
-    if (len == 0U || len > ares::MISSION_FILENAME_MAX)
-    {
-        return false;
-    }
-
-    for (uint32_t i = 0; i < len; i++)
-    {
-        const char c = name[i];
-        const bool ok = (c >= 'a' && c <= 'z')
-                     || (c >= 'A' && c <= 'Z')
-                     || (c >= '0' && c <= '9')
-                     || c == '_' || c == '-' || c == '.';
-        if (!ok)
-        {
-            return false;
-        }
-    }
-
-    return strstr(name, "..") == nullptr;
-}
-
-static bool buildMissionPath(const char* filename, char* out, uint32_t outSize)
-{
-    const int32_t written = static_cast<int32_t>(snprintf(out, outSize, "%s/%s",
-                                 ares::MISSION_DIR, filename));
-    return (written > 0 && static_cast<uint32_t>(written) < outSize);
-}
-
-static const char* toStatusText(ares::ams::EngineStatus st)
-{
-    switch (st)
-    {
-    case ares::ams::EngineStatus::IDLE:     return "idle";
-    case ares::ams::EngineStatus::LOADED:   return "loaded";
-    case ares::ams::EngineStatus::RUNNING:  return "running";
-    case ares::ams::EngineStatus::COMPLETE: return "complete";
-    case ares::ams::EngineStatus::ERROR:    return "error";
-    default:                                return "unknown";
-    }
-}
+// ── Path safety (REST-11) ──────────────────────────────────────────────
+// Pure helpers delegated to mission_pure.h.
+using ares::api::isValidMissionFilename;
+using ares::api::buildMissionPath;
+using ares::api::toStatusText;
 
 void ApiServer::handleMissionStatus(WiFiClient& client)
 {

@@ -6,6 +6,7 @@
  */
 
 #include "api/api_server.h"
+#include "api/status/status_pure.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
 
@@ -56,22 +57,8 @@ static I2cScanResult scanI2cBus(TwoWire& bus)
     return result;
 }
 
-/** @brief Convert GpsStatus enum to a lowercase JSON-safe string.
- *  @param[in] st  Status value to convert.
- *  @return        Null-terminated constant string (never NULL).
- */
-static const char* gpsStatusToString(GpsStatus st)
-{
-    switch (st)
-    {
-    case GpsStatus::OK: return "ok";
-    case GpsStatus::NO_FIX: return "no_fix";
-    case GpsStatus::ERROR: return "error";
-    case GpsStatus::NOT_READY: return "not_ready";
-    case GpsStatus::TIMEOUT: return "timeout";
-    default: return "invalid";
-    }
-}
+// Pure string-conversion helper delegated to status_pure.h.
+using ares::api::gpsStatusToString;
 
 /** @brief Scan one I2C bus and append the result as a JSON object to @p buses.
  *  @param[in,out] buses        JSON array to append to.

@@ -88,7 +88,16 @@ void     emitV(char levelChar, const char* tag, const char* fmt, va_list args);
 } // namespace ares
 
 // ── Inline log wrappers (PO10-8: no variadic macros) ────────
+//
+// IMPORTANT: these are *functions*, not macros.  All arguments (including
+// format arguments) are evaluated before the call, regardless of whether
+// ARES_LOG_LEVEL compiles the body in or out.  Therefore:
+//   • Never pass expressions with side effects (e.g. register reads,
+//     state-mutating calls) as LOG_* arguments.
+//   • The [[gnu::format]] attribute enables compile-time format-string
+//     checking and catches specifier/type mismatches at every call site.
 
+[[gnu::format(printf, 2, 3)]]
 inline void LOG_E(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 1
@@ -105,6 +114,7 @@ inline void LOG_E(const char* tag, const char* fmt, ...)
 #endif
 }
 
+[[gnu::format(printf, 2, 3)]]
 inline void LOG_W(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 2
@@ -121,6 +131,7 @@ inline void LOG_W(const char* tag, const char* fmt, ...)
 #endif
 }
 
+[[gnu::format(printf, 2, 3)]]
 inline void LOG_I(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 3
@@ -137,6 +148,7 @@ inline void LOG_I(const char* tag, const char* fmt, ...)
 #endif
 }
 
+[[gnu::format(printf, 2, 3)]]
 inline void LOG_D(const char* tag, const char* fmt, ...)
 {
 #if ARES_LOG_LEVEL >= 4

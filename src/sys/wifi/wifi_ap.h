@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <atomic>
 
+#include "sys/device_config/device_config.h"
+
 /**
  * WiFi Access Point service.
  *
@@ -37,11 +39,17 @@ public:
 
     /**
      * Initialise and start the WiFi soft-AP.
+     *
+     * The WiFi password is read from @p cfg.wifiPassword() (overrides the
+     * compile-time default in config.h when the device config has been loaded
+     * from LittleFS before this call).
+     *
+     * @param cfg  Device security configuration (read-only, must outlive the AP).
      * @return true on success, false if WiFi init failed.
-     * @pre  Called once from setup() before any API usage.
+     * @pre  Called once from setup() after DeviceConfig::load() has been called.
      * @post AP is broadcasting and accepting client connections.
      */
-    bool begin();
+    bool begin(const DeviceConfig& cfg);
 
     /**
      * Stop the WiFi soft-AP and release resources.

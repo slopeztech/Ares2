@@ -130,10 +130,41 @@ public:
     }
 
     StorageStatus appendFile(const char* /*path*/,
-                             const uint8_t* /*data*/,
-                             uint32_t /*len*/) override
+                             const uint8_t* data,
+                             uint32_t       len) override
     {
-        return mounted_ ? StorageStatus::OK : StorageStatus::NOT_READY;
+        if (!mounted_) { return StorageStatus::NOT_READY; }
+        if (failAppendCount_ > 0U)
+        {
+            failAppendCount_--;
+            return StorageStatus::NO_SPACE;
+        }
+        // Capture appended bytes (truncate silently when buffer is full).
+        const uint32_t space   = kAppendBufSize - 1U - appendBufLen_;
+        const uint32_t copyLen = (len < space) ? len : space;
+        if (copyLen > 0U)
+        {
+            (void)memcpy(appendBuf_ + appendBufLen_, data, copyLen);
+            appendBufLen_           += copyLen;
+            appendBuf_[appendBufLen_] = '\0';
+        }
+        return StorageStatus::OK;
+    }
+
+    // ── Test helpers ─────────────────────────────────────────────────────────
+
+    /** Inject @p count consecutive NO_SPACE failures into appendFile. */
+    void failNextAppends(uint8_t count) { failAppendCount_ = count; }
+
+    /** Return all successfully appended bytes as a NUL-terminated string. */
+    const char* appendedContent() const { return appendBuf_; }
+
+    /** Clear the capture buffer and reset the failure counter. */
+    void resetAppendCapture()
+    {
+        appendBufLen_  = 0U;
+        appendBuf_[0]  = '\0';
+        failAppendCount_ = 0U;
     }
 
     StorageStatus removeFile(const char* /*path*/) override
@@ -193,7 +224,11 @@ public:
 
         for (uint8_t i = 0U; i < fileCount_ && count < maxEntries; i++)
         {
-            if (strncmp(entries_[i].path, dir, dirLen) == 0)
+            // Require a '/' immediately after the prefix so that "/logs"
+            // does not accidentally match "/logsX/..." (path traversal
+            // defence — mirrors LittleFsStorage which uses openNextFile()).
+            if (strncmp(entries_[i].path, dir, dirLen) == 0
+                && entries_[i].path[dirLen] == '/')
             {
                 (void)snprintf(entries[count].name, sizeof(entries[count].name),
                                "%s", entries_[i].path);
@@ -257,6 +292,12 @@ private:
     bool        mounted_;
     uint8_t     fileCount_;
     VirtualFile entries_[SIM_STORAGE_MAX_FILES];
+
+    // ── Append failure injection & capture (test helpers) ────────────────────
+    uint8_t  failAppendCount_ = 0U;
+    static constexpr uint32_t kAppendBufSize = 2048U;
+    char     appendBuf_[kAppendBufSize]  = {};
+    uint32_t appendBufLen_               = 0U;
 };
 
 } // namespace sim

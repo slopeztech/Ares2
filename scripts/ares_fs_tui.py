@@ -38,6 +38,7 @@ DEFAULT_TIMEOUT_S = 2.0
 DEFAULT_REFRESH_S = 2.0
 DEFAULT_DOWNLOAD_DIR = "downloads"
 DEFAULT_SSID_PREFIX = "ARES-"
+DEFAULT_TOKEN = ""
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class AppConfig:
     download_dir: str
     ssid_prefix: str
     enforce_ssid_check: bool
+    token: str = ""
 
 
 @dataclass(frozen=True)
@@ -59,15 +61,18 @@ class FsEntry:
 
 
 class ApiClient:
-    def __init__(self, host: str, port: int, timeout_s: float) -> None:
+    def __init__(self, host: str, port: int, timeout_s: float, token: str = "") -> None:
         self.base = f"http://{host}:{port}"
         self.timeout_s = timeout_s
+        self._token = token
 
     def _request(self, method: str, path: str, data: Optional[bytes] = None,
                  content_type: Optional[str] = None) -> tuple[int, bytes]:
         headers: dict[str, str] = {}
         if content_type is not None:
             headers["Content-Type"] = content_type
+        if self._token:
+            headers["X-ARES-Token"] = self._token
 
         req = Request(self.base + path, data=data, method=method, headers=headers)
         try:
@@ -205,7 +210,7 @@ class AresFsApp(App[None]):
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
         self.config = config
-        self.api = ApiClient(config.host, config.port, config.timeout_s)
+        self.api = ApiClient(config.host, config.port, config.timeout_s, token=config.token)
         self.entries: list[FsEntry] = []
         self.status_payload: dict[str, Any] = {}
         self.storage_health_payload: dict[str, Any] = {}
@@ -307,6 +312,7 @@ class AresFsApp(App[None]):
         on_ares = self.connected_ssid is not None and self.connected_ssid.startswith(self.config.ssid_prefix)
 
         wifi_state = "[green]CONNECTED[/]" if on_ares else "[bold red]NOT ARES[/]"
+        auth_line = "[green]token set[/]" if self.config.token else "[yellow]open (no token)[/]"
         panel.update(
             "\n".join(
                 [
@@ -315,6 +321,7 @@ class AresFsApp(App[None]):
                     f"Expected prefix: [yellow]{self.config.ssid_prefix}[/]",
                     f"State: {wifi_state}",
                     f"API Host: [cyan]{self.config.host}:{self.config.port}[/]",
+                    f"Auth: {auth_line}",
                 ]
             )
         )
@@ -610,6 +617,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not require SSID prefix match before API calls",
     )
+    parser.add_argument(
+        "--token",
+        default=DEFAULT_TOKEN,
+        metavar="TOKEN",
+        help="API bearer token (X-ARES-Token header). Leave empty for open mode.",
+    )
     return parser
 
 
@@ -623,6 +636,7 @@ def main() -> None:
         download_dir=args.download_dir,
         ssid_prefix=args.ssid_prefix,
         enforce_ssid_check=not args.ignore_ssid_check,
+        token=args.token,
     )
     AresFsApp(cfg).run()
 

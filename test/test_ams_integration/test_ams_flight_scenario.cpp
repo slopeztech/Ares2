@@ -134,7 +134,6 @@ void test_flight_wait_advances_to_flight_state()
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();  // injects LAUNCH TC
 
-    ares::sim::clock::reset();
     f.engine.tick(ares::sim::clock::nowMs());
 
     EngineSnapshot snap{};
@@ -149,8 +148,6 @@ void test_flight_emits_hk_telemetry_frames()
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
-
-    ares::sim::clock::reset();
 
     // Advance into FLIGHT state (one tick at t=0 consumes the LAUNCH TC).
     f.engine.tick(ares::sim::clock::nowMs());
@@ -171,8 +168,6 @@ void test_flight_time_transition_fires_at_5s()
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
-
-    ares::sim::clock::reset();
 
     // Tick loop: 100 ms steps up to 6000 ms — the TIME.elapsed > 5000 transition
     // should fire somewhere in the 5000–6000 ms window.
@@ -202,8 +197,6 @@ void test_flight_reaches_complete_after_end_state()
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
 
-    ares::sim::clock::reset();
-
     // Run enough ticks to pass the 5 s threshold and enter END.
     // Then one more tick in END → COMPLETE.
     static constexpr uint32_t kStepMs = 500U;
@@ -227,8 +220,6 @@ void test_sensor_transition_fires_on_altitude_threshold()
     f.init("/missions/sensor.ams", ares::sim::kScriptSensorTransition);
     (void)f.engine.activate("sensor.ams");
     (void)f.engine.arm();
-
-    ares::sim::clock::reset();
 
     // The flight profile crosses BARO.alt = 200 at ~t=4000 ms.
     // Run ticks at 200 ms steps up to 5 s.
@@ -259,8 +250,6 @@ void test_multiple_hk_frames_accumulate_correctly()
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();
 
-    ares::sim::clock::reset();
-
     // Enter FLIGHT state.
     f.engine.tick(ares::sim::clock::nowMs());
     f.radio.resetCapture();
@@ -286,8 +275,6 @@ void test_hk_slot_starvation_skips_samples()
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
     (void)f.engine.activate("flight.ams");
     (void)f.engine.arm();  // pre-injects LAUNCH TC
-
-    ares::sim::clock::reset();
 
     // t=0: consume LAUNCH TC → WAIT → FLIGHT (on_enter event queued).
     f.engine.tick(ares::sim::clock::nowMs());
@@ -321,4 +308,141 @@ void test_hk_slot_starvation_skips_samples()
     ares::sim::clock::advanceMs(1000U);
     f.engine.tick(ares::sim::clock::nowMs());
     TEST_ASSERT_EQUAL(1U, f.radio.sendCount());
+}
+
+// ── Sensor cache TTL (AMS-4.5.1) ─────────────────────────────────────────────
+
+/**
+ * @brief Verify that the baro sensor cache is reused within the TTL window
+ *        and expires correctly after AMS_SENSOR_CACHE_TTL_MS elapses.
+ *
+ * The engine runs a script whose only transition (BARO.alt > 9999) never
+ * fires.  baro.readCount() starts at 0; each cache miss increments it.
+ *
+ *   Tick 1 at t=0   → cold cache  → 1 read  (readCount == 1)
+ *   Tick 2 at t=1   → age 1 ms < 5 ms TTL → cache hit  (readCount == 1)
+ *   Tick 3 at t=6   → age 6 ms ≥ 5 ms TTL → cache miss (readCount == 2)
+ */
+void test_sensor_cache_within_ttl_is_reused()
+{
+    FlightFixture f;
+    f.init("/missions/ttl.ams", ares::sim::kScriptBaroCacheTtl);
+    (void)f.engine.activate("ttl.ams");
+    (void)f.engine.arm();
+
+    // Tick 1: cold cache — exactly one baro read is performed.
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_EQUAL(1U, f.baro.readCount());
+
+    // Tick 2: 1 ms later — still within TTL (1 ms < AMS_SENSOR_CACHE_TTL_MS=5 ms).
+    // Cache hit → no additional driver call.
+    ares::sim::clock::advanceMs(1U);
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_EQUAL(1U, f.baro.readCount());
+
+    // Tick 3: 5 ms more (t=6) — TTL expired (6 ms ≥ 5 ms).
+    // Cache miss → driver is called again.
+    ares::sim::clock::advanceMs(5U);
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_EQUAL(2U, f.baro.readCount());
+}
+
+// ── test_log_slot_header_retried_after_no_space ──────────────────────────────
+/**
+ * Verify AMS-4.3.2: the CSV slot header is retried on a subsequent tick
+ * when the previous appendFile call returned NO_SPACE.
+ *
+ * Flow:
+ *   1. Inject one NO_SPACE failure.
+ *   2. Tick at t=10 ms  — slot is due; header append fails → flag stays false.
+ *      Data row succeeds (failure counter already exhausted).
+ *   3. Assert captured content does NOT yet contain "t_ms,state,slot".
+ *   4. Tick at t=20 ms  — slot due again; header is retried and succeeds.
+ *   5. Assert captured content NOW contains "t_ms,state,slot".
+ */
+void test_log_slot_header_retried_after_no_space()
+{
+    FlightFixture f;
+    f.init("/missions/hdr.ams", ares::sim::kScriptLogHeaderRetry);
+    TEST_ASSERT_TRUE(f.engine.activate("hdr.ams")); // enterStateLocked uses t=0
+    TEST_ASSERT_TRUE(f.engine.arm());
+
+    // Inject one NO_SPACE failure — hits the first appendFile call
+    // (the slot CSV header), leaving logSlotHeaderWritten_[0] = false.
+    f.storage.failNextAppends(1U);
+
+    // Tick 1 at t=10 ms — slot cadence satisfied (10 ms ≥ 10 ms).
+    // Header append → NO_SPACE (failure consumed); data row → OK.
+    ares::sim::clock::advanceMs(10U);
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_NULL(strstr(f.storage.appendedContent(), "t_ms,state,slot"));
+
+    // Tick 2 at t=20 ms — slot due again.  Flag still false → header retried;
+    // both header and data row now succeed.
+    ares::sim::clock::advanceMs(10U);
+    f.engine.tick(ares::sim::clock::nowMs());
+    TEST_ASSERT_NOT_NULL(strstr(f.storage.appendedContent(), "t_ms,state,slot"));
+}
+
+// ── test_log_slot_row_has_crc8_field ─────────────────────────────────────────
+/**
+ * Verify AMS-4.3.2: the CSV slot header ends with the literal column label
+ * ",crc8", and every data row ends with a ",<2 lowercase hex chars>\n" suffix
+ * carrying the CRC8/SMBUS checksum of the row content.
+ *
+ * Flow:
+ *   1. Activate + arm with kScriptLogHeaderRetry (has a log_every slot).
+ *   2. One clean tick at t=10 ms — header and data row both succeed.
+ *   3. Assert header contains ",crc8\n".
+ *   4. Assert each numeric data row ends with ",<hex><hex>\n".
+ */
+void test_log_slot_row_has_crc8_field()
+{
+    FlightFixture f;
+    f.init("/missions/crc_test.ams", ares::sim::kScriptLogHeaderRetry);
+    TEST_ASSERT_TRUE(f.engine.activate("crc_test.ams"));
+    TEST_ASSERT_TRUE(f.engine.arm());
+
+    // One clean tick — no injected failures.
+    ares::sim::clock::advanceMs(10U);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    const char* content = f.storage.appendedContent();
+
+    // The slot CSV header must contain the CRC8 column label.
+    TEST_ASSERT_NOT_NULL(strstr(content, ",crc8\n"));
+
+    // Every line that starts with a digit (data row) must end with
+    // ",<two lowercase hex chars>\n".
+    const char* p = content;
+    bool foundDataRow = false;
+    while (p != nullptr && *p != '\0')
+    {
+        if (*p >= '0' && *p <= '9')
+        {
+            const char* eol = strchr(p, '\n');
+            TEST_ASSERT_NOT_NULL(eol);          // every row must be newline-terminated
+            TEST_ASSERT_TRUE(eol - p >= 3);     // at minimum ",xx"
+
+            const char hi  = *(eol - 2);
+            const char lo  = *(eol - 1);
+            const char sep = *(eol - 3);
+
+            const bool hiHex = (hi >= '0' && hi <= '9') || (hi >= 'a' && hi <= 'f');
+            const bool loHex = (lo >= '0' && lo <= '9') || (lo >= 'a' && lo <= 'f');
+            TEST_ASSERT_TRUE(hiHex);
+            TEST_ASSERT_TRUE(loHex);
+            TEST_ASSERT_EQUAL_CHAR(',', sep);
+
+            foundDataRow = true;
+            p = eol + 1;
+        }
+        else
+        {
+            const char* eol = strchr(p, '\n');
+            if (eol == nullptr) { break; }
+            p = eol + 1;
+        }
+    }
+    TEST_ASSERT_TRUE(foundDataRow);
 }

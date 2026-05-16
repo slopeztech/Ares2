@@ -12,6 +12,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "api/flight/flight_pure.h"
 #include "debug/ares_log.h"
 
 #include <ArduinoJson.h>
@@ -20,51 +21,8 @@
 
 static constexpr const char* TAG = "API.FLT";
 
-/**
- * @brief Validate a mode transition and return the target OperatingMode.
- *
- * @param[in]  target   Requested mode string ("idle", "test", "flight").
- * @param[in]  current  Current operating mode.
- * @param[out] out      Target mode if the transition is valid.
- * @return 0 on success; 400 for unknown mode; 409 for invalid transition.
- */
-static int32_t validateModeTransition(const char*            target,
-                                      ares::OperatingMode    current,
-                                      ares::OperatingMode&   out)
-{
-    if (strcmp(target, "idle") == 0)
-    {
-        if (current != ares::OperatingMode::TEST
-            && current != ares::OperatingMode::RECOVERY
-            && current != ares::OperatingMode::ERROR)
-        {
-            return 409;
-        }
-        out = ares::OperatingMode::IDLE;
-    }
-    else if (strcmp(target, "test") == 0)
-    {
-        if (current != ares::OperatingMode::IDLE)
-        {
-            return 409;
-        }
-        out = ares::OperatingMode::TEST;
-    }
-    else if (strcmp(target, "flight") == 0)
-    {
-        if (current != ares::OperatingMode::IDLE
-            && current != ares::OperatingMode::TEST)
-        {
-            return 409;
-        }
-        out = ares::OperatingMode::FLIGHT;
-    }
-    else
-    {
-        return 400;
-    }
-    return 0;
-}
+// Pure validation helpers delegated to flight_pure.h.
+using ares::api::validateModeTransition;
 
 void ApiServer::handleMode(WiFiClient& client,
                             const char* body, uint32_t bodyLen)

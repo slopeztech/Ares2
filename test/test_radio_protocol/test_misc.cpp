@@ -337,3 +337,18 @@ void test_encode_frag_max_payload_segment()
                              &decoded.payload[FRAG_HEADER_LEN],
                              MAX_FRAG_PAYLOAD);
 }
+
+/// Wrap-around: seq 0 immediately after seq 255 is NOT a duplicate (APUS-4.7).
+///
+/// The sequence counter wraps 255 → 0 on the next frame.  The duplicate-
+/// detection function must treat seq=0 / lastSeq=255 as distinct frames,
+/// not as a retransmission of the last pre-wrap frame.
+/// Also confirms the converse: seq=0 repeated while lastSeq=0 IS a duplicate.
+void test_is_duplicate_wraparound_zero_after_max()
+{
+    // seq=0 arriving after lastSeq=255 is the normal post-wrap case — not a duplicate.
+    TEST_ASSERT_FALSE(isDuplicate(0U, 255U));
+
+    // seq=0 repeated while lastSeq=0 is a genuine duplicate.
+    TEST_ASSERT_TRUE(isDuplicate(0U, 0U));
+}

@@ -164,7 +164,6 @@ void test_tick_consumes_launch_tc_and_transitions()
     (void)f.engine.arm();   // injects LAUNCH TC internally
 
     // One tick: WAIT + LAUNCH TC should fire the transition to END.
-    ares::sim::clock::reset();
     f.engine.tick(ares::sim::clock::nowMs());
 
     EngineSnapshot snap{};
@@ -180,8 +179,6 @@ void test_terminal_state_marks_engine_complete()
     (void)f.engine.begin();
     (void)f.engine.activate("lifecycle.ams");
     (void)f.engine.arm();
-
-    ares::sim::clock::reset();
 
     // Tick 1: WAIT → END (LAUNCH TC consumed).
     f.engine.tick(ares::sim::clock::nowMs());
@@ -230,4 +227,76 @@ void test_engine_reactivatable_after_deactivate()
     EngineSnapshot snap{};
     f.engine.getSnapshot(snap);
     TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkpoint resume — validate-before-commit safety (applyCheckpointStateLocked)
+//
+// These tests inject a synthetic v1 checkpoint record into the SimStorage so
+// that engine.begin() exercises tryRestoreResumePointLocked().  They verify
+// that when the checkpoint is discarded (paused / exec-disabled), none of the
+// engine state fields are left in a partially-mutated state.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A checkpoint where running=1, exec=1, status=RUNNING (1) must be restored:
+// engine.begin() produces status == RUNNING and the correct state name.
+void test_checkpoint_resume_running_restores_state()
+{
+    SimFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/lifecycle.ams", ares::sim::kScriptLifecycle);
+
+    // v1 record: version|file|stateIdx|execEnabled|running|status|seq|stateElapsed|hkElapsed|logElapsed
+    // status=1 == EngineStatus::RUNNING
+    f.storage.registerFile(ares::AMS_RESUME_PATH,
+        "1|lifecycle.ams|0|1|1|1|0|0|0|0");
+
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::RUNNING, snap.status,
+        "valid running checkpoint must restore engine to RUNNING");
+    TEST_ASSERT_EQUAL_STRING("WAIT", snap.stateName);
+}
+
+// A checkpoint where running=0 (engine was paused at shutdown) must be
+// discarded.  After begin() the engine must be in the clean IDLE state —
+// no member variable may be left with the checkpoint's partial values.
+void test_checkpoint_resume_paused_discarded_engine_idle()
+{
+    SimFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/lifecycle.ams", ares::sim::kScriptLifecycle);
+
+    // running=0 — engine was paused; checkpoint must be discarded.
+    f.storage.registerFile(ares::AMS_RESUME_PATH,
+        "1|lifecycle.ams|0|1|0|1|0|0|0|0");
+
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "paused checkpoint must be discarded — engine must remain IDLE");
+}
+
+// A checkpoint where execEnabled=0 (execution was disabled at shutdown) must
+// also be discarded, leaving the engine in a clean IDLE state.
+void test_checkpoint_resume_exec_disabled_discarded_engine_idle()
+{
+    SimFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/lifecycle.ams", ares::sim::kScriptLifecycle);
+
+    // execEnabled=0 — execution was disabled; checkpoint must be discarded.
+    f.storage.registerFile(ares::AMS_RESUME_PATH,
+        "1|lifecycle.ams|0|0|1|1|0|0|0|0");
+
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "exec-disabled checkpoint must be discarded — engine must remain IDLE");
 }

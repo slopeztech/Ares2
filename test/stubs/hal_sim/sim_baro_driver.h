@@ -54,8 +54,12 @@ public:
         out.pressurePa   = sample.baroPressurePa;
         out.temperatureC = sample.baroTempC;
 
+        readCount_++;
         return BaroStatus::OK;
     }
+
+    /** Number of successful read() calls made so far (test-observable). */
+    uint32_t readCount() const { return readCount_; }
 
     void setSeaLevelPressure(float /*hPa*/) override
     {
@@ -70,6 +74,7 @@ public:
 private:
     const FlightProfile& profile_;
     bool                 ready_;
+    uint32_t             readCount_ = 0U;
 };
 
 } // namespace sim

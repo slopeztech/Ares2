@@ -97,6 +97,34 @@ inline bool formatScaledFloat(float    value,
     return (written > 0) && (static_cast<uint32_t>(written) < outSize);
 }
 
+/**
+ * @brief CRC8/SMBUS (polynomial 0x07, init 0x00) over a byte buffer.
+ *
+ * Computes an 8-bit checksum over @p len bytes of @p data using the SMBUS
+ * variant of CRC8 (poly=0x07, no input/output reflection, no final XOR).
+ * Used to append a per-row integrity field to mission CSV log rows so that
+ * rows truncated by a short-write or power failure are detectable by the
+ * ground station (AMS-4.3.2).
+ *
+ * @param[in] data  Input buffer (non-null).
+ * @param[in] len   Number of bytes to checksum.
+ * @return 8-bit CRC value.
+ */
+inline uint8_t crc8Smbus(const char* data, uint32_t len)
+{
+    uint8_t crc = 0x00U;
+    for (uint32_t i = 0U; i < len; i++)
+    {
+        crc ^= static_cast<uint8_t>(data[i]);
+        for (uint8_t bit = 0U; bit < 8U; bit++)
+        {
+            crc = (crc & 0x80U) ? static_cast<uint8_t>((crc << 1U) ^ 0x07U)
+                                : static_cast<uint8_t>(crc << 1U);
+        }
+    }
+    return crc;
+}
+
 } // namespace detail
 } // namespace ams
 } // namespace ares

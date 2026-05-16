@@ -17,6 +17,9 @@ extern void test_itw_plain_word_returns_false();
 extern void test_itw_numeric_with_suffix_returns_false();
 extern void test_itw_clean_numeric_remainder_returns_true();
 extern void test_itw_strtoul_suffix_residuo_returns_false();
+extern void test_itw_strtoul_trailing_space_returns_true();
+extern void test_itw_strtoul_trailing_tab_returns_true();
+extern void test_itw_strtoul_spaces_then_letters_returns_false();
 extern void test_itw_leading_nonwhitespace_returns_false();
 
 // pow10u()
@@ -50,6 +53,9 @@ int main()
     RUN_TEST(test_itw_numeric_with_suffix_returns_false);
     RUN_TEST(test_itw_clean_numeric_remainder_returns_true);
     RUN_TEST(test_itw_strtoul_suffix_residuo_returns_false);
+    RUN_TEST(test_itw_strtoul_trailing_space_returns_true);
+    RUN_TEST(test_itw_strtoul_trailing_tab_returns_true);
+    RUN_TEST(test_itw_strtoul_spaces_then_letters_returns_false);
     RUN_TEST(test_itw_leading_nonwhitespace_returns_false);
 
     RUN_TEST(test_pow10u_zero_exponent);

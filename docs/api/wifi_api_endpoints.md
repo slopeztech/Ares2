@@ -10,15 +10,48 @@ Source of truth: `src/api/api_server.cpp` and the per-domain handlers in `src/ap
 
 The ESP32 acts as a WiFi AP. No router required — connect directly from the ground computer.
 
-| Parameter   | Value                            |
-|-------------|----------------------------------|
-| SSID        | `ARES-XXXX` (last 2 bytes MAC)   |
-| Password    | `ares1234`                       |
-| IP          | `192.168.4.1`                    |
-| Port        | `80` (HTTP/1.1)                  |
-| Max clients | 4 simultaneous                   |
+| Parameter   | Value                                                |
+|-------------|------------------------------------------------------|
+| SSID        | `ARES-XXXX` (last 2 bytes MAC)                       |
+| Password    | Configurable — factory default `ares1234`            |
+| IP          | `192.168.4.1`                                        |
+| Port        | `80` (HTTP/1.1)                                      |
+| Max clients | 4 simultaneous                                       |
 
-All responses are `application/json` with CORS headers (`Access-Control-Allow-Origin: *`). The single exception is mission/log file downloads, which respond `text/plain` with a `Content-Disposition: attachment` header.
+All responses are `application/json` with CORS headers. The `Access-Control-Allow-Origin` value is runtime-configurable via `PUT /api/device/config` (default `*`). The single exception is mission/log file downloads, which respond `text/plain` with a `Content-Disposition: attachment` header.
+
+---
+
+## Authentication
+
+The API supports an optional bearer token for endpoint-level access control. The token is configured via `PUT /api/device/config` and persisted on LittleFS.
+
+### Open mode (default)
+
+When no `api_token` has been set, all endpoints are open — there is no header required. This preserves full backward compatibility with scripts and tools written before the security layer was added.
+
+### Token mode
+
+When an `api_token` is configured, every request to a protected endpoint must include:
+
+```
+X-ARES-Token: <token>
+```
+
+A missing or incorrect token returns `401 Unauthorized`.
+
+**Public endpoints** that do not require the token even in token mode:
+
+| Endpoint            | Reason |
+|---------------------|---------|
+| `GET /api/status`   | Ground station heartbeat — always available |
+| `GET /api/imu`      | Passive read — no state change |
+| `GET /api/imu/*`    | Sub-paths of the IMU read |
+| `OPTIONS *`         | CORS preflight — browser-initiated |
+
+All other endpoints (`PUT`, `POST`, `DELETE`, and non-exempt `GET`) require the token.
+
+> **Security note:** The WiFi link is WPA2-PSK encrypted. The token adds a second authentication factor at the API level, protecting against devices that know the network password but should not have operational access.
 
 ---
 
@@ -357,6 +390,62 @@ The server validates all fields first and only applies changes if all are valid 
 
 ---
 
+#### `GET /api/device/config`
+
+**When to use:** Read the current device security configuration — WiFi AP password in use, CORS origin, and whether token auth is enabled. Use this before a `PUT` to see what is already set, or to confirm a successful update.
+
+**Why:** All security-sensitive parameters (WiFi password, API token, CORS) are stored in a single JSON file on LittleFS (`/ares_device.json`). This endpoint returns the current live values, with the `api_token` deliberately omitted (write-only field).
+
+**Response:**
+```json
+{
+  "wifi_password": "ares1234",
+  "cors_origin": "*",
+  "auth_enabled": false,
+  "_schema": 1
+}
+```
+
+`auth_enabled` is `true` when a non-empty `api_token` has been configured. The token itself is never returned.
+
+---
+
+#### `PUT /api/device/config`
+
+**When to use:** Change the WiFi AP password, set an API bearer token, or restrict the CORS origin. Changes persist across reboots. Partial JSON is supported — include only the fields you want to change.
+
+**Why:** The factory defaults (open auth, `ares1234` password, `*` CORS) are intentionally permissive so the system works out of the box. Once deployed, you should:
+1. Set a strong `wifi_password` (change requires a reboot).
+2. Set an `api_token` to restrict API access to authorised clients.
+3. Optionally restrict `cors_origin` to your ground station's origin.
+
+**Request:**
+```json
+{
+  "wifi_password": "MySecurePass99",
+  "api_token": "AbCdEfGh1234XyZw",
+  "cors_origin": "http://192.168.4.2"
+}
+```
+
+**Field constraints:**
+
+| Field            | Type   | Constraint                             | Effect on reboot? |
+|------------------|--------|----------------------------------------|-------------------|
+| `wifi_password`  | string | 8–63 printable ASCII chars, or `""` to reset to default | **Yes — AP restart required** |
+| `api_token`      | string | 8–64 printable ASCII chars, or `""` to disable auth | No |
+| `cors_origin`    | string | 1–127 chars (`"*"`, `"null"`, or a specific origin) | No |
+
+Omitting a field leaves it unchanged. Sending an empty string (`""`) for `wifi_password` or `api_token` resets that field to its default.
+
+**Response:** Current device config (same shape as `GET /api/device/config`) after applying the changes.
+
+**Important:** The `wifi_password` change is applied immediately to the stored config and survives reboot, but the running soft-AP will not use the new password until the device is rebooted. All other fields (`api_token`, `cors_origin`) take effect immediately without a reboot.
+
+> **Security note:** This endpoint itself is protected when token auth is enabled — you must supply `X-ARES-Token` to change the security configuration.
+
+---
+
 ### Pre-flight: Mode Management
 
 ---
@@ -504,6 +593,20 @@ Command name max length: 16 characters.
 
 ## Recommended Sequence per Operation
 
+### First-time security setup
+
+Run once after flashing, before any field deployment:
+
+```
+1. GET  /api/device/config               # read current security config
+2. PUT  /api/device/config               # set wifi_password, api_token, cors_origin
+3. Reboot the device                     # new wifi_password takes effect
+4. Reconnect with the new password
+5. GET  /api/device/config               # confirm auth_enabled: true
+```
+
+All subsequent requests must include `X-ARES-Token: <token>` in the header.
+
 ### Standard pre-flight to launch
 
 ```
@@ -552,6 +655,7 @@ Command name max length: 16 characters.
 | Code | Meaning |
 |------|---------|
 | `400` | Bad request — invalid JSON, missing required field, filename with illegal characters, value out of range. |
+| `401` | Unauthorized — `X-ARES-Token` header is missing or incorrect (only returned when token auth is enabled). |
 | `404` | Route or file not found. |
 | `405` | Wrong HTTP method for this route. |
 | `409` | Conflict — flight lock active, invalid mode transition, engine not in expected state, or already armed. |

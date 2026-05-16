@@ -115,6 +115,30 @@ CSV row format: `t_ms, state, slot, <fields...>`
 
 The slot header (`t_ms,state,slot,...`) is written once per slot on first use.
 
+**Variable fields in LOG.report (AMS-4.8.7):** A declared `var` can be used as a
+field expression directly (no `ALIAS.` prefix needed):
+
+```ams
+var ground_alt = 0.0
+
+state PAD:
+  on_enter:
+    set ground_alt = BARO.alt   -- snapshot ground reference
+
+state FLIGHT:
+  log_every 50ms:
+    LOG.report {
+      ga:  ground_alt           -- AMS variable — bare name, no dot
+      alt: BARO.alt
+    }
+```
+
+The variable value is formatted as a float with 2 decimal places.  If the variable
+has not yet been set (`nan` state), the placeholder `nan` is written to keep CSV
+columns aligned.  Note: variable fields are **omitted from binary HK TM frames**
+(`HK.report`) since `TelemetryPayload` has no generic variable slot; use
+`LOG.report` when variable values must be persisted.
+
 ### 2.5 conditions + on_error
 
 Use `conditions:` to define guard checks that must stay true while the state is active.
@@ -382,6 +406,15 @@ sample period.
   every consecutive tick for the full hold window.
 - **`falling` / `rising`**: these are exact aliases for `delta < 0` and
   `delta > 0`; they accept the same field names as any other sensor condition.
+- **Prefer inline `delta` over a `set` variable when only the transition
+  matters.**  Storing `BARO.alt delta` into a variable via `set` returns 0.0
+  on the first `on_enter`, which means a condition `when myVar < 0` is always
+  false on that first tick.  The inline form (`BARO.alt falling`) uses an
+  internal per-condition baseline that behaves identically — but is also
+  *always* false on the first tick, by design (see AMS-4.6.2).  Use a `set`
+  variable only when you need the numeric delta value for telemetry or other
+  `set` computations, and protect the condition with `for Nms` to absorb the
+  initial zero (see section 12.1 for a full example).
 
 ### 5.5 Compound Conditions (`or` / `and`)
 
@@ -673,18 +706,19 @@ Valid expressions for HK.report and LOG.report:
 - `IMU.accel_x` — X-axis acceleration (m/s²)
 - `IMU.accel_y` — Y-axis acceleration (m/s²)
 - `IMU.accel_z` — Z-axis acceleration (m/s²)
-- `IMU.accel_mag` — Acceleration magnitude √(x²+y²+z²) (m/s²); also written to the TelemetryPayload HK frame
+- `IMU.accel_mag` — Acceleration magnitude √(x²+y²+z²) (m/s²)
 - `IMU.gyro_x` — X angular rate (deg/s)
 - `IMU.gyro_y` — Y angular rate (deg/s)
 - `IMU.gyro_z` — Z angular rate (deg/s)
+- `IMU.gyro_mag` — Angular rate magnitude √(gx²+gy²+gz²) (deg/s)
 - `IMU.temp` — On-chip temperature (°C)
 
-IMU transitions support `IMU.accel_x`, `IMU.accel_y`, `IMU.accel_z`, and `IMU.accel_mag`.
+IMU transitions support all of the above fields, including `IMU.accel_mag` and `IMU.gyro_mag`.
 If no IMU is connected (or if the active IMU read fails) at runtime:
 - Transition conditions using IMU fields evaluate as false (no transition trigger).
 - Guard conditions in `conditions:` treat missing sensor data as "holds" (no immediate ERROR).
 - LOG.report writes `nan` for unreadable IMU fields to preserve CSV column alignment.
-- HK.report only maps supported payload fields (for IMU, `accel_mag` when available).
+- HK.report maps all sensor fields to their corresponding `TelemetryPayload` slots (APUS-3.6).
 
 `TIME.elapsed` is available in `conditions:` and `transition` guards only (not in `HK.report`/`LOG.report`):
 - `TIME.elapsed > <ms>` — true when the active state has been running for more than the given milliseconds
@@ -716,6 +750,23 @@ state PAD:
   on_error:
     EVENT.error "IMU overload on PAD"
 ```
+
+**Example — tumbling detection via `gyro_mag`:**
+
+`IMU.gyro_mag` computes √(gx²+gy²+gz²) on every read and is useful for detecting
+an uncontrolled spin regardless of which axis is spinning:
+
+```ams
+state FLIGHT:
+  log_every 100ms:
+    LOG.report { gm: IMU.gyro_mag  gx: IMU.gyro_x  gy: IMU.gyro_y  gz: IMU.gyro_z }
+  transition to TUMBLING when IMU.gyro_mag > 120.0
+state TUMBLING:
+  on_enter:
+    EVENT.error "TUMBLING detected"
+```
+
+> `gyro_mag` is available in `transition`, `conditions:`, `HK.report`, and `LOG.report`.
 
 ---
 
@@ -957,14 +1008,61 @@ derived-value operators that update every time the state is *entered*:
 ### 12.1 Delta (`ALIAS.field delta`) — AMS-4.8.3
 
 Stores the difference between the current and the previous sensor reading.
-On the first entry the delta is 0 and the baseline is primed with the current
-reading.
+On the **first** `on_enter` execution, the delta is **0.0** and the baseline is
+primed with the current reading.  From the second entry onwards, the delta
+reflects the actual change since the previous entry.
 
 ```ams
 state DESCENT:
   on_enter:
     set descent_rate = BARO.alt delta
 ```
+
+> **Common Pitfall — `delta < 0` never fires on the first tick (AMS-4.6.2)**
+>
+> A script that immediately tests the derived variable after `on_enter` will
+> always see 0.0 on the very first evaluation:
+>
+> ```ams
+> // BROKEN — transition never fires on the tick that enters APOGEE
+> var descent_rate
+>
+> state APOGEE:
+>   on_enter:
+>     set descent_rate = BARO.alt delta   // → 0.0 on first entry
+>   transition to DESCENT when descent_rate < 0   // false: 0 is not < 0
+> ```
+>
+> **Why**: `on_enter` runs during state entry.  On that same tick the engine
+> evaluates transitions — but `descent_rate` is still 0.0 because no previous
+> sample existed.  The variable only carries a meaningful non-zero delta from
+> the *second* entry into APOGEE onward.
+>
+> **Preferred fix — use the inline `delta` operator directly:**
+>
+> ```ams
+> state APOGEE:
+>   // No set needed — evaluate delta directly in the transition.
+>   // Immune to the first-tick-zero issue because the engine tracks its own
+>   // per-condition baseline, separate from any script variable.
+>   transition to DESCENT when BARO.alt falling for 500ms
+> ```
+>
+> **Alternative — defer the condition to the *next* tick:**
+>
+> ```ams
+> var descent_rate
+>
+> state APOGEE:
+>   on_enter:
+>     set descent_rate = BARO.alt delta
+>   // This fires only after the second on_enter, when descent_rate is real.
+>   // Acceptable when you need the numeric value for telemetry as well.
+>   transition to DESCENT when descent_rate < -0.5 for 500ms
+> ```
+>
+> The `for 500ms` window acts as a natural guard: the zero-valued first tick
+> does not start accumulating hold time, so no spurious early transition occurs.
 
 ### 12.2 Running Maximum (`max`) — AMS-4.8.4
 
@@ -1279,6 +1377,30 @@ task peak_tracker:
 
 Tasks may not trigger state transitions — use `transition` inside state blocks for that.
 
+### 15.5 `every` vs `task` — choosing the right construct
+
+Both keywords use a cadence timer, but they serve very different purposes.
+Use this table to decide which one fits your use case:
+
+| Feature | `every` (inside `state:`) | `task` (top-level) |
+|---|---|---|
+| **Scope** | Active only in the enclosing state | Runs in every state (optionally filtered with `when in`) |
+| **Trigger** | Cadence only | Cadence **+** one or more `if COND:` guards |
+| **Allowed actions** | `HK.report`, `LOG.report` | `EVENT.*`, `set`, or both |
+| **State transitions** | Not applicable | Not allowed (use `transition` inside the state) |
+| **TC conditions in guard** | — | Not allowed in `if` |
+| **Multiple slots** | Yes — several `every` blocks per state (independent cadences) | Yes — several `task` blocks per script |
+| **Typical use** | PUS TM telemetry, CSV logging | Cross-cutting watches (thermal, battery, peak tracking) |
+
+**Decision guide:**
+
+- Use **`every` + `HK.report`/`LOG.report`** when you need structured telemetry or CSV logging that is specific to a flight phase (state).
+- Use **`task`** when you need to monitor a condition and fire `EVENT.*` or update a variable independently of which state is active — or when you want that behaviour only during a defined subset of states (`when in …`).
+
+> **Important:** a `task` cannot emit HK or LOG output; and an `every` block
+> cannot fire events or mutate variables. If you need both, pair an `every`
+> block inside the state with a separate `task`.
+
 ---
 
 ## 17. Formal Validation (`assert:`) (AMS-15)
@@ -1445,4 +1567,75 @@ Prior to this implementation, all five `statusBits` flags were always `0`
 All three telemetry TX paths (`sendHkReportLocked`, `sendHkReportSlotLocked`,
 and the `REQUEST_STATUS` handler) now call `buildStatusBitsLocked()` so the GCS
 always receives accurate status flags.
+
+---
+
+## 19. Common Pitfalls
+
+### 19.1 `delta` returns 0 on the first tick
+
+The `delta` operator stores the difference between the **current** and the
+**previous** sensor reading at each state entry.  On the **first** execution
+(first time the state is entered), the baseline is primed from the current
+reading and the result is `0.0`.  A transition condition such as
+`BARO.alt delta > 10` will therefore never fire on the first tick regardless of
+altitude.
+
+**Fix:** add a `for Nms` hold window to ensure the state has been active long
+enough for at least two readings, or structure the mission so the delta state is
+re-entered after an initial measurement.
+
+### 19.2 `conditions:` guard never fires when the sensor is down
+
+Guard conditions (`conditions:`) use the same fail-safe NaN semantics as
+transition conditions: if the sensor read fails or the variable is invalid, the
+condition evaluates to **false**.  A guard that monitors `BARO.alt < 100` will
+silently **not fire** — not trigger an error — when the barometer is
+disconnected.
+
+**Fix:** if a missing sensor should itself trigger an error, use a separate
+transition or on_timeout to detect that the expected condition has never become
+true within a deadline.
+
+### 19.3 `budget` counts action groups, not individual slots
+
+A state with `budget=1` and four simultaneously-due HK slots will still transmit
+**all four HK frames in a single tick** — the budget is charged once for the HK
+group, not once per slot.  Setting `budget=1` does not throttle individual slots;
+it limits how many of the three groups (EVENT, HK, LOG) are served per tick.
+
+**Fix:** to reduce radio channel load, increase the `every Nms:` cadence of
+individual HK slots rather than lowering the budget.  See §4 and AMS-4.4.
+
+### 19.4 `CALIBRATE` takes N ticks to complete
+
+`CALIBRATE(ALIAS.field, N)` is **asynchronous**: the variable is not written
+until all N samples have been collected over N consecutive ticks
+(`N × SENSOR_RATE_MS` ms).  Any transition or guard condition that references
+the variable evaluates to **false** (NaN guard, AMS-4.8.3) until then.
+
+**Fix:** use a `for Nms` hold window on the transition that consumes the
+calibrated variable, with `N_hold ≥ N × SENSOR_RATE_MS`.  Alternatively,
+structure the mission so the calibration state has an `on_timeout` that fires
+after the expected calibration time.
+
+### 19.5 Checkpoint filename must be stable between firmware versions
+
+The resume checkpoint stores the **script filename** and the **state index**.
+If the AMS script is renamed between firmware upgrades, the checkpoint will be
+discarded at restore time (file not found).  If states are added or reordered,
+the stored state index may point to a different state in the new script, causing
+the mission to resume in the wrong state.
+
+**Fix:** do not rename `.ams` files between production firmware releases.  If
+states are added, always append them at the end so existing indices remain valid,
+or bump `AMS_RESUME_VERSION` to discard all legacy checkpoints.
+
+### 19.6 `tcConfirmCount_` and hold windows reset on power cycle
+
+`TC.command confirm N` counters and `for Nms` hold-window progress are not
+persisted in the checkpoint (AMS-2).  After a power cycle, confirm counters
+restart from 0 and any partially elapsed hold window restarts from the beginning.
+Design mission scripts to tolerate this: a `confirm N` gate that had accumulated
+N−1 injections will require N fresh injections after restore.
 

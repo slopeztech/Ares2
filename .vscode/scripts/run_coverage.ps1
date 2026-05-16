@@ -118,7 +118,8 @@ foreach ($gcov in ($gcovFiles | Sort-Object Name)) {
     }
 
     $color = if ($pct -ge 90) { 'Green' } elseif ($pct -ge 70) { 'Yellow' } else { 'Red' }
-    $row   = "{0,-50} {1,8}  {2,8}  {3,6}%" -f $gcov.Name, $coveredCount, $execCount, $pct
+    $pctStr = $pct.ToString('0.0', [System.Globalization.CultureInfo]::InvariantCulture)
+    $row   = "{0,-50} {1,8}  {2,8}  {3,6}%" -f $gcov.Name, $coveredCount, $execCount, $pctStr
     Write-Host $row -ForegroundColor $color
     $reportLines.Add($row)
 }
@@ -131,7 +132,8 @@ if ($totalLines -gt 0) {
 } else {
     $totalPct = 0.0
 }
-$totalRow = "{0,-50} {1,8}  {2,8}  {3,6}%" -f "TOTAL", $totalCovered, $totalLines, $totalPct
+$totalPctStr = $totalPct.ToString('0.0', [System.Globalization.CultureInfo]::InvariantCulture)
+$totalRow = "{0,-50} {1,8}  {2,8}  {3,6}%" -f "TOTAL", $totalCovered, $totalLines, $totalPctStr
 
 Write-Host $totalRow -ForegroundColor Cyan
 $reportLines.Add($totalRow)

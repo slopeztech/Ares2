@@ -37,7 +37,17 @@ static constexpr TickType_t portMAX_DELAY = static_cast<TickType_t>(0xFFFFFFFFUL
 
 struct StaticSemaphore_t
 {
-    bool locked = false;
+    bool     locked        = false;
+    /**
+     * Number of times xSemaphoreTake returned pdFALSE due to the mutex already
+     * being held (contention).  xBlockTime is silently ignored in the sim
+     * (no real wait occurs), so this counter lets tests detect unexpected lock
+     * contention that would block — or potentially deadlock — on a real target.
+     *
+     * Reset to zero by xSemaphoreCreateMutexStatic() and by the
+     * xSemaphoreResetFailCount() helper provided in semphr.h.
+     */
+    uint32_t takeFailCount = 0U;
 };
 
 using SemaphoreHandle_t = StaticSemaphore_t*;
