@@ -45,7 +45,7 @@ The firmware around AMS is intentionally thin. It provides:
 
 - **Sensor reading** through a hardware abstraction layer (barometer, GPS, IMU).
 - **Flight logging** to an internal LittleFS partition on the ESP32-S3 flash.
-- **Wireless telemetry** with a custom binary protocol (ARES Radio Protocol v2) over LoRa.
+- **Wireless telemetry** with a custom transport-agnostic binary protocol (ARES Radio Protocol v2) — currently carried over LoRa, but the framing layer is radio-backend-independent.
 - **A programmable mission engine** that interprets AMS scripts on every main loop tick.
 - **Ground configuration** over an integrated WiFi Access Point and a REST API.
 
@@ -69,7 +69,7 @@ Related documents:
 
 ## Hardware
 
-### Flight Computer
+### Current Flight Computer
 
 | Property  | Value                                         |
 |-----------|-----------------------------------------------|
@@ -80,7 +80,6 @@ Related documents:
 | RTOS      | FreeRTOS IDF SMP (dual-core)                  |
 | WiFi      | 2.4 GHz 802.11 b/g/n onboard                  |
 | USB       | Native CDC + CH340 UART                       |
-| Firmware  | v2.0.0                                         |
 
 ### Current Drivers
 
@@ -536,8 +535,7 @@ Standards references:
 - [ARES coding standard](docs/standards/ares_coding_standard.md)
 - [AMS standard](docs/standards/ams_standard.md)
 - [APIREST standard](docs/standards/apirest_standard.md)
-- [APUS standard](docs/standards/apus_standard.md) — embedded adaptation actually implemented
-- [PUS standard](docs/standards/pus_standard.md) — ECSS reference that APUS adapts
+- [APUS standard](docs/standards/apus_standard.md)
 - [MISRA standard](docs/standards/misra_standard.md) · [MISRA C++ review profile](docs/development/misra_cpp_review_profile.md)
 - [CERT standard](docs/standards/cert_standard.md)
 - [DO-178C standard](docs/standards/do178c_standard.md)
