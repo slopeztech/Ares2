@@ -5,12 +5,8 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 **Avionics firmware for amateur rockets on ESP32-S3**
 
 [![Version](https://img.shields.io/badge/version-2.0.0-blue)](#)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](#build-and-flash)
-[![Tests](https://img.shields.io/badge/tests-7%20suites-brightgreen)](#testing)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
-[![Radio](https://img.shields.io/badge/radio-LoRa%20868%20MHz-blueviolet)](#radio-telemetry)
-[![Standards](https://img.shields.io/badge/standards-11%20enforced-red)](#coding-standards)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
 
 ---
