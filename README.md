@@ -283,7 +283,7 @@ These are the hard ceilings the parser enforces. They are visible to the contrib
 ```ams
 include BN220 as GPS
 include BMP280 as BARO
-include LORA as COM
+include DXLR03 as COM
 
 pus.apid = 1
 pus.service 3 as HK

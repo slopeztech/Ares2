@@ -15,7 +15,7 @@ Minimal valid script:
 ```ams
 include BN220 as GPS
 include BMP280 as BARO
-include LORA as COM
+include DXLR03 as COM
 
 pus.apid = 1
 pus.service 3 as HK
@@ -536,7 +536,7 @@ firmware-injected version.
 ```ams
 include BMP280 as BARO retry=3
 include BN220  as GPS  retry=2
-include LORA   as COM
+include DXLR03 as COM
 
 pus.apid = 1
 pus.service 3 as HK
@@ -775,7 +775,7 @@ state TUMBLING:
 ```ams
 include BN220 as GPS
 include BMP280 as BARO
-include LORA as COM
+include DXLR03 as COM
 
 pus.apid = 1
 pus.service 3 as HK

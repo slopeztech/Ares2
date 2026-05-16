@@ -8,7 +8,7 @@
  *
  *   include BN220   as GPS
  *   include BMP280  as BARO
- *   include LORA    as COM
+ *   include DXLR03  as COM
  *   include MPU6050 as IMU
  *
  * Multiple drivers of the same kind can be registered for multi-instance
