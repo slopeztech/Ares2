@@ -4,10 +4,14 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](#)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](#build-and-flash)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#)
+[![Tests](https://img.shields.io/badge/tests-7%20suites-brightgreen)](#testing)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
-[![Standard](https://img.shields.io/badge/standard-138%20rules-red)](#coding-standards)
+[![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
+[![Radio](https://img.shields.io/badge/radio-LoRa%20868%20MHz-blueviolet)](#radio-telemetry)
+[![Standards](https://img.shields.io/badge/standards-11%20enforced-red)](#coding-standards)
+[![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
 
 ---
 
@@ -80,7 +84,7 @@ Related documents:
 | RTOS      | FreeRTOS IDF SMP (dual-core)                  |
 | WiFi      | 2.4 GHz 802.11 b/g/n onboard                  |
 | USB       | Native CDC + CH340 UART                       |
-| Firmware  | v0.1.0                                         |
+| Firmware  | v2.0.0                                         |
 
 ### Current Drivers
 
@@ -553,7 +557,7 @@ Standards references:
 
 Software requirements are tracked in plain-text [StrictDoc](https://strictdoc.readthedocs.io/) format, which provides bidirectional traceability between requirements and source code, and can export to HTML or PDF.
 
-The initial SRS is derived from the coding standards and from the behaviour implemented in the current firmware (v0.1.0):
+The initial SRS is derived from the coding standards and from the behaviour implemented in the current firmware (v2.0.0):
 
 - [docs/requirements/SRS.sdoc](docs/requirements/SRS.sdoc) — Software Requirements Specification
 
@@ -610,7 +614,7 @@ pio device monitor --baud 115200
 Structured log format:
 
 ```
-[   2000] I MAIN: ═══ ARES v0.1.0 ═══
+[   2000] I MAIN: ═══ ARES v2.0.0 ═══
 [   2000] I MAIN: board: ESP32-S3 Zero Mini
 [   2100] I MAIN: Init complete — LED:OK WiFi:OK LoRa:OK State:OK
 ```

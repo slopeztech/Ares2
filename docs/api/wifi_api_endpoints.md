@@ -89,7 +89,7 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
 ```json
 {
   "board": "ESP32-S3 Zero Mini",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "uptimeMs": 5340,
   "freeHeap": 245760,
   "mode": "IDLE",

@@ -20,7 +20,14 @@
 // ── Version ─────────────────────────────────────────────────
 /// Semantic version string embedded in the firmware binary.
 /// Printed at boot and included in telemetry headers.
-#define ARES_VERSION_STRING "0.1.0"
+///
+/// @note SINGLE SOURCE OF TRUTH for firmware version.
+///       When bumping this value also update:
+///         - README.md          (badge + hardware table + serial log example)
+///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
+///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
+///         - Create a new entry in docs/changelog/
+#define ARES_VERSION_STRING "2.0.0"
 
 namespace ares
 {
