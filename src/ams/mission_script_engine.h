@@ -928,6 +928,7 @@ private:
     bool parseDeltaSetActionLocked(const char* rhsBuf, SetAction& out);
     bool parseExprSetActionLocked(const char* rhsBuf, SetAction& out);      ///< AMS-4.8.8: parse arithmetic expression RHS.
     bool parseExprTermLocked(const char* token, ExprOperand& out);          ///< Resolve one expression token to an ExprOperand.
+    bool buildExprOpsLocked(const char tokens[][32], uint8_t termCount, const ExprOperand terms[], ExprOp ops[]); ///< AMS-4.8.8: map operator tokens → ExprOp[]; guard literal ÷0.
     bool parseSimpleSensorSetActionLocked(const char* rhsBuf, SetAction& out);
     bool evaluateExprOperandLocked(const ExprOperand& op, float& value) const; ///< AMS-4.8.8: resolve one operand to float at runtime.
     bool parseTaskLineLocked(const char* line);                        ///< AMS-11: parse task NAME[:when in…]: header.

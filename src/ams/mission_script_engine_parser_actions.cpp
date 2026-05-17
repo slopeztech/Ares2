@@ -666,6 +666,52 @@ static uint8_t stripAndTokenizeExpr(const char* rhs,
     return (*p != '\0') ? static_cast<uint8_t>(maxToks + 1U) : tokCount;
 }
 
+// ── buildExprOpsLocked ──────────────────────────────────────────────────────
+
+/**
+ * @brief Map operator tokens to ExprOp enum values; guard against literal ÷0.
+ *
+ * Returns @c false (no error set) when any operator token is not a recognised
+ * single-character arithmetic operator — the caller treats the input as
+ * "not an expression".  Returns @c false with an error set when a literal zero
+ * divisor is detected.  Returns @c true on success.
+ *
+ * @param[in]  tokens     Full token array (operators are at odd indices).
+ * @param[in]  termCount  Number of TERM operands; operators = termCount − 1.
+ * @param[in]  terms      Parsed operand array (used to check divisor literals).
+ * @param[out] ops        Caller-allocated operator array (termCount − 1 slots).
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::buildExprOpsLocked(const char        tokens[][32],
+                                             uint8_t           termCount,
+                                             const ExprOperand terms[],
+                                             ExprOp            ops[])
+{
+    for (uint8_t i = 0U; i < termCount - 1U; i++)
+    {
+        const char* opTok = tokens[static_cast<size_t>(i) * 2U + 1U];
+        if (opTok[1] != '\0') { return false; } // multi-char → not an expression
+        switch (opTok[0])
+        {
+        case '+': ops[i] = ExprOp::ADD; break;
+        case '-': ops[i] = ExprOp::SUB; break;
+        case '*': ops[i] = ExprOp::MUL; break;
+        case '/':
+            ops[i] = ExprOp::DIV;
+            if (terms[i + 1U].kind == ExprOperand::Kind::LITERAL &&
+                terms[i + 1U].literal == 0.0f)
+            {
+                setErrorLocked("set expr: division by literal zero");
+                return false;
+            }
+            break;
+        default:
+            return false; // Unrecognised operator → not an expression.
+        }
+    }
+    return true;
+}
+
 // ── parseExprSetActionLocked ──────────────────────────────────────────────────
 
 /**
@@ -705,18 +751,6 @@ bool MissionScriptEngine::parseExprSetActionLocked(const char* rhsBuf,
         return false; // Not an expression — let caller try SIMPLE.
     }
 
-    // Tokens at odd positions (1, 3) must be single-character arithmetic
-    // operators.  If they are not, this is not an expression.
-    for (uint8_t i = 1U; i < tokCount; i += 2U)
-    {
-        const char oc = tokens[i][0];
-        if (tokens[i][1] != '\0' ||
-            (oc != '+' && oc != '-' && oc != '*' && oc != '/'))
-        {
-            return false; // Not an expression.
-        }
-    }
-
     // Parse each TERM operand (tokens at even positions 0, 2, 4).
     const uint8_t termCount = static_cast<uint8_t>((tokCount + 1U) / 2U);
     ExprOperand terms[SetAction::kMaxExprTerms] = {};
@@ -728,29 +762,11 @@ bool MissionScriptEngine::parseExprSetActionLocked(const char* rhsBuf,
         }
     }
 
-    // Build operator array; reject division by literal zero at parse time.
+    // Map operator tokens → ExprOp[]; guard literal ÷0.
     ExprOp ops[SetAction::kMaxExprTerms - 1U] = {};
-    for (uint8_t i = 0U; i < termCount - 1U; i++)
+    if (!buildExprOpsLocked(tokens, termCount, terms, ops))
     {
-        const char oc = tokens[static_cast<size_t>(i) * 2U + 1U][0];
-        switch (oc)
-        {
-        case '+': ops[i] = ExprOp::ADD; break;
-        case '-': ops[i] = ExprOp::SUB; break;
-        case '*': ops[i] = ExprOp::MUL; break;
-        case '/':
-            ops[i] = ExprOp::DIV;
-            if (terms[i + 1U].kind == ExprOperand::Kind::LITERAL &&
-                terms[i + 1U].literal == 0.0f)
-            {
-                setErrorLocked("set expr: division by literal zero");
-                return false;
-            }
-            break;
-        default:
-            setErrorLocked("set expr: unrecognised operator");
-            return false;
-        }
+        return false;
     }
 
     // Commit to out.
