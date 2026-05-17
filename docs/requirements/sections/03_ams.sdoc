@@ -249,6 +249,15 @@ RATIONALE: AMS-4.8.2. Covers the five derived-variable forms implemented in pars
 REFS: docs/standards/ams_standard.md AMS-4.8.2, src/config.h AMS_MAX_SENSOR_RETRY
 
 [REQUIREMENT]
+UID: SRS-2404
+STATUS: Active
+TAGS: AMS, Variables, ArithmeticExpression
+STATEMENT: A set action shall support an arithmetic expression form "set VARNAME = TERM op TERM [op TERM]", where TERM is a sensor field reference (ALIAS.field), a declared variable name, or a float literal, and op is one of +, -, *, /. Expressions with two or three terms shall be accepted; any other count shall be a parse error. Evaluation shall be strictly left-to-right. A literal zero in divisor position shall be a parse error. An unknown alias in a sensor term shall be a parse error. At runtime, if any operand is invalid (sensor failure, variable not yet set) or the result is NaN or infinite, an EVENT.warning shall be emitted and the target variable shall remain unchanged.
+VERIFICATION: Test
+RATIONALE: AMS-4.8.8. Allows missions to compute derived values (AGL altitude, average velocity) without consuming transition slots for intermediate logic.
+REFS: docs/standards/ams_standard.md AMS-4.8.8
+
+[REQUIREMENT]
 UID: SRS-2402
 STATUS: Active
 TAGS: AMS, Variables, SensorFault

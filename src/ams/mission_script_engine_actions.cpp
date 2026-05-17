@@ -20,7 +20,9 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <cinttypes>
+#include <cmath>
 #include <iterator>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 
@@ -267,6 +269,141 @@ void MissionScriptEngine::executeMinMaxSetActionLocked(SetAction&    act,
     gotReading = true;
 }
 
+// ── evaluateExprOperandLocked ─────────────────────────────────────────────────
+
+/**
+ * @brief Resolve one @c ExprOperand to a @c float value at runtime (AMS-4.8.8).
+ *
+ * Returns @c false (with @p value set to NaN) when the operand cannot
+ * produce a value: sensor read failure or a VARIABLE that has not been
+ * initialised by a prior @c set action.
+ *
+ * @param[in]  op     Operand descriptor.
+ * @param[out] value  Resolved value on success; @c NaN on failure.
+ * @return @c true if a valid float was obtained.
+ * @pre  mutex_ is held by the caller.
+ */
+bool MissionScriptEngine::evaluateExprOperandLocked(const ExprOperand& op,
+                                                    float&             value) const
+{
+    switch (op.kind)
+    {
+    case ExprOperand::Kind::SENSOR:
+        return readSensorFloatLocked(op.name, op.field, value);
+
+    case ExprOperand::Kind::VARIABLE:
+    {
+        const VarEntry* v = findVarLocked(op.name);
+        if (v != nullptr && v->valid)
+        {
+            value = v->value;
+            return true;
+        }
+        value = std::numeric_limits<float>::quiet_NaN();
+        return false;
+    }
+
+    case ExprOperand::Kind::LITERAL:
+        value = op.literal;
+        return true;
+
+    default:
+        value = std::numeric_limits<float>::quiet_NaN();
+        return false;
+    }
+}
+
+// ── executeExprSetActionLocked ────────────────────────────────────────────────
+
+/**
+ * @brief Evaluate an AMS-4.8.8 arithmetic expression and produce a result.
+ *
+ * Evaluates @c act.exprTerms left-to-right using @c act.exprOps:
+ *   @code result = ((T0 op0 T1) op1 T2) @endcode
+ *
+ * The variable is left unchanged (gotReading = false) and an
+ * @c EVENT.warning is emitted when:
+ *   - any operand fails to resolve (sensor unavailable, variable not yet set),
+ *   - a runtime division by zero occurs.
+ *
+ * @param[in,out] act         Set-action descriptor.
+ * @param[out]    result      Computed float on success.
+ * @param[out]    gotReading  Set to @c true only on full success.
+ * @param[in]     nowMs       Current timestamp for event framing.
+ * @pre  mutex_ is held by the caller.
+ */
+void MissionScriptEngine::executeExprSetActionLocked(SetAction& act,
+                                                     float&     result,
+                                                     bool&      gotReading,
+                                                     uint64_t   nowMs)
+{
+    float acc = 0.0f;
+    if (!evaluateExprOperandLocked(act.exprTerms[0U], acc))
+    {
+        char msg[72] = {};
+        snprintf(msg, sizeof(msg),
+                 "set expr '%s': operand 0 unavailable", act.varName);
+        LOG_W(TAG, "%s", msg);
+        sendEventLocked(EventVerb::WARN,
+                        ares::proto::EventId::SENSOR_FAILURE, msg, nowMs);
+        return;
+    }
+
+    for (uint8_t i = 0U; i < act.exprTermCount - 1U; i++)
+    {
+        float rhs = 0.0f;
+        if (!evaluateExprOperandLocked(act.exprTerms[i + 1U], rhs))
+        {
+            char msg[72] = {};
+            snprintf(msg, sizeof(msg),
+                     "set expr '%s': operand %u unavailable",
+                     act.varName, static_cast<unsigned>(i + 1U));
+            LOG_W(TAG, "%s", msg);
+            sendEventLocked(EventVerb::WARN,
+                            ares::proto::EventId::SENSOR_FAILURE, msg, nowMs);
+            return;
+        }
+
+        switch (act.exprOps[i])
+        {
+        case ExprOp::ADD: acc += rhs; break;
+        case ExprOp::SUB: acc -= rhs; break;
+        case ExprOp::MUL: acc *= rhs; break;
+        case ExprOp::DIV:
+            if (rhs == 0.0f)
+            {
+                char msg[72] = {};
+                snprintf(msg, sizeof(msg),
+                         "set expr '%s': division by zero at runtime", act.varName);
+                LOG_W(TAG, "%s", msg);
+                sendEventLocked(EventVerb::WARN,
+                                ares::proto::EventId::SENSOR_FAILURE, msg, nowMs);
+                return;
+            }
+            acc /= rhs;
+            break;
+        default: break;
+        }
+    }
+
+    if (std::isnan(acc) || std::isinf(acc))
+    {
+        char msg[72] = {};
+        snprintf(msg, sizeof(msg),
+                 "set expr '%s': result is NaN/Inf, value not updated", act.varName);
+        LOG_W(TAG, "%s", msg);
+        sendEventLocked(EventVerb::WARN,
+                        ares::proto::EventId::SENSOR_FAILURE, msg, nowMs);
+        return;
+    }
+
+    LOG_I(TAG, "set expr '%s' = %.3f", act.varName, static_cast<double>(acc));
+    result     = acc;
+    gotReading = true;
+}
+
+// ── executeOneSetActionLocked ─────────────────────────────────────────────────
+
 void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint64_t nowMs)
 {
     VarEntry* v = findVarLocked(act.varName);
@@ -293,6 +430,10 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint64_t now
     case SetActionKind::MAX_VAR:
     case SetActionKind::MIN_VAR:
         executeMinMaxSetActionLocked(act, v, result, gotReading);
+        break;
+
+    case SetActionKind::EXPR:
+        executeExprSetActionLocked(act, result, gotReading, nowMs);
         break;
 
     case SetActionKind::SIMPLE:

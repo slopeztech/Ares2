@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 135
+ * Test count: 142
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -102,6 +102,16 @@ extern void test_limit_13_state_flight_profile_accepted();
 
 extern void test_on_exit_set_script_parses_successfully();
 extern void test_on_exit_set_variable_used_in_next_state_condition();
+
+// ── test_ams_set_expr.cpp ────────────────────────────────────────────────────
+
+extern void test_set_expr_parse_succeeds();
+extern void test_set_expr_sensor_minus_var_executes();
+extern void test_set_expr_three_term_executes();
+extern void test_set_expr_sensor_plus_literal();
+extern void test_set_expr_div_by_zero_literal_rejected();
+extern void test_set_expr_unknown_alias_rejected();
+extern void test_set_expr_unset_var_operand_skips_update();
 
 // ── test_ams_pulse.cpp ───────────────────────────────────────────────────────
 
@@ -292,6 +302,15 @@ int main()
     // ams_on_exit_set
     RUN_TEST(test_on_exit_set_script_parses_successfully);
     RUN_TEST(test_on_exit_set_variable_used_in_next_state_condition);
+
+    // ams_set_expr
+    RUN_TEST(test_set_expr_parse_succeeds);
+    RUN_TEST(test_set_expr_sensor_minus_var_executes);
+    RUN_TEST(test_set_expr_three_term_executes);
+    RUN_TEST(test_set_expr_sensor_plus_literal);
+    RUN_TEST(test_set_expr_div_by_zero_literal_rejected);
+    RUN_TEST(test_set_expr_unknown_alias_rejected);
+    RUN_TEST(test_set_expr_unset_var_operand_skips_update);
 
     // ams_pulse
     RUN_TEST(test_pulse_fire_a_calls_driver_on_state_entry);

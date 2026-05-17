@@ -626,6 +626,28 @@ state PAD:
 arithmetic mean of valid readings.  Use `set ground_alt = BARO.alt` for a
 single instantaneous read.
 
+### Arithmetic expressions in `set` (AMS-4.8.8)
+
+The right-hand side of a `set` statement can be an arithmetic expression with
+two or three terms:
+
+```ams
+set alt_agl  = BARO.alt - ground_alt          -- sensor minus variable
+set vvel_avg = ( BARO.alt - prev_alt ) / 0.5  -- three terms, division by literal
+set alt_off  = BARO.alt + 10.0                -- sensor plus literal
+```
+
+- **TERM** is one of: `ALIAS.field`, a declared variable, or a float literal.
+- **op** is one of `+`, `-`, `*`, `/` (space-separated, single character).
+- Evaluation is strictly **left-to-right**: `A - B / C` = `(A - B) / C`.
+- Parentheses are cosmetic and are stripped before parsing.
+
+**Error handling:**
+- Literal zero divisor (`/ 0.0`) → parse error at `activate()` time.
+- Unknown alias (e.g. `NOPE.alt`) → parse error at `activate()` time.
+- Invalid variable (not yet set), sensor failure, runtime ÷ 0, or NaN/Inf
+  result → `EVENT.warning` emitted; target variable left unchanged.
+
 ### Using variables as thresholds
 
 Reference a variable on the right-hand side of a transition or guard condition:

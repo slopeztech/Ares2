@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.1.1"
+#define ARES_VERSION_STRING "2.2.0"
 ```
 
 ---
@@ -43,6 +43,8 @@ docs/changelog/
     v2.0.0.md   ← first structured release
     v2.1.0.md   ← pulse.channel / 4 channels / pin rename
     v2.1.1.md   ← AMS-4.18.6 strict token check (bug fix)
+    v2.1.2.md   ← AMS_MAX_STATES 10→16; BFS bitmask uint32_t
+    v2.2.0.md   ← AMS-4.8.8 arithmetic expressions in set
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -54,5 +56,7 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | Version | Date       | Type  | Summary                                                       |
 |---------|------------|-------|---------------------------------------------------------------|
 | [2.0.0](../changelog/v2.0.0.md) | 2026-05-11 | Release | First structured release; modular AMS; REST auth             |
-| [2.1.0](../changelog/v2.1.0.md) | 2026-05-17 | Minor | AMS-4.18 `pulse.channel`; 4 pulse channels; pin rename       |
-| [2.1.1](../changelog/v2.1.1.md) | 2026-05-17 | Patch | AMS-4.18.6 strict token check; reject `pulse.channel A FOO`  |
+| [2.1.0](../changelog/v2.1.0.md) | 2026-05-17 | Minor   | AMS-4.18 `pulse.channel`; 4 pulse channels; pin rename       |
+| [2.1.1](../changelog/v2.1.1.md) | 2026-05-17 | Patch   | AMS-4.18.6 strict token check; reject `pulse.channel A FOO`  |
+| [2.1.2](../changelog/v2.1.2.md) | 2026-05-17 | Patch   | `AMS_MAX_STATES` 10→16; BFS bitmask `uint32_t`; 2 new tests  |
+| [2.2.0](../changelog/v2.2.0.md) | 2026-05-17 | Minor   | AMS-4.8.8 arithmetic expressions in `set` statements         |

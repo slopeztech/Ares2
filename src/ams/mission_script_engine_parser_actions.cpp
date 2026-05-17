@@ -294,10 +294,10 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
     ARES_ASSERT(line != nullptr);
 
     char varName[ares::AMS_VAR_NAME_LEN] = {};
-    char rhsBuf[64] = {};
+    char rhsBuf[96] = {};
 
     // cppcheck-suppress [cert-err34-c]
-    const int32_t n = static_cast<int32_t>(sscanf(line, "set %15s = %63[^\n]", varName, rhsBuf));
+    const int32_t n = static_cast<int32_t>(sscanf(line, "set %15s = %95[^\n]", varName, rhsBuf));
     if (n != 2 || varName[0] == '\0' || rhsBuf[0] == '\0')
     {
         setErrorLocked("invalid set syntax (expected: set VARNAME = ALIAS.field)");
@@ -324,6 +324,17 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
     if (parseDeltaSetActionLocked(rhsBuf, out))
     {
         return true;
+    }
+    if (parseExprSetActionLocked(rhsBuf, out))
+    {
+        return true;
+    }
+    // If the expression parser recognised the syntax but set a parse error
+    // (e.g. unknown alias in a term), propagate the failure without falling
+    // through to the SIMPLE parser.
+    if (status_ == EngineStatus::ERROR)
+    {
+        return false;
     }
     return parseSimpleSensorSetActionLocked(rhsBuf, out);
 }
@@ -537,6 +548,219 @@ bool MissionScriptEngine::parseSimpleSensorSetActionLocked(const char* rhsBuf,
     return true;
 }
 
+// ── parseExprTermLocked ───────────────────────────────────────────────────────
+
+/**
+ * @brief Resolve a single expression token to an @c ExprOperand (AMS-4.8.8).
+ *
+ * Resolution order:
+ *   1. Token contains @c '.'  → attempt SENSOR (ALIAS.field).
+ *   2. Token parses as @c float → LITERAL.
+ *   3. Token matches a declared variable → VARIABLE.
+ *   4. None of the above → parse error.
+ *
+ * @param[in]  token  NUL-terminated whitespace-free token from expression RHS.
+ * @param[out] out    ExprOperand struct to populate.
+ * @return @c true on success; @c false with error set on failure.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseExprTermLocked(const char* token, ExprOperand& out)
+{
+    ARES_ASSERT(token != nullptr);
+
+    // SENSOR: token contains '.' — try ALIAS.field first.
+    if (strchr(token, '.') != nullptr)
+    {
+        char aliasStr[16] = {};
+        char fieldStr[20] = {};
+        if (splitAliasDotField(token, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+        {
+            const AliasEntry* ae = findAliasLocked(aliasStr);
+            if (ae != nullptr)
+            {
+                SensorField sf = SensorField::ALT;
+                if (parseSensorField(ae->kind, fieldStr, sf))
+                {
+                    out.kind  = ExprOperand::Kind::SENSOR;
+                    ares::util::copyZ(out.name, aliasStr, sizeof(out.name));
+                    out.field = sf;
+                    return true;
+                }
+                char msg[80] = {};
+                snprintf(msg, sizeof(msg),
+                         "set expr: field '%s' not valid for alias '%s'",
+                         fieldStr, aliasStr);
+                setErrorLocked(msg);
+                return false;
+            }
+        }
+        // Dot present but not a recognised alias — fall through to float/var.
+    }
+
+    // LITERAL: token parses as a floating-point constant.
+    float val = 0.0f;
+    if (parseFloatValue(token, val))
+    {
+        out.kind    = ExprOperand::Kind::LITERAL;
+        out.literal = val;
+        return true;
+    }
+
+    // VARIABLE: token matches a declared variable name.
+    const VarEntry* v = findVarLocked(token);
+    if (v != nullptr)
+    {
+        out.kind = ExprOperand::Kind::VARIABLE;
+        ares::util::copyZ(out.name, token, sizeof(out.name));
+        return true;
+    }
+
+    char msg[72] = {};
+    snprintf(msg, sizeof(msg),
+             "set expr: '%s' is not a sensor, variable, or literal", token);
+    setErrorLocked(msg);
+    return false;
+}
+
+// ── stripAndTokenizeExpr (file-local helper) ────────────────────────────────
+
+/**
+ * @brief Strip parentheses from @p rhs and split on whitespace into tokens.
+ *
+ * @param[in]  rhs      NUL-terminated expression RHS string.
+ * @param[out] tokens   2-D token buffer; each slot holds up to 31 characters + NUL.
+ * @param[in]  maxToks  Capacity of the @p tokens array.
+ * @return Actual token count, or @p maxToks + 1 as an overflow sentinel when
+ *         the input contains more than @p maxToks tokens.
+ */
+static uint8_t stripAndTokenizeExpr(const char* rhs,
+                                    char        tokens[][32],
+                                    uint8_t     maxToks)
+{
+    // Strip parentheses into a working buffer.
+    char     work[96] = {};
+    uint32_t wIdx     = 0U;
+    for (const char* p = rhs; *p != '\0' && wIdx < sizeof(work) - 1U; p++)
+    {
+        if (*p != '(' && *p != ')') { work[wIdx++] = *p; }
+    }
+    work[wIdx] = '\0';
+
+    // Tokenize by whitespace.
+    uint8_t     tokCount = 0U;
+    const char* p        = work;
+    while (*p != '\0' && tokCount < maxToks)
+    {
+        while (*p == ' ' || *p == '\t') { p++; }
+        if (*p == '\0') { break; }
+        uint32_t tLen = 0U;
+        while (*p != '\0' && *p != ' ' && *p != '\t' && tLen < 31U)
+        {
+            tokens[tokCount][tLen++] = *p++;
+        }
+        tokens[tokCount][tLen] = '\0';
+        tokCount++;
+    }
+    // Overflow sentinel: non-whitespace remains after maxToks tokens.
+    while (*p == ' ' || *p == '\t') { p++; }
+    return (*p != '\0') ? static_cast<uint8_t>(maxToks + 1U) : tokCount;
+}
+
+// ── parseExprSetActionLocked ──────────────────────────────────────────────────
+
+/**
+ * @brief Attempt to parse the RHS of a @c set statement as an arithmetic
+ *        expression (AMS-4.8.8).
+ *
+ * Accepted syntax (after stripping parentheses):
+ * @code
+ *   TERM op TERM [op TERM]
+ * @endcode
+ * where TERM is @c ALIAS.field, a declared variable name, or a float literal,
+ * and @c op is one of @c + @c - @c * @c /.  Evaluation is strictly
+ * left-to-right: <tt>((T0 op0 T1) op1 T2)</tt>.
+ *
+ * @param[in]  rhsBuf  Trimmed RHS string (everything after @c "= ").
+ * @param[out] out     SetAction struct to populate on success.
+ * @return @c true if the expression was recognised and parsed successfully.
+ *         @c false without setting an error if the RHS does not match the
+ *         expression pattern (caller may try other forms).
+ *         @c false with an error set if the pattern matches but a term is
+ *         invalid (caller must not fall through).
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseExprSetActionLocked(const char* rhsBuf,
+                                                   SetAction&  out)
+{
+    ARES_ASSERT(rhsBuf != nullptr);
+
+    // Strip parentheses and tokenize: T OP T [OP T] → up to 5 whitespace-delimited tokens.
+    static constexpr uint8_t kMaxToks = 5U;
+    char          tokens[kMaxToks][32] = {};
+    const uint8_t tokCount = stripAndTokenizeExpr(rhsBuf, tokens, kMaxToks);
+
+    // Require exactly 3 or 5 tokens (odd count in [3,5]).
+    if (tokCount < 3U || tokCount > 5U || (tokCount % 2U) == 0U)
+    {
+        return false; // Not an expression — let caller try SIMPLE.
+    }
+
+    // Tokens at odd positions (1, 3) must be single-character arithmetic
+    // operators.  If they are not, this is not an expression.
+    for (uint8_t i = 1U; i < tokCount; i += 2U)
+    {
+        const char oc = tokens[i][0];
+        if (tokens[i][1] != '\0' ||
+            (oc != '+' && oc != '-' && oc != '*' && oc != '/'))
+        {
+            return false; // Not an expression.
+        }
+    }
+
+    // Parse each TERM operand (tokens at even positions 0, 2, 4).
+    const uint8_t termCount = static_cast<uint8_t>((tokCount + 1U) / 2U);
+    ExprOperand terms[SetAction::kMaxExprTerms] = {};
+    for (uint8_t i = 0U; i < termCount; i++)
+    {
+        if (!parseExprTermLocked(tokens[static_cast<size_t>(i) * 2U], terms[i]))
+        {
+            return false; // Error already set by parseExprTermLocked.
+        }
+    }
+
+    // Build operator array; reject division by literal zero at parse time.
+    ExprOp ops[SetAction::kMaxExprTerms - 1U] = {};
+    for (uint8_t i = 0U; i < termCount - 1U; i++)
+    {
+        const char oc = tokens[static_cast<size_t>(i) * 2U + 1U][0];
+        switch (oc)
+        {
+        case '+': ops[i] = ExprOp::ADD; break;
+        case '-': ops[i] = ExprOp::SUB; break;
+        case '*': ops[i] = ExprOp::MUL; break;
+        case '/':
+            ops[i] = ExprOp::DIV;
+            if (terms[i + 1U].kind == ExprOperand::Kind::LITERAL &&
+                terms[i + 1U].literal == 0.0f)
+            {
+                setErrorLocked("set expr: division by literal zero");
+                return false;
+            }
+            break;
+        default:
+            setErrorLocked("set expr: unrecognised operator");
+            return false;
+        }
+    }
+
+    // Commit to out.
+    out.kind          = SetActionKind::EXPR;
+    out.exprTermCount = termCount;
+    for (uint8_t i = 0U; i < termCount;         i++) { out.exprTerms[i] = terms[i]; }
+    for (uint8_t i = 0U; i < termCount - 1U;    i++) { out.exprOps[i]   = ops[i];   }
+    return true;
+}
+
 // ── parseSetActionLineLocked ─────────────────────────────────────────────────
 
 /**
@@ -549,7 +773,13 @@ bool MissionScriptEngine::parseSimpleSensorSetActionLocked(const char* rhsBuf,
  *   set VARNAME = ALIAS.field delta                  -- current minus previous (AMS-4.8.3)
  *   set VARNAME = max(VARNAME, ALIAS.field)          -- running maximum (AMS-4.8.4)
  *   set VARNAME = min(VARNAME, ALIAS.field)          -- running minimum (AMS-4.8.5)
+ *   set VARNAME = TERM op TERM [op TERM]             -- arithmetic expression (AMS-4.8.8)
  * @endcode
+ *
+ * For AMS-4.8.8 each TERM is @c ALIAS.field, a declared variable name, or a
+ * float literal; @c op is @c + @c - @c * or @c /.  Evaluation is strictly
+ * left-to-right.  Parentheses are stripped before parsing and have no effect
+ * on evaluation order.
  *
  * @param[in]  line  Script line starting with @c "set ".
  * @param[out] st    State being populated.
