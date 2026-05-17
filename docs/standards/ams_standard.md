@@ -728,6 +728,53 @@ Rules:
   `LOG.report` when variable values must be persisted.
 - The variable name is limited to 15 characters (`AMS_VAR_NAME_LEN - 1`).
 
+### AMS-4.8.8 Arithmetic Expression in `set` Statements
+
+A `set` statement may use an arithmetic expression as its right-hand side,
+allowing derived values to be computed from two or three operands:
+
+```ams
+set alt_agl  = BARO.alt - ground_alt
+set vvel_avg = ( BARO.alt - prev_alt ) / 0.5
+set alt_off  = BARO.alt + 10.0
+```
+
+**Syntax** (after stripping all `(` and `)` characters, which are purely cosmetic):
+
+```
+set VARNAME = TERM op TERM [op TERM]
+```
+
+Where:
+- `TERM` is one of: `ALIAS.field` (sensor reading), a declared variable name, or a
+  float literal.
+- `op` is one of `+`, `-`, `*`, `/` (a single character, space-separated).
+- Two or three terms are supported.
+
+**Evaluation order:** Strictly left-to-right.  `A - B / C` evaluates as
+`(A - B) / C`, not `A - (B / C)`.  Parentheses have no effect on precedence;
+they are stripped before tokenisation and may be used as documentation only.
+
+**Parse-time errors** (prevent `activate()` from succeeding):
+- The divisor operator `/` with a literal `0` or `0.0` as the right operand.
+- An unrecognised peripheral alias in a sensor term (e.g. `NOPE.alt`).
+
+**Runtime error policy** — if any of the following conditions occur, an
+`EVENT.warning` with code `SENSOR_FAILURE` is emitted and the target variable
+is left **unchanged** (its previous value and validity are preserved):
+- A sensor read fails (driver returns an error).
+- A variable operand has not yet been set (`valid == false`).
+- The result is ±∞ or NaN (e.g. runtime division by zero).
+
+**Constraints:**
+- A maximum of three terms (two operators) per expression.
+- Each term is resolved at runtime; no constant folding is performed at parse time.
+- Expressions may appear in `on_enter:`, `on_exit:`, and task `if:` set actions.
+- The target variable is counted toward the `AMS_MAX_SET_ACTIONS` limit per block.
+
+> *Implementation note:* The engine represents this form internally as
+> `SetActionKind::EXPR` (value 5).
+
 ---
 
 ## AMS-4.9 Sensor Fault Tolerance
@@ -858,7 +905,7 @@ transition to LANDED when BARO.alt < (ground_alt - 5)
   transitions before the calibration state has executed.
 - The offset form `(varname ± offset)` is evaluated as `var.value + offset`.
 
-### AMS-4.8.7 Checkpoint Persistence (v3)
+### AMS-4.8.9 Checkpoint Persistence (v3)
 
 Variables and per-slot HK/LOG timers are persisted in the AMS checkpoint file (version 3):
 

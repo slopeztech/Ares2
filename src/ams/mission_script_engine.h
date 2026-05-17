@@ -447,6 +447,38 @@ private:
         DELTA     = 2U, ///< var = ALIAS.field delta (curr - prev)   (AMS-4.8.3)
         MAX_VAR   = 3U, ///< var = max(var, ALIAS.field)             (AMS-4.8.4)
         MIN_VAR   = 4U, ///< var = min(var, ALIAS.field)             (AMS-4.8.5)
+        EXPR      = 5U, ///< var = TERM op TERM [op TERM]            (AMS-4.8.8)
+    };
+
+    /** Binary operator for an arithmetic set-expression (AMS-4.8.8). */
+    enum class ExprOp : uint8_t
+    {
+        ADD = 0U, ///< Addition (+).
+        SUB = 1U, ///< Subtraction (-).
+        MUL = 2U, ///< Multiplication (*).
+        DIV = 3U, ///< Division (/).
+    };
+
+    /**
+     * @brief One value-producing operand in an AMS-4.8.8 arithmetic expression.
+     *
+     * The @c name field doubles as the peripheral alias (SENSOR kind) or the
+     * declared variable name (VARIABLE kind); @c literal is used only for LITERAL.
+     */
+    struct ExprOperand
+    {
+        /** Source kind of this operand. */
+        enum class Kind : uint8_t
+        {
+            SENSOR   = 0U, ///< Read ALIAS.field from a peripheral at execute time.
+            VARIABLE = 1U, ///< Read a declared global variable at execute time.
+            LITERAL  = 2U, ///< Fixed @c float constant resolved at parse time.
+        };
+
+        Kind        kind    = Kind::LITERAL;             ///< Operand source.
+        char        name[ares::AMS_VAR_NAME_LEN] = {};  ///< SENSOR: alias; VARIABLE: variable name.
+        SensorField field   = SensorField::ALT;          ///< SENSOR only: field selector.
+        float       literal = 0.0f;                      ///< LITERAL only: constant value.
     };
 
     /**
@@ -456,7 +488,7 @@ private:
     struct SetAction
     {
         char          varName[ares::AMS_VAR_NAME_LEN] = {};  ///< Target variable name.
-        char          alias[16]      = {};                    ///< Sensor peripheral alias.
+        char          alias[16]      = {};                    ///< Sensor peripheral alias (SIMPLE/CALIBRATE/DELTA/MAX_VAR/MIN_VAR).
         SensorField   field          = SensorField::ALT;      ///< Sensor field to read.
         SetActionKind kind           = SetActionKind::SIMPLE; ///< Computation kind.
         uint8_t       calibSamples   = 1U;    ///< Samples to average (CALIBRATE form, 1–AMS_CALIBRATE_MAX_SAMPLES).
@@ -471,6 +503,15 @@ private:
         uint8_t calibValidN     = 0U;     ///< Valid (non-failed) samples collected.
         uint8_t calibCollected  = 0U;     ///< Total sample attempts so far.
         bool    calibInProgress = false;  ///< True while async calibration is running.
+
+        // ── AMS-4.8.8: arithmetic expression ─────────────────────────────────
+        // Used when kind == EXPR.  Up to kMaxExprTerms value-producing operands
+        // connected by (kMaxExprTerms - 1) binary operators, evaluated strictly
+        // left-to-right:  result = ((terms[0] op[0] terms[1]) op[1] terms[2]).
+        static constexpr uint8_t kMaxExprTerms = 3U;         ///< Supports up to (A op B) op C.
+        ExprOperand exprTerms[kMaxExprTerms]     = {};        ///< Operands (first exprTermCount entries are valid).
+        ExprOp      exprOps[kMaxExprTerms - 1U]  = {};        ///< Operators between consecutive terms.
+        uint8_t     exprTermCount                = 0U;        ///< Actual number of terms (2 or 3).
     };
 
     /** Severity level for AMS on_enter and task rule events (AMS-4.7). */
@@ -885,7 +926,11 @@ private:
                                     const char* varName,
                                     SetAction&  out);
     bool parseDeltaSetActionLocked(const char* rhsBuf, SetAction& out);
+    bool parseExprSetActionLocked(const char* rhsBuf, SetAction& out);      ///< AMS-4.8.8: parse arithmetic expression RHS.
+    bool parseExprTermLocked(const char* token, ExprOperand& out);          ///< Resolve one expression token to an ExprOperand.
+    bool buildExprOpsLocked(const char tokens[][32], uint8_t termCount, const ExprOperand terms[], ExprOp ops[]); ///< AMS-4.8.8: map operator tokens → ExprOp[]; guard literal ÷0.
     bool parseSimpleSensorSetActionLocked(const char* rhsBuf, SetAction& out);
+    bool evaluateExprOperandLocked(const ExprOperand& op, float& value) const; ///< AMS-4.8.8: resolve one operand to float at runtime.
     bool parseTaskLineLocked(const char* line);                        ///< AMS-11: parse task NAME[:when in…]: header.
     bool parseTaskWhenInClauseLocked(const char* line, const char* whenIn, TaskDef& td);
     bool parseTaskScopedLineLocked(const char* line, BlockType& blockType); ///< AMS-11: parse lines inside a task block.
@@ -1005,6 +1050,7 @@ private:
     void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint64_t nowMs);
     void executeDeltaSetActionLocked(SetAction& act, float& result, bool& gotReading);
     void executeMinMaxSetActionLocked(SetAction& act, const VarEntry* v, float& result, bool& gotReading);
+    void executeExprSetActionLocked(SetAction& act, float& result, bool& gotReading, uint64_t nowMs); ///< AMS-4.8.8: evaluate arithmetic expression.
     void runTasksLocked(uint64_t nowMs);                            ///< AMS-11: evaluate all background tasks.
     bool evaluateTaskRuleCondLocked(const TaskRule& rule, uint64_t nowMs, bool& condResult) const;
     bool resolveVarThresholdLocked(const CondExpr& cond, float& outThreshold) const;
