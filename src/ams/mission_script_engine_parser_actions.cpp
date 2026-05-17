@@ -659,6 +659,14 @@ static uint8_t stripAndTokenizeExpr(const char* rhs,
             tokens[tokCount][tLen++] = *p++;
         }
         tokens[tokCount][tLen] = '\0';
+        // Token-length overflow: remainder of the token is not whitespace.
+        // Skip to the next word boundary and return the overflow sentinel so
+        // the caller rejects the expression rather than mis-tokenizing it.
+        if (*p != '\0' && *p != ' ' && *p != '\t')
+        {
+            while (*p != '\0' && *p != ' ' && *p != '\t') { p++; }
+            return static_cast<uint8_t>(maxToks + 1U);
+        }
         tokCount++;
     }
     // Overflow sentinel: non-whitespace remains after maxToks tokens.

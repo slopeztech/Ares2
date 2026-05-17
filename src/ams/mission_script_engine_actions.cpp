@@ -453,10 +453,13 @@ void MissionScriptEngine::executeOneSetActionLocked(SetAction& act, uint64_t now
         v->valid = true;
         checkpointDirty_ = true; // var updated — checkpoint on next 1 s window
     }
-    else if (act.kind == SetActionKind::CALIBRATE && act.calibInProgress)
+    else if ((act.kind == SetActionKind::CALIBRATE && act.calibInProgress) ||
+             act.kind == SetActionKind::EXPR)
     {
-        // AMS-4.8.2: async calibration in progress — variable will be updated
-        // on a future tick once all samples are gathered.  Not a failure.
+        // AMS-4.8.2: async CALIBRATE in progress — variable updated on a future tick.
+        // AMS-4.8.8: expression executor already emitted a specific EVENT.warning;
+        //            suppress the generic "sensor read failed" event to avoid a
+        //            duplicate SENSOR_FAILURE with a misleading variable name.
     }
     else
     {

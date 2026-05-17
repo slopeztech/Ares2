@@ -217,10 +217,16 @@ static const char kScriptExprUnknownAlias[] =
 /**
  * Runtime skip: variable operand declared but never set (valid = false).
  *
- * `ground_alt` is never populated by a prior set action.  The executor must
- * detect that the operand is not yet valid, emit a warning, and leave
- * `alt_agl` unchanged.  The condition `BARO.alt > 99999` therefore never
- * fires (sim altitude stays at 150 m), and the engine stays in WAIT.
+ * `ground_alt` is declared but is never written by any set action, so its
+ * `valid` flag remains false.  The executor must detect this and leave
+ * `alt_agl` unchanged (also invalid).  The transition uses `alt_agl` itself
+ * as the RHS threshold (`BARO.alt > alt_agl`): because `alt_agl` is invalid,
+ * `resolveVarThresholdLocked` returns false and the condition never fires —
+ * the engine stays in WAIT.  If the executor were buggy and wrote
+ * `alt_agl = BARO.alt(0) − ground_alt.value(0) = 0` at t = 0 ms, the
+ * variable would become valid with value 0; the next tick at t = 2000 ms
+ * (BARO.alt = 150 m) would then satisfy `150 > 0` and transition to END,
+ * causing the test to fail.
  */
 static const char kScriptExprUnsetVarOperand[] =
     "include SIM_GPS as GPS\n"
@@ -238,7 +244,7 @@ static const char kScriptExprUnsetVarOperand[] =
     "state WAIT:\n"
     "  on_enter:\n"
     "    set alt_agl = BARO.alt - ground_alt\n"
-    "  transition to END when BARO.alt > 99999\n"
+    "  transition to END when BARO.alt > alt_agl\n"
     "\n"
     "state END:\n"
     "  on_enter:\n"
@@ -436,10 +442,17 @@ void test_set_expr_unknown_alias_rejected()
 //
 // `ground_alt` is declared with `var ground_alt = 0.0` but is never written by
 // a set action — its `valid` flag therefore remains false.
-// When `set alt_agl = BARO.alt - ground_alt` fires in WAIT on_enter, the
-// executor detects that ground_alt is not valid and aborts without writing
-// alt_agl.  The condition `BARO.alt > 99999` is never true (sim altitude
-// stays at 150 m), so the engine remains in WAIT.
+// When `set alt_agl = BARO.alt - ground_alt` fires in WAIT on_enter at t = 0
+// (BARO.alt = 0 m), the executor detects that ground_alt is not valid and
+// aborts without writing alt_agl (alt_agl remains invalid).
+//
+// The transition `BARO.alt > alt_agl` uses alt_agl as a variable threshold.
+// Because alt_agl is invalid, resolveVarThresholdLocked returns false and the
+// condition never fires — the engine stays in WAIT at t = 2000 ms (BARO = 150 m).
+//
+// If the executor were buggy and wrote alt_agl = 0 − 0 = 0 (using the raw
+// default value), alt_agl.valid would become true and the transition
+// `150 > 0` would fire at t = 2000 ms, transitioning to END and failing the test.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void test_set_expr_unset_var_operand_skips_update()
@@ -457,10 +470,11 @@ void test_set_expr_unset_var_operand_skips_update()
     TEST_ASSERT_EQUAL_STRING("WAIT", snap.stateName);
 
     // Advance to t = 2000 ms (BARO.alt = 150 m).
+    // If alt_agl were written (bug), threshold = 0 and 150 > 0 → transition fires.
+    // With the fix, alt_agl remains invalid → condition always false → still WAIT.
     ares::sim::clock::advanceMs(2000U);
     f.engine.tick(ares::sim::clock::nowMs());
     f.engine.getSnapshot(snap);
 
-    // alt_agl was never updated → condition TC LAUNCH never received → still WAIT.
     TEST_ASSERT_EQUAL_STRING("WAIT", snap.stateName);
 }
