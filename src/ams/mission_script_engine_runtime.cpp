@@ -102,6 +102,9 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
     // conditions are checked this tick.
     stepPendingCalibrationsLocked(state, nowMs);
 
+    // AMS-4.19.3: disarm channels whose arm_timeout has expired (proactive clear).
+    checkPulseArmTimeoutsLocked(nowMs);
+
     if (evaluateTransitionAndMaybeEnterLocked(state, nowMs)) { return; }
 
     if (checkOnTimeoutLocked(state, nowMs)) { return; }

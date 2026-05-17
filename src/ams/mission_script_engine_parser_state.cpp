@@ -195,7 +195,8 @@ bool MissionScriptEngine::parseOnEnterBlockLineLocked(const char* line, StateDef
     if (startsWith(line, evtPrefix))       { return parseEventLineLocked(line, st); }
     if (startsWith(line, "set "))          { return parseSetActionLineLocked(line, st); }
     if (startsWith(line, "PULSE.fire "))   { return parsePulseFireLineLocked(line, st); }  // AMS-4.17
-    setErrorLocked("only EVENT.*, set and PULSE.fire are allowed inside on_enter");
+    if (startsWith(line, "PULSE.arm "))    { return parsePulseArmLineLocked(line, st); }   // AMS-4.19.1
+    setErrorLocked("only EVENT.*, set, PULSE.fire and PULSE.arm are allowed inside on_enter");
     return false;
 }
 

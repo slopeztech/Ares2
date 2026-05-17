@@ -132,6 +132,8 @@ void MissionScriptEngine::initProgramParseStateLocked()
     parseCurrentHkSlot_   = 0xFFU;
     parseCurrentLogSlot_  = 0xFFU;
     parseSeenState_       = false;
+
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++) { pulseChannelUsed_[i] = false; }
 }
 
 // ── finalizeScriptLocked ─────────────────────────────────────────────────────
@@ -159,6 +161,16 @@ bool MissionScriptEngine::finalizeScriptLocked()
 
     // AMS-5.1: warn about obviously shadowed transitions (first-match-wins ordering).
     warnShadowedTransitionsLocked(0ULL);
+
+    // AMS-4.18: warn about declared pulse channels that are never fired.
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+    {
+        if (program_.pulseDecls[i].declared && !pulseChannelUsed_[i])
+        {
+            LOG_W(TAG, "pulse.channel '%s' (ch %u) declared but never used in PULSE.fire",
+                  program_.pulseDecls[i].label, static_cast<uint32_t>(i));
+        }
+    }
 
     return true;
 }

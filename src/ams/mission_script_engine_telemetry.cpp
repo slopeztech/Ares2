@@ -43,6 +43,8 @@ using ares::proto::STATUS_FCS_ACTIVE;
 using ares::proto::STATUS_GPS_VALID;
 using ares::proto::STATUS_PULSE_A_FIRED;
 using ares::proto::STATUS_PULSE_B_FIRED;
+using ares::proto::STATUS_PULSE_C_FIRED;
+using ares::proto::STATUS_PULSE_D_FIRED;
 using ares::proto::STATUS_DELTA_FRAME;
 
 using detail::formatScaledFloat;
@@ -262,7 +264,8 @@ ares::proto::StatusBits MissionScriptEngine::buildStatusBitsLocked() const
 
     if (pulseAFired_) { bits |= STATUS_PULSE_A_FIRED; }
     if (pulseBFired_) { bits |= STATUS_PULSE_B_FIRED; }
-    // STATUS_RESERVED bits remain 0 (initialized to 0U).
+    if (pulseCFired_) { bits |= STATUS_PULSE_C_FIRED; }
+    if (pulseDFired_) { bits |= STATUS_PULSE_D_FIRED; }
     return bits;
 }
 

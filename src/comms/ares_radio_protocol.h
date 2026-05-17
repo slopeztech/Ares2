@@ -204,7 +204,8 @@ static constexpr uint8_t STATUS_GPS_VALID    = 0x04U;  ///< Bit 2: GPS fix valid
 static constexpr uint8_t STATUS_PULSE_A_FIRED = 0x08U;  ///< Bit 3: pulse channel A fired.
 static constexpr uint8_t STATUS_PULSE_B_FIRED = 0x10U;  ///< Bit 4: pulse channel B fired.
 static constexpr uint8_t STATUS_DELTA_FRAME  = 0x20U;  ///< Bit 5: delta-encoded frame (APUS-3.3).
-static constexpr uint8_t STATUS_RESERVED     = 0xC0U;  ///< Bits 6–7: reserved, must be zero.
+static constexpr uint8_t STATUS_PULSE_C_FIRED = 0x40U;  ///< Bit 6: pulse channel C fired.
+static constexpr uint8_t STATUS_PULSE_D_FIRED = 0x80U;  ///< Bit 7: pulse channel D fired.
 
 /// Status byte type alias (APUS-3.2).
 using StatusBits = uint8_t;

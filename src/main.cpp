@@ -58,7 +58,17 @@ static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
 static Adxl375Driver  imu2(imuWire, ares::ADXL375_I2C_ADDR);
 static NeopixelDriver led(ares::PIN_LED_RGB);
 static StatusLed      statusLed(led);
-static PulseDriver    pulse(ares::PIN_DROGUE, ares::PIN_MAIN);
+// Pulse channel configuration.  Fire and continuity-sense GPIOs come from
+// config.h.  Set PIN_PULSE_x = PIN_NO_FIRE to disable a fire channel; its GPIO
+// can then be assigned to PIN_PULSE_y_CONT for another channel's continuity
+// sense without any change here (see config.h for the 2-fire + 2-cont example).
+static const PulseDriver::ChannelConfig kPulseChannels[PulseChannel::COUNT] = {
+    { ares::PIN_PULSE_A, ares::PIN_PULSE_A_CONT },  // CH_A
+    { ares::PIN_PULSE_B, ares::PIN_PULSE_B_CONT },  // CH_B
+    { ares::PIN_PULSE_C, ares::PIN_PULSE_C_CONT },  // CH_C
+    { ares::PIN_PULSE_D, ares::PIN_PULSE_D_CONT },  // CH_D
+};
+static PulseDriver pulse(kPulseChannels);
 
 // WiFi Access Point (sys layer) — ground configuration link.
 static WifiAp wifiAp;

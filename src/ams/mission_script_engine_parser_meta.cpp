@@ -203,6 +203,43 @@ bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
     return true;
 }
 
+bool MissionScriptEngine::parsePulsePreStateDirectiveLocked(const char* line, bool& handled)
+{
+    handled = true;
+    if (startsWith(line, "pulse.channel "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.channel' must appear before any state block"); return false; }
+        return parsePulseChannelLineLocked(line);
+    }
+    if (startsWith(line, "pulse.require_continuity "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.require_continuity' must appear before any state block"); return false; }
+        return parsePulseRequireContinuityLineLocked(line);
+    }
+    if (startsWith(line, "pulse.min_altitude "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.min_altitude' must appear before any state block"); return false; }
+        return parsePulseMinAltLineLocked(line);
+    }
+    if (startsWith(line, "pulse.safe_delay "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.safe_delay' must appear before any state block"); return false; }
+        return parsePulseSafeDelayLineLocked(line);
+    }
+    if (startsWith(line, "pulse.arm_timeout "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.arm_timeout' must appear before any state block"); return false; }
+        return parsePulseArmTimeoutLineLocked(line);
+    }
+    if (startsWith(line, "pulse.no_baro_policy "))
+    {
+        if (parseSeenState_) { setErrorLocked("'pulse.no_baro_policy' must appear before any state block"); return false; }
+        return parsePulseNoBaroPolicyLineLocked(line);
+    }
+    handled = false;
+    return true;
+}
+
 bool MissionScriptEngine::parsePreStateDirectiveLocked(const char* line, bool& handled)
 {
     handled = true;
@@ -236,7 +273,347 @@ bool MissionScriptEngine::parsePreStateDirectiveLocked(const char* line, bool& h
         if (parseSeenState_) { setErrorLocked("'const' must appear before any state block"); return false; }
         return parseConstLineLocked(line);
     }
+    if (startsWith(line, "pulse."))
+    {
+        return parsePulsePreStateDirectiveLocked(line, handled);
+    }
     handled = false;
+    return true;
+}
+
+// ── parsePulseChannelLineLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.channel directive in the metadata section (AMS-4.18).
+ *
+ * Syntax: @c "pulse.channel X [as LABEL]"
+ *
+ * @p X is the channel letter: @c A, @c B, @c C, or @c D.
+ * The optional @c as @c LABEL assigns a human-readable alias (e.g. DROGUE, MAIN)
+ * that can be used in @c PULSE.fire instead of the bare letter.
+ * Labels must be ≤ @c AMS_PULSE_LABEL_LEN−1 characters and may only contain
+ * alphanumeric characters and underscores.  Duplicate declarations for the
+ * same channel are rejected as parse errors.
+ *
+ * @param[in] line  Script line starting with @c "pulse.channel ".
+ * @return @c true if the directive was parsed and the declaration stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseChannelLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    // Skip "pulse.channel " prefix (14 characters).
+    static constexpr uint8_t kPrefixLen = 14U;
+    const char* rest = line + kPrefixLen;
+
+    // Parse channel letter (A, B, C, D).
+    uint8_t channelIdx = 0xFFU;
+    if      (rest[0] == 'A') { channelIdx = PulseChannel::CH_A; }
+    else if (rest[0] == 'B') { channelIdx = PulseChannel::CH_B; }
+    else if (rest[0] == 'C') { channelIdx = PulseChannel::CH_C; }
+    else if (rest[0] == 'D') { channelIdx = PulseChannel::CH_D; }
+    else
+    {
+        setErrorLocked("pulse.channel: channel must be A, B, C, or D");
+        return false;
+    }
+
+    // Channel letter must be followed by end-of-line or space.
+    if (rest[1] != '\0' && rest[1] != ' ')
+    {
+        setErrorLocked("pulse.channel: unexpected characters after channel letter");
+        return false;
+    }
+
+    if (program_.pulseDecls[channelIdx].declared)
+    {
+        setErrorLocked("pulse.channel: duplicate declaration for the same channel");
+        return false;
+    }
+
+    // Parse and validate the optional label; fills label[] on success.
+    char label[ares::AMS_PULSE_LABEL_LEN] = {};
+    if (!parsePulseChannelLabelLocked(rest, label)) { return false; }
+
+    program_.pulseDecls[channelIdx].declared = true;
+    ares::util::copyZ(program_.pulseDecls[channelIdx].label, label,
+                      sizeof(program_.pulseDecls[channelIdx].label));
+    LOG_I(TAG, "pulse.channel %c declared as '%s'", rest[0], label);
+    return true;
+}
+
+bool MissionScriptEngine::parsePulseChannelLabelLocked(const char* rest, char* labelOut)
+{
+    const char* asPtr = strstr(rest + 1U, " as ");
+    if (asPtr != nullptr)
+    {
+        const char* labelStart = asPtr + 4U;  // skip " as "
+        if (*labelStart == '\0')
+        {
+            setErrorLocked("pulse.channel: empty label after 'as'");
+            return false;
+        }
+
+        // Validate label charset: [A-Z][a-z][0-9][_] only.
+        uint8_t len = 0U;
+        for (const char* p = labelStart; *p != '\0' && *p != ' '; p++)
+        {
+            const char c = *p;
+            const bool ok = (c >= 'A' && c <= 'Z')
+                         || (c >= 'a' && c <= 'z')
+                         || (c >= '0' && c <= '9')
+                         || (c == '_');
+            if (!ok)
+            {
+                setErrorLocked("pulse.channel: label contains invalid character");
+                return false;
+            }
+            if (len >= ares::AMS_PULSE_LABEL_LEN - 1U)
+            {
+                setErrorLocked("pulse.channel: label exceeds maximum length");
+                return false;
+            }
+            labelOut[len++] = c;
+        }
+        labelOut[len] = '\0';
+
+        // Check for conflict with another already-declared channel's label.
+        for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+        {
+            if (program_.pulseDecls[i].declared
+                && strcmp(program_.pulseDecls[i].label, labelOut) == 0)
+            {
+                setErrorLocked("pulse.channel: label already used by another channel");
+                return false;
+            }
+        }
+    }
+    else
+    {
+        // No alias — use the channel letter as the label.
+        labelOut[0] = rest[0];
+        labelOut[1] = '\0';
+    }
+    return true;
+}
+
+// ── parsePulseRequireContinuityLineLocked ─────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.require_continuity directive (AMS-4.19.4).
+ *
+ * Syntax: @c "pulse.require_continuity X"
+ *
+ * @p X is a channel letter or declared alias.  The directive marks that channel
+ * so that @c checkPulseSafetyLocked() performs a @c readContinuity() call before
+ * allowing @c PULSE.fire.  Rejected at parse time if the channel has no physical
+ * continuity-sense GPIO wired (@c hasContPin() == false).
+ *
+ * @param[in] line  Script line starting with @c "pulse.require_continuity ".
+ * @return @c true on success.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseRequireContinuityLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    static constexpr uint8_t kPrefixLen = 25U; // "pulse.require_continuity "
+    const char* rest = line + kPrefixLen;
+
+    // Extract channel token (letter or alias).
+    char token[ares::AMS_PULSE_LABEL_LEN] = {};
+    uint8_t tokLen = 0U;
+    while (rest[tokLen] != '\0' && rest[tokLen] != ' ')
+    {
+        if (tokLen >= ares::AMS_PULSE_LABEL_LEN - 1U)
+        {
+            setErrorLocked("pulse.require_continuity: channel token too long");
+            return false;
+        }
+        token[tokLen] = rest[tokLen];
+        tokLen++;
+    }
+    token[tokLen] = '\0';
+    if (tokLen == 0U) { setErrorLocked("pulse.require_continuity: missing channel"); return false; }
+
+    const uint8_t ch = resolveChannelOrAliasLocked(token);
+    if (ch == 0xFFU) { setErrorLocked("pulse.require_continuity: unknown channel or undeclared alias"); return false; }
+    if (!program_.pulseDecls[ch].declared) { setErrorLocked("pulse.require_continuity: channel not declared with pulse.channel"); return false; }
+
+    // Continuity feature requires a real hardware sense pin — reject at parse time
+    // if none is wired, so the problem is caught before flight.
+    if (pulseIface_ != nullptr && !pulseIface_->hasContPin(ch))
+    {
+        setErrorLocked("pulse.require_continuity: channel has no hardware continuity-sense pin wired");
+        return false;
+    }
+
+    program_.pulseRequireContinuity[ch] = true;
+    LOG_I(TAG, "pulse.require_continuity: ch=%u enabled", static_cast<uint32_t>(ch));
+    return true;
+}
+
+// ── parsePulseMinAltLineLocked ────────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.min_altitude directive (AMS-4.19.2).
+ *
+ * Syntax: @c "pulse.min_altitude N"  (N in metres AGL, range [1, 50000])
+ *
+ * @param[in] line  Script line starting with @c "pulse.min_altitude ".
+ * @return @c true on success.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseMinAltLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    static constexpr uint8_t kPrefixLen = 19U; // "pulse.min_altitude "
+    const char* rest = line + kPrefixLen;
+
+    if (*rest == '\0') { setErrorLocked("pulse.min_altitude: missing value"); return false; }
+
+    char* endp = nullptr;
+    const long val = strtol(rest, &endp, 10);
+    if (endp == rest || val <= 0L || val > 50000L)
+    {
+        setErrorLocked("pulse.min_altitude: value must be in range [1, 50000] m");
+        return false;
+    }
+
+    if (program_.pulseHasMinAlt)
+    {
+        setErrorLocked("pulse.min_altitude: duplicate directive (only one allowed per script)");
+        return false;
+    }
+
+    program_.pulseHasMinAlt    = true;
+    program_.pulseMinAltitudeM = static_cast<uint32_t>(val);
+    LOG_I(TAG, "pulse.min_altitude = %" PRIu32 " m", program_.pulseMinAltitudeM);
+    return true;
+}
+
+// ── parsePulseSafeDelayLineLocked ─────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.safe_delay directive (AMS-4.19.5).
+ *
+ * Syntax: @c "pulse.safe_delay N"  (N in milliseconds, range [100, 60000])
+ *
+ * @param[in] line  Script line starting with @c "pulse.safe_delay ".
+ * @return @c true on success.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseSafeDelayLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    static constexpr uint8_t kPrefixLen = 17U; // "pulse.safe_delay "
+    const char* rest = line + kPrefixLen;
+
+    if (*rest == '\0') { setErrorLocked("pulse.safe_delay: missing value"); return false; }
+
+    char* endp = nullptr;
+    const long val = strtol(rest, &endp, 10);
+    if (endp == rest || val < 100L || val > 60000L)
+    {
+        setErrorLocked("pulse.safe_delay: value must be in range [100, 60000] ms");
+        return false;
+    }
+
+    if (program_.pulseSafeDelayMs != 0U)
+    {
+        setErrorLocked("pulse.safe_delay: duplicate directive (only one allowed per script)");
+        return false;
+    }
+
+    program_.pulseSafeDelayMs = static_cast<uint32_t>(val);
+    LOG_I(TAG, "pulse.safe_delay = %" PRIu32 " ms", program_.pulseSafeDelayMs);
+    return true;
+}
+
+// ── parsePulseArmTimeoutLineLocked ────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.arm_timeout directive (AMS-4.19.3).
+ *
+ * Syntax: @c "pulse.arm_timeout N"  (N in milliseconds, range [500, 300000])
+ *
+ * @param[in] line  Script line starting with @c "pulse.arm_timeout ".
+ * @return @c true on success.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseArmTimeoutLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    static constexpr uint8_t kPrefixLen = 18U; // "pulse.arm_timeout "
+    const char* rest = line + kPrefixLen;
+
+    if (*rest == '\0') { setErrorLocked("pulse.arm_timeout: missing value"); return false; }
+
+    char* endp = nullptr;
+    const long val = strtol(rest, &endp, 10);
+    if (endp == rest || val < 500L || val > 300000L)
+    {
+        setErrorLocked("pulse.arm_timeout: value must be in range [500, 300000] ms");
+        return false;
+    }
+
+    if (program_.pulseArmTimeoutMs != 0U)
+    {
+        setErrorLocked("pulse.arm_timeout: duplicate directive (only one allowed per script)");
+        return false;
+    }
+
+    program_.pulseArmTimeoutMs = static_cast<uint32_t>(val);
+    LOG_I(TAG, "pulse.arm_timeout = %" PRIu32 " ms", program_.pulseArmTimeoutMs);
+    return true;
+}
+
+// ── parsePulseNoBaroPolicyLineLocked ──────────────────────────────────────────
+
+/**
+ * @brief Parse a @c pulse.no_baro_policy directive (AMS-4.19.6).
+ *
+ * Syntax: @c "pulse.no_baro_policy allow|block"
+ *
+ * Controls what happens when @c pulse.min_altitude is declared but no
+ * barometric driver is registered in the engine.  @c allow causes the
+ * altitude gate to be skipped (fire proceeds); @c block suppresses fire
+ * and emits a warning.  Default when the directive is absent: @c block.
+ *
+ * @param[in] line  Script line starting with @c "pulse.no_baro_policy ".
+ * @return @c true on success.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseNoBaroPolicyLineLocked(const char* line)
+{
+    ARES_ASSERT(line != nullptr);
+
+    static constexpr uint8_t kPrefixLen = 21U; // "pulse.no_baro_policy "
+    const char* rest = line + kPrefixLen;
+
+    if (*rest == '\0') { setErrorLocked("pulse.no_baro_policy: missing value (expected 'allow' or 'block')"); return false; }
+
+    bool policyAllow = false;
+    if (strncmp(rest, "allow", 5U) == 0 && (rest[5] == '\0' || rest[5] == ' '))
+    {
+        policyAllow = true;
+    }
+    else if (strncmp(rest, "block", 5U) == 0 && (rest[5] == '\0' || rest[5] == ' '))
+    {
+        policyAllow = false;
+    }
+    else
+    {
+        setErrorLocked("pulse.no_baro_policy: invalid value (expected 'allow' or 'block')");
+        return false;
+    }
+
+    program_.pulseNoBaroPolicyAllow = policyAllow;
+    LOG_I(TAG, "pulse.no_baro_policy = %s", policyAllow ? "allow" : "block");
     return true;
 }
 

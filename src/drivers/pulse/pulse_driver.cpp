@@ -21,24 +21,36 @@ static constexpr const char* TAG = "PULSE";
 
 // ── Constructor ──────────────────────────────────────────────────────────────
 
-PulseDriver::PulseDriver(uint8_t pinA,
-                         uint8_t pinB,
-                         uint8_t contPinA,
-                         uint8_t contPinB)
+PulseDriver::PulseDriver(const ChannelConfig (&cfg)[PulseChannel::COUNT])
 {
-    channels_[PulseChannel::CH_A] = { pinA, contPinA, false };
-    channels_[PulseChannel::CH_B] = { pinB, contPinB, false };
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+    {
+        channels_[i] = { cfg[i].firePin, cfg[i].contPin, false };
+    }
 }
 
 // ── begin ────────────────────────────────────────────────────────────────────
 
 bool PulseDriver::begin()
 {
+    // Timer name prefix — indexed below per channel.
+    static const char* const kTimerNames[PulseChannel::COUNT] = {
+        "pulse_ch_a", "pulse_ch_b", "pulse_ch_c", "pulse_ch_d"
+    };
+
     // Configure fire GPIOs as OUTPUT LOW (safe / unarmed state).
+    // Skip channels whose firePin is kNoPinAssigned (not wired).
     for (uint8_t ch = 0U; ch < PulseChannel::COUNT; ch++)
     {
-        pinMode(channels_[ch].firePin, OUTPUT);
+        if (channels_[ch].firePin == kNoPinAssigned) { continue; }
+
+        // Pre-load the output latch LOW *before* switching direction to OUTPUT.
+        // This eliminates the theoretical glitch window where the pin could
+        // momentarily be HIGH when transitioning from INPUT to OUTPUT.
+        // ESP32 output register defaults to LOW after reset, but this makes
+        // the safe state explicit and independent of reset-state assumptions.
         digitalWrite(channels_[ch].firePin, LOW);
+        pinMode(channels_[ch].firePin, OUTPUT);
 
         if (channels_[ch].contPin != kNoPinAssigned)
         {
@@ -48,34 +60,35 @@ bool PulseDriver::begin()
 
     // Create one-shot FreeRTOS timers (static memory — PO10-3).
     // Period is a placeholder (1 tick); xTimerChangePeriod() sets the
-    // real duration before each fire.
-    timers_[PulseChannel::CH_A] = xTimerCreateStatic(
-        "pulse_ch_a",
-        1U,
-        pdFALSE,
-        &channels_[PulseChannel::CH_A],
-        timerCallback,
-        &timerBufs_[PulseChannel::CH_A]);
-
-    timers_[PulseChannel::CH_B] = xTimerCreateStatic(
-        "pulse_ch_b",
-        1U,
-        pdFALSE,
-        &channels_[PulseChannel::CH_B],
-        timerCallback,
-        &timerBufs_[PulseChannel::CH_B]);
-
-    if (timers_[PulseChannel::CH_A] == nullptr
-        || timers_[PulseChannel::CH_B] == nullptr)
+    // real duration before each fire.  Skip unwired channels.
+    for (uint8_t ch = 0U; ch < PulseChannel::COUNT; ch++)
     {
-        LOG_E(TAG, "timer creation failed");
-        return false;
+        if (channels_[ch].firePin == kNoPinAssigned)
+        {
+            timers_[ch] = nullptr;
+            continue;
+        }
+        timers_[ch] = xTimerCreateStatic(
+            kTimerNames[ch],
+            1U,
+            pdFALSE,
+            &channels_[ch],
+            timerCallback,
+            &timerBufs_[ch]);
+
+        if (timers_[ch] == nullptr)
+        {
+            LOG_E(TAG, "timer creation failed for channel %u", static_cast<uint32_t>(ch));
+            return false;
+        }
     }
 
     ready_ = true;
-    LOG_I(TAG, "ready (ch_a=GPIO%u ch_b=GPIO%u)",
+    LOG_I(TAG, "ready (a=GPIO%u b=GPIO%u c=GPIO%u d=GPIO%u)",
           static_cast<uint32_t>(channels_[PulseChannel::CH_A].firePin),
-          static_cast<uint32_t>(channels_[PulseChannel::CH_B].firePin));
+          static_cast<uint32_t>(channels_[PulseChannel::CH_B].firePin),
+          static_cast<uint32_t>(channels_[PulseChannel::CH_C].firePin),
+          static_cast<uint32_t>(channels_[PulseChannel::CH_D].firePin));
     return true;
 }
 
@@ -100,6 +113,11 @@ bool PulseDriver::fire(uint8_t channel, uint32_t durationMs)
     }
 
     ChannelData& ch = channels_[channel];
+    if (ch.firePin == kNoPinAssigned)
+    {
+        LOG_W(TAG, "fire rejected: channel %u not wired", static_cast<uint32_t>(channel));
+        return false;
+    }
     if (ch.fired)
     {
         LOG_W(TAG, "fire rejected: channel %u already fired", static_cast<uint32_t>(channel));
@@ -159,6 +177,14 @@ bool PulseDriver::isFired(uint8_t channel) const
 {
     if (channel >= PulseChannel::COUNT) { return false; }
     return channels_[channel].fired;
+}
+
+// ── hasContPin ───────────────────────────────────────────────────────────────
+
+bool PulseDriver::hasContPin(uint8_t channel) const
+{
+    if (channel >= PulseChannel::COUNT) { return false; }
+    return channels_[channel].contPin != kNoPinAssigned;
 }
 
 // ── timerCallback ────────────────────────────────────────────────────────────

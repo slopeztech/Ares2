@@ -435,9 +435,9 @@ TITLE: 3.11 Pulse Channel Commands
 UID: SRS-2950
 STATUS: Active
 TAGS: AMS, PULSE
-STATEMENT: An on_enter: block shall support at most AMS_MAX_PULSE_ACTIONS (2) PULSE.fire directives. Valid channel identifiers are A and B. Each directive shall accept an optional duration override in the form "Nms" (positive integer, milliseconds); if omitted, the PULSE driver's configured default duration shall be used. PULSE.fire directives are only permitted inside on_enter: blocks; use in any other block context shall be a parse error.
+STATEMENT: An on_enter: block shall support at most AMS_MAX_PULSE_ACTIONS (4) PULSE.fire directives. Valid channel identifiers are A, B, C, and D, as well as any label declared via pulse.channel (SRS-2952). Each directive shall accept an optional duration override in the form "Nms" (positive integer, milliseconds); if omitted, the PULSE driver's configured default duration shall be used. PULSE.fire directives are only permitted inside on_enter: blocks; use in any other block context shall be a parse error. A channel referenced in PULSE.fire must have been previously declared with a pulse.channel directive; referencing an undeclared channel or unknown alias shall be a parse error.
 VERIFICATION: Test
-RATIONALE: AMS-4.17. Pyrotechnic firing is a one-shot action naturally associated with state entry (e.g. apogee detection triggers the ejection charge). Restricting PULSE.fire to on_enter: enforces that each firing is tied to exactly one state transition event and cannot be re-triggered by timer slots.
+RATIONALE: AMS-4.17. Pyrotechnic firing is a one-shot action naturally associated with state entry (e.g. apogee detection triggers the ejection charge). Restricting PULSE.fire to on_enter: enforces that each firing is tied to exactly one state transition event and cannot be re-triggered by timer slots. Mandatory declaration (SRS-2952) provides an explicit safety audit trail for pyrotechnic channel usage.
 REFS: docs/standards/ams_standard.md AMS-4.17, src/config.h AMS_MAX_PULSE_ACTIONS
 
 [REQUIREMENT]
@@ -448,6 +448,15 @@ STATEMENT: A PULSE.fire action shall be executed synchronously by the PULSE driv
 VERIFICATION: Test
 RATIONALE: AMS-4.17 / DO-178C. Pyrotechnic channels must fail-safe: a rejected fire must halt the mission rather than silently skip the firing, which could mask a wiring fault or produce an unsafe partial-sequence scenario. The interlock prevents accidental firing during bench test activations.
 REFS: docs/standards/ams_standard.md AMS-4.17
+
+[REQUIREMENT]
+UID: SRS-2952
+STATUS: Active
+TAGS: AMS, PULSE, Safety
+STATEMENT: A script shall declare every pulse channel it intends to use via a "pulse.channel X [as LABEL]" directive in the metadata section (before any state block). Valid channel letters are A, B, C, and D. Each channel may be declared at most once; a duplicate declaration shall be a parse error. The optional "as LABEL" clause assigns a human-readable alias; the label shall consist solely of alphanumeric characters and underscores, shall not exceed 15 characters, and shall be unique among all declared channel labels in the script. The parser shall emit a warning (LOG_W) if a declared channel is never referenced in any PULSE.fire directive.
+VERIFICATION: Test
+RATIONALE: AMS-4.18. Explicit declaration makes the pyrotechnic intent of a mission script visible to safety reviewers without requiring execution. Duplicate and alias-conflict checks prevent accidental re-assignment of a previously used channel. The unused-channel warning surfaces likely scripting mistakes early.
+REFS: docs/standards/ams_standard.md AMS-4.18, src/config.h AMS_PULSE_LABEL_LEN
 
 [[/SECTION]]
 
