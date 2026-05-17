@@ -27,7 +27,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.1.1"
+#define ARES_VERSION_STRING "2.1.2"
 
 namespace ares
 {
@@ -166,7 +166,7 @@ constexpr uint8_t     LOG_FILENAME_MAX    = 32;         ///< Max log filename le
 constexpr const char* MISSION_DIR          = "/missions"; ///< LittleFS directory for .ams files.
 constexpr uint8_t     MISSION_FILENAME_MAX = 32;           ///< Max .ams filename length.
 constexpr uint16_t    AMS_MAX_SCRIPT_BYTES = 4096;         ///< Max bytes read from one script.
-constexpr uint8_t     AMS_MAX_STATES       = 10;           ///< Max states per mission script.
+constexpr uint8_t     AMS_MAX_STATES       = 16;           ///< Max states per mission script (hard ceiling: uint32_t BFS bitmask in validateAssertionsLocked, max 32).
 constexpr uint8_t     AMS_MAX_STATE_NAME   = 16;           ///< Max state name length.
 constexpr uint8_t     AMS_MAX_EVENT_TEXT   = 64;           ///< Max EVENT message text.
 constexpr uint8_t     AMS_MAX_HK_FIELDS    = 16;           ///< Max HK fields inside report block.

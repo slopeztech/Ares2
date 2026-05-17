@@ -11,7 +11,7 @@
  * Assertions are evaluated at parse time inside activate().  No arm() or
  * tick() calls are needed — the fixture only calls init() + activate().
  *
- * Test count: 14 (4 pass cases, 7 fail cases, 1 no-assert baseline, 2 no_silent_terminals)
+ * Test count: 15 (4 pass cases, 7 fail cases, 1 no-assert baseline, 2 no_silent_terminals, 1 large-graph BFS)
  */
 
 #include <unity.h>
@@ -641,4 +641,62 @@ void test_assert_no_silent_terminals_fail()
     TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
     TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "no_silent_terminals"));
     TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "DEAD"));
+}
+
+// ── Regression v2.1.2: large-graph BFS (uint32_t bitmask) ────────────────────
+
+/**
+ * PASS — assert reachable on a 13-state linear graph.
+ *
+ * Verifies that the BFS uint32_t bitmask correctly tracks state indices
+ * beyond bit 9 (states at index 10–12).  The terminal state EMG_RECOVERY is
+ * at index 12; the BFS must set bit 12 in the reachable mask and both the
+ * reachable and no_dead_states assertions must pass.
+ */
+void test_assert_reachable_large_graph()
+{
+    static const char kScript[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "pus.service 5 as EVENT\n"
+        "\n"
+        "state PRE_FLIGHT:\n"
+        "  transition to ARM_CHECK when TC.command == LAUNCH\n"
+        "state ARM_CHECK:\n"
+        "  transition to ARMED when TC.command == LAUNCH\n"
+        "state ARMED:\n"
+        "  transition to BOOST when TC.command == LAUNCH\n"
+        "state BOOST:\n"
+        "  transition to COAST when TC.command == LAUNCH\n"
+        "state COAST:\n"
+        "  transition to APOGEE when TC.command == LAUNCH\n"
+        "state APOGEE:\n"
+        "  transition to DROGUE_DEPLOY when TC.command == LAUNCH\n"
+        "state DROGUE_DEPLOY:\n"
+        "  transition to DROGUE_COAST when TC.command == LAUNCH\n"
+        "state DROGUE_COAST:\n"
+        "  transition to MAIN_DEPLOY when TC.command == LAUNCH\n"
+        "state MAIN_DEPLOY:\n"
+        "  transition to MAIN_COAST when TC.command == LAUNCH\n"
+        "state MAIN_COAST:\n"
+        "  transition to LANDED when TC.command == LAUNCH\n"
+        "state LANDED:\n"
+        "  transition to SAFE when TC.command == LAUNCH\n"
+        "state SAFE:\n"
+        "  transition to EMG_RECOVERY when TC.command == LAUNCH\n"
+        "state EMG_RECOVERY:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"RECOVERY\"\n"
+        "\n"
+        "assert:\n"
+        "  reachable EMG_RECOVERY\n"
+        "  no_dead_states\n";
+
+    AssertFixture f;
+    const bool ok = f.load("reachable_13.ams", kScript);
+    TEST_ASSERT_TRUE(ok);
+
+    EngineSnapshot snap {};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
 }

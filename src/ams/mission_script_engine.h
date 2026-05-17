@@ -908,9 +908,9 @@ private:
     void emitShadowWarningLocked(const StateDef& st, uint8_t i, uint8_t j,
                                   const CondExpr& ci, const CondExpr& cj,
                                   uint64_t nowMs);                    ///< Emit LOG_W + EVENT for one shadowed transition pair.
-    void computeBfsReachabilityLocked(uint16_t& reachable) const;
+    void computeBfsReachabilityLocked(uint32_t& reachable) const;
     void computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasCycle) const;
-    bool evaluateOneAssertionLocked(const AssertDef& ad, uint16_t reachable,
+    bool evaluateOneAssertionLocked(const AssertDef& ad, uint32_t reachable,
                                      uint8_t maxDepth, bool hasCycle);
     void resolvePrimaryComLocked();
 

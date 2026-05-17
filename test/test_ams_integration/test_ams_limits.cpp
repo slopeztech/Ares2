@@ -8,7 +8,7 @@
  * the limit itself (== MAX) is accepted.
  *
  * Limits covered:
- *   AMS_MAX_STATES       = 10   → 11 states rejected, 10 accepted
+ *   AMS_MAX_STATES       = 16   → 17 states rejected, 16 accepted
  *   AMS_MAX_TRANSITIONS  = 4    → 5 transitions rejected, 4 accepted
  *   AMS_MAX_VARS         = 8    → 9 vars rejected, 8 accepted
  *   AMS_MAX_CONSTS       = 8    → 9 consts rejected, 8 accepted
@@ -118,25 +118,25 @@ static void appendN(char* buf, size_t bufsz, const char* fragment, int n)
 // ── AMS_MAX_STATES ────────────────────────────────────────────────────────────
 
 /**
- * FAIL — 11 states exceeds AMS_MAX_STATES (10).
+ * FAIL — 17 states exceeds AMS_MAX_STATES (16).
  * Each state has a transition to the next so the resolver doesn't complain
  * about unreachable states before the limit is hit.
  */
 void test_limit_too_many_states()
 {
-    // States S0..S9 chain to each other; S10 would exceed the limit.
-    // AMS_MAX_STATES = 10: state[10] (the 11th) must be rejected.
+    // States S0..S15 chain to each other; S16 would exceed the limit.
+    // AMS_MAX_STATES = 16: state[16] (the 17th) must be rejected.
     static const char kHeader[] =
         "pus.apid = 1\n"
         "pus.service 1 as TC\n";
 
-    // Build chain: S0→S1→…→S9→S10 (11 states).
+    // Build chain: S0→S1→…→S15→S16 (17 states).
     char script[1024] = {};
     (void)strncat(script, kHeader, sizeof(script) - 1U);
-    for (int i = 0; i <= 10; i++)
+    for (int i = 0; i <= 16; i++)
     {
         char buf[64] = {};
-        if (i < 10)
+        if (i < 16)
         {
             (void)snprintf(buf, sizeof(buf),
                            "state S%d:\n  transition to S%d when TC.command == LAUNCH\n",
@@ -498,13 +498,13 @@ void test_limit_script_over_max_bytes_truncates()
 // stack at its design capacity without overflowing.
 
 /**
- * PASS — linear chain of exactly AMS_MAX_STATES (10) states.
- * Depth = AMS_MAX_STATES - 1 = 9.
- * assert max_transition_depth < AMS_MAX_STATES (10) → 9 < 10 ✓.
+ * PASS — linear chain of exactly AMS_MAX_STATES (16) states.
+ * Depth = AMS_MAX_STATES - 1 = 15.
+ * assert max_transition_depth < AMS_MAX_STATES (16) → 15 < 16 ✓.
  */
 void test_limit_max_depth_full_chain_pass()
 {
-    char script[640] = {};
+    char script[1024] = {};
     (void)strncat(script, "pus.apid = 1\n", sizeof(script) - 1U);
 
     for (int i = 0; i < static_cast<int>(ares::AMS_MAX_STATES) - 1; i++)
@@ -544,12 +544,12 @@ void test_limit_max_depth_full_chain_pass()
 
 /**
  * FAIL — same AMS_MAX_STATES-state linear chain.
- * assert max_transition_depth < AMS_MAX_STATES - 1 (9) → actual depth is 9 >= 9 ✗.
- * Error must contain "max_transition_depth" and "actual depth is 9".
+ * assert max_transition_depth < AMS_MAX_STATES - 1 (15) → actual depth is 15 >= 15 ✗.
+ * Error must contain "max_transition_depth" and "actual depth is 15".
  */
 void test_limit_max_depth_full_chain_fail()
 {
-    char script[640] = {};
+    char script[1024] = {};
     (void)strncat(script, "pus.apid = 1\n", sizeof(script) - 1U);
 
     for (int i = 0; i < static_cast<int>(ares::AMS_MAX_STATES) - 1; i++)
@@ -586,7 +586,62 @@ void test_limit_max_depth_full_chain_fail()
     TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
     TEST_ASSERT_NOT_NULL_MESSAGE(
         strstr(snap.lastError, "max_transition_depth"), snap.lastError);
-    // Actual depth = AMS_MAX_STATES - 1 = 9.
+    // Actual depth = AMS_MAX_STATES - 1 = 15.
     TEST_ASSERT_NOT_NULL_MESSAGE(
-        strstr(snap.lastError, "actual depth is 9"), snap.lastError);
+        strstr(snap.lastError, "actual depth is 15"), snap.lastError);
+}
+
+// ── Regression v2.1.2: 13-state flight profile ────────────────────────────────
+
+/**
+ * PASS — 13-state realistic flight profile:
+ * PRE_FLIGHT → ARM_CHECK → ARMED → BOOST → COAST → APOGEE →
+ * DROGUE_DEPLOY → DROGUE_COAST → MAIN_DEPLOY → MAIN_COAST →
+ * LANDED → SAFE → EMG_RECOVERY.
+ *
+ * Requires AMS_MAX_STATES >= 13.  Was impossible with the old limit of 10;
+ * accepted at the new limit of 16.
+ */
+void test_limit_13_state_flight_profile_accepted()
+{
+    static const char kScript[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "pus.service 5 as EVENT\n"
+        "\n"
+        "state PRE_FLIGHT:\n"
+        "  transition to ARM_CHECK when TC.command == LAUNCH\n"
+        "state ARM_CHECK:\n"
+        "  transition to ARMED when TC.command == LAUNCH\n"
+        "state ARMED:\n"
+        "  transition to BOOST when TC.command == LAUNCH\n"
+        "state BOOST:\n"
+        "  transition to COAST when TC.command == LAUNCH\n"
+        "state COAST:\n"
+        "  transition to APOGEE when TC.command == LAUNCH\n"
+        "state APOGEE:\n"
+        "  transition to DROGUE_DEPLOY when TC.command == LAUNCH\n"
+        "state DROGUE_DEPLOY:\n"
+        "  transition to DROGUE_COAST when TC.command == LAUNCH\n"
+        "state DROGUE_COAST:\n"
+        "  transition to MAIN_DEPLOY when TC.command == LAUNCH\n"
+        "state MAIN_DEPLOY:\n"
+        "  transition to MAIN_COAST when TC.command == LAUNCH\n"
+        "state MAIN_COAST:\n"
+        "  transition to LANDED when TC.command == LAUNCH\n"
+        "state LANDED:\n"
+        "  transition to SAFE when TC.command == LAUNCH\n"
+        "state SAFE:\n"
+        "  transition to EMG_RECOVERY when TC.command == LAUNCH\n"
+        "state EMG_RECOVERY:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"RECOVERY\"\n";
+
+    LimitsFixture f;
+    const bool ok = f.load("flight13.ams", kScript);
+    TEST_ASSERT_TRUE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
 }
