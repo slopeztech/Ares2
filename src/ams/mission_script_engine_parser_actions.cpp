@@ -575,6 +575,44 @@ bool MissionScriptEngine::parseSetActionLineLocked(const char* line,
     return true;
 }
 
+// ── resolveChannelOrAliasLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Resolve a channel token (letter or label) to a channel index.
+ *
+ * Checks the bare channel letters A/B/C/D first, then searches the declared
+ * pulse channel labels in @c program_.pulseDecls for an alias match.
+ *
+ * @param[in] token  NUL-terminated token string.
+ * @return Channel index (0–3), or @c 0xFF if not recognised.
+ * @pre  Caller holds the engine mutex.
+ */
+uint8_t MissionScriptEngine::resolveChannelOrAliasLocked(const char* token) const
+{
+    ARES_ASSERT(token != nullptr);
+
+    // Check bare channel letters (single character).
+    if (token[0] != '\0' && token[1] == '\0')
+    {
+        if (token[0] == 'A') { return PulseChannel::CH_A; }
+        if (token[0] == 'B') { return PulseChannel::CH_B; }
+        if (token[0] == 'C') { return PulseChannel::CH_C; }
+        if (token[0] == 'D') { return PulseChannel::CH_D; }
+    }
+
+    // Check declared labels.
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+    {
+        if (program_.pulseDecls[i].declared
+            && strcmp(program_.pulseDecls[i].label, token) == 0)
+        {
+            return i;
+        }
+    }
+
+    return 0xFFU;  // not found
+}
+
 // ── parsePulseFireLineLocked ──────────────────────────────────────────────────
 
 /**
@@ -584,9 +622,15 @@ bool MissionScriptEngine::parseSetActionLineLocked(const char* line,
  * @code
  *   PULSE.fire A             -- fire channel A at default duration
  *   PULSE.fire B             -- fire channel B at default duration
- *   PULSE.fire A 500ms       -- fire channel A with 500 ms pulse override
- *   PULSE.fire B 1500ms      -- fire channel B with 1500 ms pulse override
+ *   PULSE.fire C             -- fire channel C at default duration
+ *   PULSE.fire D             -- fire channel D at default duration
+ *   PULSE.fire DROGUE 500ms  -- fire channel by declared label with 500 ms override
  * @endcode
+ *
+ * The channel token may be a bare letter (A/B/C/D) or any label assigned
+ * by a prior @c pulse.channel X as LABEL directive (AMS-4.18).
+ * The referenced channel @b must have been declared with @c pulse.channel;
+ * an undeclared channel is a parse error.
  *
  * The optional @c Nms duration overrides @c ares::FIRE_DURATION_MS at
  * execution time.  Storing 0 means "use the compile-time default".
@@ -611,24 +655,49 @@ bool MissionScriptEngine::parsePulseFireLineLocked(const char* line,
     static constexpr uint8_t kPrefixLen = 11U;
     const char* rest = line + kPrefixLen;
 
-    // Determine channel.
-    uint8_t channel = 0U;
-    if (rest[0] == 'A')
+    // Extract the channel token (runs until end-of-line or a space before
+    // the optional duration suffix).
+    char token[ares::AMS_PULSE_LABEL_LEN] = {};
+    uint8_t tokLen = 0U;
+    const char* afterToken = rest;
+    while (*afterToken != '\0' && *afterToken != ' ')
     {
-        channel = PulseChannel::CH_A;
+        if (tokLen >= ares::AMS_PULSE_LABEL_LEN - 1U)
+        {
+            setErrorLocked("PULSE.fire: channel token too long");
+            return false;
+        }
+        token[tokLen++] = *afterToken++;
     }
-    else if (rest[0] == 'B')
+    token[tokLen] = '\0';
+
+    if (tokLen == 0U)
     {
-        channel = PulseChannel::CH_B;
-    }
-    else
-    {
-        setErrorLocked("PULSE.fire: channel must be A or B");
+        setErrorLocked("PULSE.fire: missing channel");
         return false;
     }
 
+    // Resolve token -> channel index (letter or alias).
+    const uint8_t channel = resolveChannelOrAliasLocked(token);
+    if (channel == 0xFFU)
+    {
+        setErrorLocked("PULSE.fire: unknown channel or undeclared alias");
+        return false;
+    }
+
+    // Enforce declaration requirement (AMS-4.18).
+    if (!program_.pulseDecls[channel].declared)
+    {
+        setErrorLocked("PULSE.fire: channel used but not declared with pulse.channel");
+        return false;
+    }
+
+    // Mark channel as used so finalizeScriptLocked can warn on declared-but-unused (AMS-4.18).
+    pulseChannelUsed_[channel] = true;
+
+    // Parse optional " Nms" duration suffix.
     uint32_t durationMs = 0U;
-    if (!parsePulseDurationSuffixLocked(rest + 1U, durationMs))
+    if (!parsePulseDurationSuffixLocked(afterToken, durationMs))
     {
         return false;
     }
@@ -643,7 +712,7 @@ bool MissionScriptEngine::parsePulseFireLineLocked(const char* line,
  * @brief Parse the optional " Nms" duration suffix of a PULSE.fire directive.
  *
  * @param[in]  afterCh  Pointer to the character immediately after the channel
- *                      letter ('A' or 'B') in the script line.
+ *                      token in the script line.
  * @param[out] out      Set to the parsed millisecond value, or 0 if absent
  *                      (meaning: use @c ares::FIRE_DURATION_MS at runtime).
  * @return @c true on success; @c false after calling @c setErrorLocked().
@@ -763,6 +832,70 @@ bool MissionScriptEngine::parseOnErrorTransitionLineLocked(const char* line,
     st.onErrorTransitionResolved = false;
 
     LOG_I(TAG, "on_error recovery transition: -> '%s'", target);
+    return true;
+}
+
+// ── parsePulseArmLineLocked ───────────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c PULSE.arm directive inside an @c on_enter: block (AMS-4.19.1).
+ *
+ * Syntax: @c "PULSE.arm X"  where @p X is a channel letter (A-D) or declared alias.
+ *
+ * @c PULSE.arm marks a channel as armed so that a later @c PULSE.fire in another
+ * state (or the same state) is permitted.  If @c pulse.arm_timeout is declared,
+ * the arm flag expires automatically if @c PULSE.fire is not called in time.
+ *
+ * Calling @c PULSE.arm for a channel also sets @c pulseNeedsArm[channel] = true at
+ * parse time, which activates the two-phase fire check (AMS-4.19.1) in
+ * @c checkPulseSafetyLocked() for all subsequent @c PULSE.fire calls on that channel.
+ *
+ * @param[in]  line  Script line starting with @c "PULSE.arm ".
+ * @param[out] st    State definition to append the arm action to.
+ * @return @c true if parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parsePulseArmLineLocked(const char* line, StateDef& st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.pulseArmActionCount >= ares::AMS_MAX_PULSE_ACTIONS)
+    {
+        setErrorLocked("too many PULSE.arm actions in on_enter block");
+        return false;
+    }
+
+    // Skip "PULSE.arm " prefix (10 characters).
+    static constexpr uint8_t kPrefixLen = 10U;
+    const char* rest = line + kPrefixLen;
+
+    // Extract channel token.
+    char token[ares::AMS_PULSE_LABEL_LEN] = {};
+    uint8_t tokLen = 0U;
+    while (rest[tokLen] != '\0' && rest[tokLen] != ' ')
+    {
+        if (tokLen >= ares::AMS_PULSE_LABEL_LEN - 1U)
+        {
+            setErrorLocked("PULSE.arm: channel token too long");
+            return false;
+        }
+        token[tokLen] = rest[tokLen];
+        tokLen++;
+    }
+    token[tokLen] = '\0';
+
+    if (tokLen == 0U) { setErrorLocked("PULSE.arm: missing channel"); return false; }
+
+    const uint8_t ch = resolveChannelOrAliasLocked(token);
+    if (ch == 0xFFU) { setErrorLocked("PULSE.arm: unknown channel or undeclared alias"); return false; }
+    if (!program_.pulseDecls[ch].declared) { setErrorLocked("PULSE.arm: channel not declared with pulse.channel"); return false; }
+
+    // Mark at parse time: any PULSE.fire on this channel requires a prior arm.
+    program_.pulseNeedsArm[ch] = true;
+
+    st.pulseArmActions[st.pulseArmActionCount].channel = ch;
+    st.pulseArmActionCount++;
+    LOG_I(TAG, "PULSE.arm: ch=%u will require prior arm before PULSE.fire", static_cast<uint32_t>(ch));
     return true;
 }
 

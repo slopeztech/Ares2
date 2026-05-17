@@ -2,7 +2,7 @@
  * @file  pulse_interface.h
  * @brief Hardware-agnostic timed electric-pulse channel interface (pure virtual).
  *
- * Abstracts two generic electric-pulse output channels (A and B),
+ * Abstracts four generic electric-pulse output channels (A, B, C, D),
  * each driven by a timed electric pulse.  Concrete drivers (e.g. PulseDriver) implement this
  * interface; application code (AMS engine, REST API) accesses channel state
  * only through this interface.
@@ -26,7 +26,9 @@ struct PulseChannel
 {
     static constexpr uint8_t CH_A  = 0U;  ///< Pulse channel A.
     static constexpr uint8_t CH_B  = 1U;  ///< Pulse channel B.
-    static constexpr uint8_t COUNT = 2U;  ///< Total number of channels.
+    static constexpr uint8_t CH_C  = 2U;  ///< Pulse channel C (auxiliary 1).
+    static constexpr uint8_t CH_D  = 3U;  ///< Pulse channel D (auxiliary 2).
+    static constexpr uint8_t COUNT = 4U;  ///< Total number of channels.
 
     PulseChannel()                               = delete;  // utility struct — no instances
 };
@@ -77,7 +79,7 @@ public:
      * returns LOW.  The pulse is non-blocking — the output goes HIGH
      * immediately; a hardware timer lowers it after the pulse expires.
      *
-     * @param[in] channel     Channel index (PulseChannel::CH_A or CH_B).
+     * @param[in] channel     Channel index (PulseChannel::CH_A, CH_B, CH_C, or CH_D).
      * @param[in] durationMs  Pulse duration in milliseconds (> 0).
      * @pre   begin() returned true.
      * @pre   channel < PulseChannel::COUNT.
@@ -99,7 +101,7 @@ public:
      *
      * This is always a passive, read-only operation.
      *
-     * @param[in] channel  Channel index (PulseChannel::CH_A or CH_B).
+     * @param[in] channel  Channel index (PulseChannel::CH_A, CH_B, CH_C, or CH_D).
      * @return true if the circuit appears continuous; false otherwise.
      * @note  Not guaranteed to detect partial bridgewire resistance changes.
      */
@@ -108,12 +110,26 @@ public:
     /**
      * Query whether a channel has been fired in the current session.
      *
-     * @param[in] channel  Channel index (PulseChannel::CH_A or CH_B).
+     * @param[in] channel  Channel index (PulseChannel::CH_A, CH_B, CH_C, or CH_D).
      * @return true if fire() has been called and accepted for this channel.
      * @note  State persists for the lifetime of the driver object;
      *        it is not cleared on deactivate() or reboot.
      */
     virtual bool isFired(uint8_t channel) const = 0;
+
+    /**
+     * Query whether a hardware continuity-sense pin is wired for a channel.
+     *
+     * A @c true return means @c readContinuity() performs a real ADC/digital
+     * read against a bridgewire circuit.  A @c false return means the driver
+     * uses the optimistic fallback (@c !isFired()) — sufficient for basic
+     * operation but not suitable for the @c pulse.require_continuity AMS
+     * safety directive (AMS-4.19.4).
+     *
+     * @param[in] channel  Channel index (PulseChannel::CH_A, CH_B, CH_C, or CH_D).
+     * @return true if a dedicated continuity GPIO was provided at construction.
+     */
+    virtual bool hasContPin(uint8_t channel) const = 0;
 
 protected:
     PulseInterface() = default;  ///< Protected: only subclasses may construct.

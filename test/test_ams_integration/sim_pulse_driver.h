@@ -61,6 +61,12 @@ public:
         return fired_[channel];
     }
 
+    bool hasContPin(uint8_t channel) const override
+    {
+        if (channel >= PulseChannel::COUNT) { return false; }
+        return hasContPin_[channel];
+    }
+
     // ── Test helpers ───────────────────────────────────────────────────────
 
     /** Reset all channel state to initial values (unfired, continuous). */
@@ -77,7 +83,7 @@ public:
 
     /**
      * Manually set the continuity state of a channel.
-     * @param ch     PulseChannel::CH_A (0) or CH_B (1).
+     * @param ch     PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
      * @param state  true = circuit intact; false = open circuit.
      */
     void setContinuity(uint8_t ch, bool state)
@@ -102,11 +108,25 @@ public:
         return (ch < PulseChannel::COUNT) ? lastDurationMs_[ch] : 0U;
     }
 
+    /**
+     * Manually set whether a continuity-sense pin is "wired" for a channel.
+     * Default is false (no hardware pin).  Set to true before activating a
+     * script that uses pulse.require_continuity (AMS-4.19.4).
+     *
+     * @param ch     PulseChannel::CH_A (0)–CH_D (3).
+     * @param state  true = pin is wired; false = no pin (optimistic fallback).
+     */
+    void setHasContPin(uint8_t ch, bool state)
+    {
+        if (ch < PulseChannel::COUNT) { hasContPin_[ch] = state; }
+    }
+
 private:
-    bool     fired_[PulseChannel::COUNT]          = {false, false};
-    uint8_t  fireCount_[PulseChannel::COUNT]      = {0U, 0U};
-    uint32_t lastDurationMs_[PulseChannel::COUNT] = {0U, 0U};
-    bool     continuity_[PulseChannel::COUNT]     = {true, true};
+    bool     fired_[PulseChannel::COUNT]          = {false, false, false, false};
+    uint8_t  fireCount_[PulseChannel::COUNT]      = {0U, 0U, 0U, 0U};
+    uint32_t lastDurationMs_[PulseChannel::COUNT] = {0U, 0U, 0U, 0U};
+    bool     continuity_[PulseChannel::COUNT]     = {true, true, true, true};
+    bool     hasContPin_[PulseChannel::COUNT]     = {false, false, false, false};
 };
 
 } // namespace sim

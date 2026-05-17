@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 119
+ * Test count: 133
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -110,6 +110,39 @@ extern void test_pulse_fire_sets_status_bit_b();
 extern void test_pulse_fire_duration_override();
 extern void test_pulse_fire_only_when_execution_enabled();
 extern void test_pulse_fire_no_driver_no_crash();
+extern void test_pulse_channel_undeclared_fire_fails();
+extern void test_pulse_channel_alias_resolves();
+extern void test_pulse_channel_duplicate_decl_fails();
+extern void test_pulse_channel_bad_trailing_token_fails();
+
+// ── test_ams_pulse_safety.cpp ────────────────────────────────────────────────
+
+extern void test_pulse_safe_delay_blocks_early_fire();
+extern void test_pulse_safe_delay_allows_fire_after_delay();
+extern void test_pulse_min_altitude_blocks_below_threshold();
+extern void test_pulse_min_altitude_allows_above_threshold();
+extern void test_pulse_require_continuity_parse_error_no_pin();
+extern void test_pulse_require_continuity_blocks_open_circuit();
+extern void test_pulse_require_continuity_allows_intact_circuit();
+extern void test_pulse_arm_fires_after_two_phase_sequence();
+extern void test_pulse_arm_blocked_when_arm_state_skipped();
+extern void test_pulse_arm_same_state_arm_and_fire();
+extern void test_pulse_arm_timeout_fires_before_expiry();
+extern void test_pulse_arm_timeout_disarms_automatically();
+extern void test_pulse_safe_delay_out_of_range_fails();
+extern void test_pulse_min_altitude_out_of_range_fails();
+extern void test_pulse_arm_timeout_out_of_range_fails();
+extern void test_pulse_safety_directives_before_state_required();
+extern void test_pulse_status_bits_clear_after_reactivate();
+extern void test_pulse_safe_delay_allows_at_exact_boundary();
+extern void test_pulse_arm_timeout_allows_at_exact_boundary();
+extern void test_pulse_safe_delay_combined_with_arm();
+extern void test_pulse_arm_undeclared_channel_parse_error();
+extern void test_pulse_min_altitude_no_baro_blocks_fire();
+extern void test_pulse_safe_delay_duplicate_directive_fails();
+extern void test_pulse_no_baro_policy_duplicate_fails();
+extern void test_pulse_require_continuity_partial_channels();
+extern void test_pulse_require_continuity_null_interface_no_crash();
 
 // ── test_ams_script_variants.cpp ─────────────────────────────────────────────
 
@@ -264,6 +297,38 @@ int main()
     RUN_TEST(test_pulse_fire_duration_override);
     RUN_TEST(test_pulse_fire_only_when_execution_enabled);
     RUN_TEST(test_pulse_fire_no_driver_no_crash);
+    RUN_TEST(test_pulse_channel_undeclared_fire_fails);
+    RUN_TEST(test_pulse_channel_alias_resolves);
+    RUN_TEST(test_pulse_channel_duplicate_decl_fails);
+    RUN_TEST(test_pulse_channel_bad_trailing_token_fails);
+
+    // ams_pulse_safety
+    RUN_TEST(test_pulse_safe_delay_blocks_early_fire);
+    RUN_TEST(test_pulse_safe_delay_allows_fire_after_delay);
+    RUN_TEST(test_pulse_min_altitude_blocks_below_threshold);
+    RUN_TEST(test_pulse_min_altitude_allows_above_threshold);
+    RUN_TEST(test_pulse_require_continuity_parse_error_no_pin);
+    RUN_TEST(test_pulse_require_continuity_blocks_open_circuit);
+    RUN_TEST(test_pulse_require_continuity_allows_intact_circuit);
+    RUN_TEST(test_pulse_arm_fires_after_two_phase_sequence);
+    RUN_TEST(test_pulse_arm_blocked_when_arm_state_skipped);
+    RUN_TEST(test_pulse_arm_same_state_arm_and_fire);
+    RUN_TEST(test_pulse_arm_timeout_fires_before_expiry);
+    RUN_TEST(test_pulse_arm_timeout_disarms_automatically);
+    RUN_TEST(test_pulse_safe_delay_out_of_range_fails);
+    RUN_TEST(test_pulse_min_altitude_out_of_range_fails);
+    RUN_TEST(test_pulse_arm_timeout_out_of_range_fails);
+    RUN_TEST(test_pulse_safety_directives_before_state_required);
+    RUN_TEST(test_pulse_status_bits_clear_after_reactivate);
+    RUN_TEST(test_pulse_safe_delay_allows_at_exact_boundary);
+    RUN_TEST(test_pulse_arm_timeout_allows_at_exact_boundary);
+    RUN_TEST(test_pulse_safe_delay_combined_with_arm);
+    RUN_TEST(test_pulse_arm_undeclared_channel_parse_error);
+    RUN_TEST(test_pulse_min_altitude_no_baro_blocks_fire);
+    RUN_TEST(test_pulse_safe_delay_duplicate_directive_fails);
+    RUN_TEST(test_pulse_no_baro_policy_duplicate_fails);
+    RUN_TEST(test_pulse_require_continuity_partial_channels);
+    RUN_TEST(test_pulse_require_continuity_null_interface_no_crash);
 
     // ams_script_variants
     RUN_TEST(test_comment_slash_slash_skipped);

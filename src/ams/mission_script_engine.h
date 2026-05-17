@@ -243,7 +243,7 @@ public:
      * drives the pulse GPIO after a confirmed FIRE_PULSE_A / FIRE_PULSE_B
      * command.
      *
-     * @param[in] channel  0 = pulse A (drogue), 1 = pulse B (main).
+     * @param[in] channel  Channel index 0–3 (PulseChannel::CH_A – CH_D).
      */
     void notifyPulseFired(uint8_t channel);
 
@@ -661,11 +661,21 @@ private:
         /// A single PULSE.fire command parsed from an on_enter: block.
         struct PulseAction
         {
-            uint8_t  channel;      ///< PulseChannel::CH_A (0) or CH_B (1).
+            uint8_t  channel;      ///< PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
             uint32_t durationMs;   ///< Pulse duration; 0 means use config default.
         };
         uint8_t      pulseActionCount = 0U;
         PulseAction  pulseActions[ares::AMS_MAX_PULSE_ACTIONS] = {};
+
+        // ── on_enter PULSE.arm actions (AMS-4.19.1) ──────────
+        /// Arms a channel so that a subsequent PULSE.fire in another state is
+        /// permitted (two-phase firing: arm then fire).
+        struct PulseArmAction
+        {
+            uint8_t channel;  ///< PulseChannel::CH_A (0) … CH_D (3).
+        };
+        uint8_t        pulseArmActionCount = 0U;
+        PulseArmAction pulseArmActions[ares::AMS_MAX_PULSE_ACTIONS] = {};
 
         // ── on_exit handler (AMS-4.9) ────────────────────────
         // Executed synchronously when leaving this state via any transition
@@ -713,6 +723,31 @@ private:
         char       hkAlias[16]    = {};  ///< PUS ST[3] service alias (default: "HK").
         char       eventAlias[16] = {};  ///< PUS ST[5] service alias (default: "EVENT").
         char       tcAlias[16]    = {};  ///< PUS ST[1] service alias (default: "TC").
+
+        // ── AMS-4.18: pulse channel declarations ──────────────────────────────
+        /**
+         * Declaration record for one pulse channel (AMS-4.18).
+         *
+         * Set by @c pulse.channel X [as LABEL] in the script metadata section.
+         * Until @c declared is @c true, any @c PULSE.fire targeting this channel
+         * (by letter or alias) is rejected at parse time.
+         */
+        struct PulseChannelDecl
+        {
+            bool declared = false;                        ///< true once 'pulse.channel X' is parsed.
+            char label[ares::AMS_PULSE_LABEL_LEN] = {};  ///< User label ("A".."D" if no 'as' clause).
+        };
+        PulseChannelDecl pulseDecls[PulseChannel::COUNT] = {}; ///< Declarations indexed by channel (0=A, 1=B, 2=C, 3=D).
+
+        // ── AMS-4.19: Pulse safety directives ────────────────────────────────
+        uint32_t pulseSafeDelayMs                            = 0U;    ///< AMS-4.19.5: ms from arm() before any PULSE.fire is allowed (0 = disabled).
+        bool     pulseHasMinAlt                              = false;  ///< AMS-4.19.2: true when a pulse.min_altitude guard is active.
+        uint32_t pulseMinAltitudeM                           = 0U;    ///< AMS-4.19.2: minimum baro altitude (m MSL) required for PULSE.fire.
+        bool     pulseNoBaroPolicyAllow                      = false; ///< AMS-4.19.6: when true, altitude gate is bypassed if no baro driver registered.
+        bool     pulseHasNoBaroPolicy                        = false; ///< AMS-4.19.6: true once "pulse.no_baro_policy" has been parsed (duplicate guard).
+        bool     pulseRequireContinuity[PulseChannel::COUNT] = {};    ///< AMS-4.19.4: channel requires intact bridgewire before fire.
+        bool     pulseNeedsArm[PulseChannel::COUNT]          = {};    ///< AMS-4.19.1: channel requires prior PULSE.arm in on_enter.
+        uint32_t pulseArmTimeoutMs                           = 0U;    ///< AMS-4.19.3: ms after PULSE.arm before auto-disarm (0 = no timeout).
 
         // ── AMS-4.15: script-declared radio config overrides ─────────────────
         /**
@@ -833,8 +868,16 @@ private:
     bool validateConstIdentifierLocked(const char* name);
     bool ensureConstDoesNotConflictLocked(const char* name);
     bool parseSetActionLineLocked(const char* line, StateDef& st);
-    bool parsePulseFireLineLocked(const char* line, StateDef& st);            ///< AMS-4.17: parse "PULSE.fire A[/B] [Nms]".
+    bool parsePulseFireLineLocked(const char* line, StateDef& st);            ///< AMS-4.17: parse "PULSE.fire A/B/C/D/ALIAS [Nms]".
     bool parsePulseDurationSuffixLocked(const char* afterCh, uint32_t& out); ///< Parse optional " Nms" suffix; called by parsePulseFireLineLocked.
+    bool parsePulseChannelLineLocked(const char* line);                       ///< AMS-4.18: parse "pulse.channel A/B/C/D [as LABEL]".
+    bool parsePulseArmLineLocked(const char* line, StateDef& st);                   ///< AMS-4.19.1: parse "PULSE.arm A/B/C/D/ALIAS".
+    bool parsePulseRequireContinuityLineLocked(const char* line);                   ///< AMS-4.19.4: parse "pulse.require_continuity A/B/C/D".
+    bool parsePulseMinAltLineLocked(const char* line);                              ///< AMS-4.19.2: parse "pulse.min_altitude N".
+    bool parsePulseSafeDelayLineLocked(const char* line);                           ///< AMS-4.19.5: parse "pulse.safe_delay N".
+    bool parsePulseArmTimeoutLineLocked(const char* line);                          ///< AMS-4.19.3: parse "pulse.arm_timeout N".
+    bool parsePulseNoBaroPolicyLineLocked(const char* line);                        ///< AMS-4.19.6: parse "pulse.no_baro_policy allow|block".
+    uint8_t resolveChannelOrAliasLocked(const char* token) const;             ///< Resolve channel letter or label -> 0-3; returns 0xFF on failure.
     bool parseSetActionCoreLocked(const char* line, SetAction& out);  ///< Shared core; called by state + task parsers.
     bool ensureSetVariableExistsLocked(const char* varName);
     bool parseCalibrateSetActionLocked(const char* rhsBuf, SetAction& out);
@@ -950,7 +993,13 @@ private:
 
     void sendOnEnterEventLocked(uint64_t nowMs);
     void executeSetActionsLocked(StateDef& st, uint64_t nowMs);
-    void executePulseActionsLocked(const StateDef& st);  ///< AMS-4.17: fire all PULSE.fire actions for state entry.
+    void executePulseActionsLocked(const StateDef& st, uint64_t nowMs);    ///< AMS-4.17 + AMS-4.19: fire all PULSE.fire actions, safety-gated.
+    void executePulseArmActionsLocked(const StateDef& st, uint64_t nowMs); ///< AMS-4.19.1: set arm flags for PULSE.arm actions.
+    void checkPulseArmTimeoutsLocked(uint64_t nowMs);                       ///< AMS-4.19.3: disarm channels whose arm_timeout has expired.
+    bool checkPulseSafetyLocked(uint8_t channel, uint64_t nowMs);           ///< AMS-4.19: evaluate all safety gates; returns true if fire is allowed.
+    bool checkPulseAltGateLocked(uint8_t channel);                          ///< AMS-4.19.2/4.19.6: evaluate altitude gate; extracted for size.
+    bool parsePulsePreStateDirectiveLocked(const char* line, bool& handled); ///< Pulse-specific sub-dispatch; extracted from parsePreStateDirectiveLocked.
+    bool parsePulseChannelLabelLocked(const char* rest, char* labelOut);    ///< Parse/validate optional 'as LABEL' suffix; extracted from parsePulseChannelLineLocked.
     void executeOneSetActionLocked(SetAction& act, uint64_t nowMs); ///< Execute a single set action (shared by state + task paths).
     void stepPendingCalibrationsLocked(StateDef& st, uint64_t nowMs); ///< AMS-4.8.2: advance each in-progress CALIBRATE by one sample.
     void executeCalibrateSetActionLocked(SetAction& act, float& result, bool& gotReading, uint64_t nowMs);
@@ -1137,6 +1186,14 @@ private:
     uint8_t   tcConfirmCount_[4] = {}; ///< Per-TC injection counter for CONFIRM mode (AMS-4.11.2).
     bool      pulseAFired_ = false;    ///< True after FIRE_PULSE_A was successfully executed (APUS-6).
     bool      pulseBFired_ = false;    ///< True after FIRE_PULSE_B was successfully executed (APUS-6).
+    bool      pulseCFired_ = false;    ///< True after FIRE_PULSE_C was successfully executed (APUS-6).
+    bool      pulseDFired_ = false;    ///< True after FIRE_PULSE_D was successfully executed (APUS-6).
+    bool      pulseChannelUsed_[PulseChannel::COUNT] = {}; ///< Tracks which declared channels had at least one PULSE.fire (AMS-4.18).
+
+    // ── AMS-4.19: Pulse safety runtime state ─────────────────────────────────
+    bool     pulseArmed_[PulseChannel::COUNT]   = {};  ///< AMS-4.19.1: per-channel arm flag (set by PULSE.arm, cleared on fire or timeout).
+    uint64_t pulseArmedMs_[PulseChannel::COUNT] = {};  ///< AMS-4.19.3: millis64() when each channel was last armed.
+    uint64_t activationMs_                      = 0U;  ///< AMS-4.19.5: millis64() when arm() put the engine into RUNNING state.
     uint8_t seq_ = 0;
     char logPath_[ares::STORAGE_MAX_PATH] = {};
 

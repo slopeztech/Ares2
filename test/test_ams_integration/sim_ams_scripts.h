@@ -446,7 +446,7 @@ static const char kScriptConfirm3Launch[] =
 // ── AMS-4.17: Pulse channel fire scripts ────────────────────────────────────────────
 
 /**
- * Script that fires both pulse channels (A=drogue, B=main) on state entry.
+ * Script that fires pulse channels A and B on state entry.
  *
  * Flow: WAIT --(TC LAUNCH)--> DEPLOY
  * DEPLOY on_enter fires PULSE.fire A and PULSE.fire B at default duration.
@@ -462,6 +462,9 @@ static const char kScriptPulseFire[] =
     "pus.service 3 as HK\n"
     "pus.service 5 as EVENT\n"
     "pus.service 1 as TC\n"
+    "\n"
+    "pulse.channel A\n"
+    "pulse.channel B\n"
     "\n"
     "state WAIT:\n"
     "  on_enter:\n"
@@ -491,6 +494,8 @@ static const char kScriptPulseDuration[] =
     "pus.service 3 as HK\n"
     "pus.service 5 as EVENT\n"
     "pus.service 1 as TC\n"
+    "\n"
+    "pulse.channel A\n"
     "\n"
     "state WAIT:\n"
     "  on_enter:\n"

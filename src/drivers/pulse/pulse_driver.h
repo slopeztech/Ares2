@@ -2,7 +2,7 @@
  * @file  pulse_driver.h
  * @brief ESP32 GPIO timed electric-pulse channel driver (FreeRTOS timer-based).
  *
- * Implements PulseInterface for two GPIO-driven channels (A and B).
+ * Implements PulseInterface for four GPIO-driven channels (A, B, C, D).
  * Each channel drives a deployment actuator via a digital output.
  *
  * Pulse timing is handled by FreeRTOS one-shot software timers so
@@ -10,10 +10,10 @@
  *
  * Optional separate continuity-sense input pins may be wired to a
  * resistive bridge circuit to detect an open circuit.  Pass
- * @c kNoPinAssigned to the constructor for channels without dedicated
- * continuity hardware; in that case readContinuity() returns @c false
- * when the channel has been fired and @c true otherwise (optimistic
- * pre-fire assumption).
+ * @c kNoPinAssigned in the @c ChannelConfig::contPin field for channels
+ * without dedicated continuity hardware; in that case readContinuity()
+ * returns @c false when the channel has been fired and @c true otherwise
+ * (optimistic pre-fire assumption).
  *
  * Thread safety: NOT thread-safe.  Must be accessed from a single task
  *                or protected externally (CERT-13).  The FreeRTOS timer
@@ -29,7 +29,7 @@
 #include "hal/pulse/pulse_interface.h"
 
 /**
- * Concrete PulseInterface for two GPIO-controlled output channels.
+ * Concrete PulseInterface for four GPIO-controlled output channels.
  *
  * Instantiated statically in main.cpp with the pin numbers from config.h.
  * No heap allocation is used (PO10-3): FreeRTOS timers are created with
@@ -42,19 +42,23 @@ public:
     static constexpr uint8_t kNoPinAssigned = 0xFFU;
 
     /**
+     * Pin configuration for one channel.
+     */
+    struct ChannelConfig
+    {
+        uint8_t firePin;                    ///< GPIO driven HIGH to initiate the pulse.
+        uint8_t contPin = kNoPinAssigned;   ///< GPIO read for continuity sense (kNoPinAssigned = none).
+    };
+
+    /**
      * Construct the driver.
      *
-     * @param[in] pinA      GPIO output for channel A.
-     * @param[in] pinB      GPIO output for channel B.
-     * @param[in] contPinA  GPIO input for channel A continuity sense
-     *                      (kNoPinAssigned = not wired).
-     * @param[in] contPinB  GPIO input for channel B continuity sense
-     *                      (kNoPinAssigned = not wired).
+     * @param[in] cfg  Array of @c PulseChannel::COUNT channel configurations
+     *                 (A at index 0, B at 1, C at 2, D at 3).
+     *                 Channels whose @c firePin is @c kNoPinAssigned are not
+     *                 initialised by @c begin() and reject all @c fire() calls.
      */
-    explicit PulseDriver(uint8_t pinA,
-                         uint8_t pinB,
-                         uint8_t contPinA = kNoPinAssigned,
-                         uint8_t contPinB = kNoPinAssigned);
+    explicit PulseDriver(const ChannelConfig (&cfg)[PulseChannel::COUNT]);
 
     // Non-copyable, non-movable (CERT-18.3)
     PulseDriver(const PulseDriver&)            = delete;
@@ -76,7 +80,7 @@ public:
      * Sets @p channel HIGH immediately then starts a one-shot FreeRTOS
      * timer that drives it LOW after @p durationMs milliseconds.
      *
-     * @param[in] channel     PulseChannel::CH_A (0) or CH_B (1).
+     * @param[in] channel     PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
      * @param[in] durationMs  Pulse duration in milliseconds (> 0, ≤ 30 000).
      * @return true on success; false if channel is already fired, invalid,
      *         or the driver is not initialised.
@@ -89,7 +93,7 @@ public:
      * If a continuity-sense pin was provided at construction, reads that
      * GPIO (HIGH = circuit intact).  Otherwise returns @c !isFired(channel).
      *
-     * @param[in] channel  PulseChannel::CH_A (0) or CH_B (1).
+     * @param[in] channel  PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
      * @return true if the circuit appears continuous.
      */
     bool readContinuity(uint8_t channel) const override;
@@ -97,10 +101,18 @@ public:
     /**
      * Query whether a channel has been fired this session.
      *
-     * @param[in] channel  PulseChannel::CH_A (0) or CH_B (1).
+     * @param[in] channel  PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
      * @return true after a successful fire() call for this channel.
      */
     bool isFired(uint8_t channel) const override;
+
+    /**
+     * Query whether a hardware continuity-sense pin is wired for a channel.
+     *
+     * @param[in] channel  PulseChannel::CH_A (0), CH_B (1), CH_C (2), or CH_D (3).
+     * @return true if @c contPin != kNoPinAssigned for this channel.
+     */
+    bool hasContPin(uint8_t channel) const override;
 
 private:
     /// Maximum permitted pulse duration (safety cap).
@@ -125,8 +137,8 @@ private:
      */
     static void timerCallback(TimerHandle_t xTimer);
 
-    ChannelData   channels_[PulseChannel::COUNT]  = {};               ///< Per-channel state.
-    StaticTimer_t timerBufs_[PulseChannel::COUNT] = {};               ///< Static timer memory.
-    TimerHandle_t timers_[PulseChannel::COUNT]    = {nullptr, nullptr};  ///< Timer handles.
+    ChannelData   channels_[PulseChannel::COUNT]  = {};  ///< Per-channel state.
+    StaticTimer_t timerBufs_[PulseChannel::COUNT] = {};  ///< Static timer memory.
+    TimerHandle_t timers_[PulseChannel::COUNT]    = {nullptr, nullptr, nullptr, nullptr};  ///< Timer handles.
     bool          ready_ = false;                                     ///< true after successful begin().
 };

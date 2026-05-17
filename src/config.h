@@ -27,7 +27,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.0.0"
+#define ARES_VERSION_STRING "2.1.1"
 
 namespace ares
 {
@@ -53,8 +53,37 @@ constexpr uint8_t     PIN_LORA_AUX   = 9;    ///< AUX pin (HIGH = idle).
 constexpr uint8_t     PIN_LORA_M0    = 14;   ///< Mode select bit 0 (not wired).
 constexpr uint8_t     PIN_LORA_M1    = 3;    ///< Mode select bit 1 (not wired).
 constexpr uint8_t     LORA_UART_PORT = 2;    ///< HardwareSerial port index.
-constexpr uint8_t     PIN_DROGUE     = 4;    ///< Drogue pulse channel GPIO.
-    constexpr uint8_t     PIN_MAIN       = 15;   ///< Main chute pulse channel GPIO.
+
+// ── Pulse fire pins ──────────────────────────────────────────────────────────
+// Each channel's fire GPIO can independently be set to PIN_NO_FIRE (0xFF) to
+// disable that channel's output.  Disabling a channel frees its GPIO so it can
+// be reused as a continuity-sense input for another channel (see below).
+//
+// ┌────────────────────────────────────────────────────────────────────────┐
+// │  4-fire / 0-cont  (default — all four GPIOs are fire outputs)         │
+// │    PIN_PULSE_A = 4   PIN_PULSE_B = 15   PIN_PULSE_C = 16  PIN_PULSE_D = 17  │
+// │    PIN_PULSE_A_CONT … PIN_PULSE_D_CONT = PIN_NO_CONT                  │
+// ├────────────────────────────────────────────────────────────────────────┤
+// │  2-fire / 2-cont  (A+B fire; C+D GPIOs repurposed as cont inputs)    │
+// │    PIN_PULSE_A = 4        PIN_PULSE_B = 15                            │
+// │    PIN_PULSE_C = PIN_NO_FIRE    PIN_PULSE_D = PIN_NO_FIRE             │
+// │    PIN_PULSE_A_CONT = 16  PIN_PULSE_B_CONT = 17                       │
+// └────────────────────────────────────────────────────────────────────────┘
+constexpr uint8_t PIN_NO_FIRE      = 0xFFU; ///< Channel has no fire output (GPIO free for cont use).
+constexpr uint8_t PIN_PULSE_A      = 4;     ///< Channel A fire GPIO.
+constexpr uint8_t PIN_PULSE_B      = 15;    ///< Channel B fire GPIO.
+constexpr uint8_t PIN_PULSE_C      = 16;    ///< Channel C fire GPIO (or PIN_NO_FIRE to repurpose as cont input).
+constexpr uint8_t PIN_PULSE_D      = 17;    ///< Channel D fire GPIO (or PIN_NO_FIRE to repurpose as cont input).
+
+// ── Pulse continuity-sense pins ──────────────────────────────────────────────
+// Assign any free GPIO (including a PIN_NO_FIRE channel's GPIO) to enable the
+// pulse.require_continuity directive in AMS scripts (AMS-4.19.4).
+// The driver configures these pins as INPUT_PULLUP; HIGH = bridgewire intact.
+constexpr uint8_t PIN_NO_CONT      = 0xFFU; ///< No continuity-sense pin wired.
+constexpr uint8_t PIN_PULSE_A_CONT = PIN_NO_CONT; ///< Channel A cont-sense GPIO (assign real GPIO to enable).
+constexpr uint8_t PIN_PULSE_B_CONT = PIN_NO_CONT; ///< Channel B cont-sense GPIO.
+constexpr uint8_t PIN_PULSE_C_CONT = PIN_NO_CONT; ///< Channel C cont-sense GPIO.
+constexpr uint8_t PIN_PULSE_D_CONT = PIN_NO_CONT; ///< Channel D cont-sense GPIO.
 
 // ═══════════════════════════════════════════════════════════
 // Common configuration (shared across all boards)
@@ -154,7 +183,8 @@ constexpr uint8_t     AMS_MAX_ASSERTS            = 8U;  ///< Max assert directiv
 constexpr uint8_t     AMS_VAR_NAME_LEN         = 16U;///< Max variable name length including NUL (AMS-4.8).
 constexpr uint8_t     AMS_MAX_SET_ACTIONS      = 4U; ///< Max set actions per on_enter block (AMS-4.8).
 constexpr uint8_t     AMS_CALIBRATE_MAX_SAMPLES = 10U; ///< Maximum N for CALIBRATE(ALIAS.field, N) (AMS-4.8.2). With async one-sample-per-tick execution, worst-case per-tick mutex hold = 1 sensor read (~25 ms).
-constexpr uint8_t     AMS_MAX_PULSE_ACTIONS    = 2U; ///< Max PULSE.fire actions per on_enter block (AMS-4.17).
+constexpr uint8_t     AMS_MAX_PULSE_ACTIONS    = 4U; ///< Max PULSE.fire actions per on_enter block (AMS-4.17); one per channel.
+constexpr uint8_t     AMS_PULSE_LABEL_LEN      = 16U; ///< Max length of a pulse.channel label including NUL (AMS-4.18).
 constexpr uint8_t     AMS_MAX_SENSOR_RETRY     = 5U; ///< Max sensor read retries declared in include (AMS-4.9.1).
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.

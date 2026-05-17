@@ -156,6 +156,22 @@ void MissionScriptEngine::deactivateLocked()
     resetMonitorSlotsLocked();
 
     clearResumePointLocked();
+
+    // AMS-4.19: reset pulse safety runtime state on every deactivation.
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+    {
+        pulseArmed_[i]   = false;
+        pulseArmedMs_[i] = 0U;
+    }
+    activationMs_ = 0U;
+
+    // Reset per-channel fired status bits (Bug fix: these must clear between sessions
+    // so that getStatusBits() does not report stale STATUS_PULSE_X_FIRED from a
+    // previous mission script after deactivate + reactivate).
+    pulseAFired_ = false;
+    pulseBFired_ = false;
+    pulseCFired_ = false;
+    pulseDFired_ = false;
 }
 
 void MissionScriptEngine::resetSensorCachesLocked()
@@ -257,9 +273,24 @@ bool MissionScriptEngine::arm()
         executionEnabled_ = true;
         status_           = EngineStatus::RUNNING;
         pendingTc_        = TcCommand::LAUNCH;
+        // AMS-4.19.5: start safe_delay timer.  Guard against millis64()==0 at
+        // very early boot: if activationMs_ were 0 the safe_delay gate condition
+        // (activationMs_ > 0U) would be false and the delay would be bypassed.
+        //
+        // Design note: activationMs_ is intentionally NOT included in the
+        // checkpoint record (buildCheckpointRecordLocked does not serialise it)
+        // and deactivateLocked() explicitly resets it to 0.  Consequently,
+        // pulse.safe_delay is always measured from the current arm() call and
+        // is NOT preserved across deactivation or power cycles.  Every mission
+        // activation starts a fresh safe_delay window; this is the intended
+        // semantics.
+        const uint64_t nowMs = millis64();
+        activationMs_ = (nowMs > 0U) ? nowMs : 1U;
         LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
 
-        (void)saveResumePointLocked(millis64(), true);
+        // Pass the already-captured nowMs so the checkpoint elapsed-time fields
+        // are consistent with activationMs_ (avoids a second millis64() call).
+        (void)saveResumePointLocked(nowMs, true);
     } // Mutex released; checkpoint staged.
 
     flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
@@ -380,8 +411,10 @@ void MissionScriptEngine::notifyPulseFired(uint8_t channel)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired()) { return; }
-    if (channel == 0U) { pulseAFired_ = true; }
+    if (channel == 0U)      { pulseAFired_ = true; }
     else if (channel == 1U) { pulseBFired_ = true; }
+    else if (channel == 2U) { pulseCFired_ = true; }
+    else if (channel == 3U) { pulseDFired_ = true; }
     else { /* invalid channel — ignore */ }
 }
 

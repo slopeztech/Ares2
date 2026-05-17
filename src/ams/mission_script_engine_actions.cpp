@@ -457,9 +457,13 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint64_t nowMs)
     }
 
     // AMS-4.17: fire pulse channels declared in on_enter: block.
+    if (st.pulseArmActionCount > 0U)
+    {
+        executePulseArmActionsLocked(st, nowMs);  // AMS-4.19.1: arm before fire
+    }
     if (st.pulseActionCount > 0U)
     {
-        executePulseActionsLocked(st);
+        executePulseActionsLocked(st, nowMs);
     }
 
     if (!st.hasOnEnterEvent)
@@ -482,7 +486,7 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint64_t nowMs)
  * @param[in] st  State definition containing pulseActions[].
  * @pre  mutex_ is held by the caller.
  */
-void MissionScriptEngine::executePulseActionsLocked(const StateDef& st)
+void MissionScriptEngine::executePulseActionsLocked(const StateDef& st, uint64_t nowMs)
 {
     if (pulseIface_ == nullptr
         || !executionEnabled_
@@ -494,6 +498,10 @@ void MissionScriptEngine::executePulseActionsLocked(const StateDef& st)
     for (uint8_t i = 0U; i < st.pulseActionCount; i++)
     {
         const StateDef::PulseAction& act = st.pulseActions[i];
+
+        // AMS-4.19: Evaluate all safety gates before firing.
+        if (!checkPulseSafetyLocked(act.channel, nowMs)) { continue; }
+
         const uint32_t dur = (act.durationMs == 0U)
                              ? static_cast<uint32_t>(ares::FIRE_DURATION_MS)
                              : act.durationMs;
@@ -501,10 +509,23 @@ void MissionScriptEngine::executePulseActionsLocked(const StateDef& st)
         if (pulseIface_->fire(act.channel, dur))
         {
             // Set status bit directly — we already hold the mutex (Locked context).
-            if (act.channel == 0U) { pulseAFired_ = true; }
+            if      (act.channel == 0U) { pulseAFired_ = true; }
             else if (act.channel == 1U) { pulseBFired_ = true; }
-            LOG_I(TAG, "PULSE ch=%u fired dur=%" PRIu32 "ms",
-                  static_cast<uint32_t>(act.channel), dur);
+            else if (act.channel == 2U) { pulseCFired_ = true; }
+            else if (act.channel == 3U) { pulseDFired_ = true; }
+
+            // Consume the arm token after a successful fire (AMS-4.19.1).
+            if (act.channel < PulseChannel::COUNT)
+            {
+                pulseArmed_[act.channel] = false;
+            }
+
+            const char* label = (act.channel < PulseChannel::COUNT
+                                 && program_.pulseDecls[act.channel].declared)
+                                ? program_.pulseDecls[act.channel].label
+                                : "?";
+            LOG_I(TAG, "PULSE ch=%u ('%s') fired dur=%" PRIu32 "ms",
+                  static_cast<uint32_t>(act.channel), label, dur);
         }
         else
         {
@@ -513,6 +534,191 @@ void MissionScriptEngine::executePulseActionsLocked(const StateDef& st)
             setErrorLocked("PULSE.fire: driver rejected fire command");
         }
     }
+}
+
+// ── executePulseArmActionsLocked ──────────────────────────────────────────────
+
+/**
+ * @brief Set arm flags for all PULSE.arm actions declared in a state's on_enter: block.
+ *
+ * Called from sendOnEnterEventLocked() before PULSE.fire actions so that a state
+ * can arm and immediately fire in the same on_enter block.
+ *
+ * @param[in] st     State whose PULSE.arm actions should be executed.
+ * @param[in] nowMs  Current monotonic timestamp (ms).
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::executePulseArmActionsLocked(const StateDef& st, uint64_t nowMs)
+{
+    if (pulseIface_ == nullptr
+        || !executionEnabled_
+        || status_ != EngineStatus::RUNNING)
+    {
+        return;
+    }
+
+    for (uint8_t i = 0U; i < st.pulseArmActionCount; i++)
+    {
+        const uint8_t ch = st.pulseArmActions[i].channel;
+        if (ch >= PulseChannel::COUNT) { continue; }
+
+        pulseArmed_[ch]   = true;
+        pulseArmedMs_[ch] = nowMs;
+
+        const char* label = program_.pulseDecls[ch].declared
+                            ? program_.pulseDecls[ch].label : "?";
+        LOG_I(TAG, "PULSE ch=%u ('%s') armed", static_cast<uint32_t>(ch), label);
+    }
+}
+
+// ── checkPulseArmTimeoutsLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Disarm any channels whose pulse.arm_timeout has expired (AMS-4.19.3).
+ *
+ * Called once per tick() before action evaluation so that an expired arm flag
+ * is cleared proactively rather than only when a PULSE.fire is attempted.
+ *
+ * @param[in] nowMs  Current monotonic timestamp (ms).
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::checkPulseArmTimeoutsLocked(uint64_t nowMs)
+{
+    if (program_.pulseArmTimeoutMs == 0U) { return; }
+
+    for (uint8_t i = 0U; i < PulseChannel::COUNT; i++)
+    {
+        if (!pulseArmed_[i]) { continue; }
+        if ((nowMs - pulseArmedMs_[i]) > static_cast<uint64_t>(program_.pulseArmTimeoutMs))
+        {
+            pulseArmed_[i] = false;
+            LOG_W(TAG, "PULSE ch=%u arm timed out after %" PRIu32 "ms",
+                  static_cast<uint32_t>(i), program_.pulseArmTimeoutMs);
+        }
+    }
+}
+
+// ── checkPulseSafetyLocked ────────────────────────────────────────────────────
+
+/**
+ * @brief Evaluate all AMS-4.19 safety gates before a PULSE.fire is executed.
+ *
+ * Gates are evaluated in priority order:
+ * 1. AMS-4.19.5: @c pulse.safe_delay  — elapsed time since arm().
+ * 2. AMS-4.19.1: Two-phase arm check  — channel must have been armed.
+ * 3. AMS-4.19.3: Arm timeout check    — arm must not have expired.
+ * 4. AMS-4.19.4: Continuity check     — bridgewire must be intact.
+ * 5. AMS-4.19.2: Minimum altitude     — baro altitude must be met.
+ *
+ * @param[in] channel  PulseChannel::CH_A (0) … CH_D (3).
+ * @param[in] nowMs    Current monotonic timestamp (ms).
+ * @return @c true if all applicable gates pass and the fire is allowed.
+ * @pre  Caller holds the engine mutex; @c pulseIface_ != nullptr.
+ */
+bool MissionScriptEngine::checkPulseAltGateLocked(uint8_t channel)
+{
+    if (!program_.pulseHasMinAlt) { return true; }
+
+    // AMS-4.19.6: when no baro driver is registered, honour pulse.no_baro_policy.
+    // Default policy is 'block'; 'allow' skips the altitude gate entirely.
+    bool doAltCheck = true;
+    if (baroCount_ == 0U || baroDrivers_[0U].iface == nullptr)
+    {
+        if (program_.pulseNoBaroPolicyAllow)
+        {
+            LOG_I(TAG, "PULSE ch=%u: no baro driver registered; altitude gate bypassed (pulse.no_baro_policy allow)",
+                  static_cast<uint32_t>(channel));
+            doAltCheck = false;
+        }
+        else
+        {
+            LOG_W(TAG, "PULSE ch=%u blocked: pulse.min_altitude set but no baro driver registered",
+                  static_cast<uint32_t>(channel));
+            return false;
+        }
+    }
+
+    if (doAltCheck)
+    {
+        float altM = 0.0f;
+        {
+            BaroReading br{};
+            if (baroDrivers_[0U].iface->read(br) == BaroStatus::OK)
+            {
+                altM = br.altitudeM;
+            }
+            else
+            {
+                LOG_W(TAG, "PULSE ch=%u blocked: baro read failed for min_altitude check",
+                      static_cast<uint32_t>(channel));
+                return false;
+            }
+        }
+        if (altM < static_cast<float>(program_.pulseMinAltitudeM))
+        {
+            LOG_W(TAG, "PULSE ch=%u blocked: alt=%.1f m < min=%" PRIu32 " m",
+                  static_cast<uint32_t>(channel),
+                  static_cast<double>(altM),
+                  program_.pulseMinAltitudeM);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool MissionScriptEngine::checkPulseSafetyLocked(uint8_t channel, uint64_t nowMs)
+{
+    // AMS-4.19.5: safe_delay — minimum elapsed time since engine arm().
+    if (program_.pulseSafeDelayMs > 0U && activationMs_ > 0U)
+    {
+        const uint64_t elapsed = nowMs - activationMs_;
+        if (elapsed < static_cast<uint64_t>(program_.pulseSafeDelayMs))
+        {
+            LOG_W(TAG, "PULSE ch=%u blocked by safe_delay: %" PRIu64 "ms < %" PRIu32 "ms",
+                  static_cast<uint32_t>(channel), elapsed, program_.pulseSafeDelayMs);
+            return false;
+        }
+    }
+
+    // AMS-4.19.1: two-phase arm check.
+    if (channel < PulseChannel::COUNT && program_.pulseNeedsArm[channel])
+    {
+        if (!pulseArmed_[channel])
+        {
+            LOG_W(TAG, "PULSE ch=%u blocked: not armed (call PULSE.arm first)",
+                  static_cast<uint32_t>(channel));
+            return false;
+        }
+
+        // AMS-4.19.3: arm timeout — check inline in case checkPulseArmTimeoutsLocked
+        // has not yet run this tick.
+        if (program_.pulseArmTimeoutMs > 0U)
+        {
+            const uint64_t armAge = nowMs - pulseArmedMs_[channel];
+            if (armAge > static_cast<uint64_t>(program_.pulseArmTimeoutMs))
+            {
+                pulseArmed_[channel] = false;
+                LOG_W(TAG, "PULSE ch=%u blocked: arm expired (%" PRIu64 "ms > %" PRIu32 "ms)",
+                      static_cast<uint32_t>(channel), armAge, program_.pulseArmTimeoutMs);
+                return false;
+            }
+        }
+    }
+
+    // AMS-4.19.4: continuity check — only when the script demands it.
+    if (channel < PulseChannel::COUNT && program_.pulseRequireContinuity[channel])
+    {
+        if (pulseIface_ != nullptr && !pulseIface_->readContinuity(channel))
+        {
+            LOG_W(TAG, "PULSE ch=%u blocked: no continuity (open circuit)",
+                  static_cast<uint32_t>(channel));
+            return false;
+        }
+    }
+
+    // AMS-4.19.2 + AMS-4.19.6: altitude gate (extracted to checkPulseAltGateLocked).
+    return checkPulseAltGateLocked(channel);
 }
 
 } // namespace ams

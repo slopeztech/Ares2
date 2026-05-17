@@ -1493,6 +1493,10 @@ the `EVENT.*` telemetry frame is emitted.
 > cycle.  This is an intentional safety interlock — a pulse channel must never
 > receive a second activation.
 
+Before a `PULSE.fire` command can be used, the channel must be **declared** in
+the script metadata section using a `pulse.channel` directive (AMS-4.18).
+Using an undeclared channel or unknown alias in `PULSE.fire` is a parse error.
+
 ### AMS-4.17.1 Syntax
 
 ```
@@ -1503,26 +1507,33 @@ on_enter:
 
 | Token | Values | Description |
 |---|---|---|
-| `<channel>` | `A` or `B` | `A` = drogue (PIN_DROGUE), `B` = main chute (PIN_MAIN) |
+| `<channel>` | `A`, `B`, `C`, `D`, or a declared label | Channel letter or alias declared by `pulse.channel` (AMS-4.18) |
 | `<duration>ms` | positive integer | Optional pulse width in milliseconds.  Omit to use `FIRE_DURATION_MS` (default 1000 ms). |
 
-A maximum of `AMS_MAX_PULSE_ACTIONS` (2) `PULSE.fire` directives may appear in a
+A maximum of `AMS_MAX_PULSE_ACTIONS` (4) `PULSE.fire` directives may appear in a
 single `on_enter:` block.
 
 **Examples:**
 
 ```ams
+pulse.channel A as DROGUE
+pulse.channel B as MAIN
+
 state DEPLOY:
   on_enter:
-    PULSE.fire A             # drogue at default duration
-    PULSE.fire B             # main at default duration
+    PULSE.fire DROGUE        # channel A at default duration
+    PULSE.fire MAIN          # channel B at default duration
     EVENT.info "DEPLOYED"
 ```
 
 ```ams
+pulse.channel A
+pulse.channel C
+
 state STAGE_SEP:
   on_enter:
-    PULSE.fire A 500ms       # drogue with 500 ms pulse override
+    PULSE.fire A 500ms       # channel A with 500 ms pulse override
+    PULSE.fire C 1000ms      # auxiliary channel C
 ```
 
 ### AMS-4.17.2 Semantics
@@ -1534,8 +1545,9 @@ When the engine transitions into a state that contains `PULSE.fire` directives,
 1. The compile-time default `FIRE_DURATION_MS` is used if no override was given
    (`durationMs == 0` in the stored `PulseAction`).
 2. `PulseInterface::fire(channel, durationMs)` is called on the registered driver.
-3. On success, the corresponding `STATUS_PULSE_A_FIRED` or `STATUS_PULSE_B_FIRED`
-   status bit is set (visible via `getStatusBits()` and in APUS HK frames).
+3. On success, the corresponding status bit (`STATUS_PULSE_A_FIRED`,
+   `STATUS_PULSE_B_FIRED`, `STATUS_PULSE_C_FIRED`, or `STATUS_PULSE_D_FIRED`)
+   is set (visible via `getStatusBits()` and in APUS HK frames).
 4. On failure (driver rejects the call), `setErrorLocked` is invoked and the
    engine transitions to `ERROR` status.
 
@@ -1549,19 +1561,494 @@ pulse hardware.
 | Standard | Clause | Requirement |
 |---|---|---|
 | PO10-3 | No heap allocation | `PulseAction` array is statically sized; no dynamic allocation |
-| PO10-2 | Bounded loops | Loop iterates at most `AMS_MAX_PULSE_ACTIONS` (2) times |
+| PO10-2 | Bounded loops | Loop iterates at most `AMS_MAX_PULSE_ACTIONS` (4) times |
 | RTOS-4 | Mutex on critical sections | `executePulseActionsLocked` executes under the engine mutex |
 | DO-178C | Deterministic execution | Fire sequence is synchronous and order-deterministic |
-| APUS-6 | Pulse status in HK frames | `STATUS_PULSE_A_FIRED` / `STATUS_PULSE_B_FIRED` bits reported |
+| APUS-6 | Pulse status in HK frames | `STATUS_PULSE_A/B/C/D_FIRED` bits reported |
 
 ### AMS-4.17.4 Error conditions
 
 | Condition | Error |
 |---|---|
-| Channel letter other than `A` or `B` | Parse error: `PULSE.fire: channel must be A (drogue) or B (main)` |
+| Unknown channel token or undeclared alias | Parse error: `PULSE.fire: unknown channel or undeclared alias` |
+| Channel referenced before `pulse.channel` declaration | Parse error: `PULSE.fire: channel used but not declared with pulse.channel` |
+| Channel token too long | Parse error: `PULSE.fire: channel token too long` |
 | More than `AMS_MAX_PULSE_ACTIONS` directives in one block | Parse error: `too many PULSE.fire actions in on_enter block` |
-| Unexpected characters after channel letter | Parse error: `PULSE.fire: unexpected characters after channel letter` |
 | Duration is zero or not a positive integer | Parse error: `PULSE.fire: duration must be a positive integer` |
 | Duration suffix missing `ms` | Parse error: `PULSE.fire: duration must be in the form Nms (e.g. 500ms)` |
 | Driver rejects the fire request (e.g. channel already fired) | Runtime error: `PULSE.fire: driver rejected fire command` → engine ERROR |
 
+---
+
+## AMS-4.18 Pulse Channel Declaration
+
+The `pulse.channel` directive declares a physical pulse channel for use in the
+script.  It must appear in the **metadata section** (before any `state` block)
+and serves two purposes:
+
+1. **Intent declaration** — explicitly documents which channels the mission
+   script will use, making safety review straightforward.
+2. **Parse-time enforcement** — any `PULSE.fire` referencing an undeclared
+   channel or unknown alias is rejected at `activate()` time with a parse error.
+
+### AMS-4.18.1 Syntax
+
+```
+pulse.channel <letter>
+pulse.channel <letter> as <label>
+```
+
+| Token | Values | Description |
+|---|---|---|
+| `<letter>` | `A`, `B`, `C`, or `D` | Physical channel identifier |
+| `<label>` | alphanumeric + `_`, max 15 chars | Optional human-readable alias (e.g. `DROGUE`, `MAIN`) |
+
+If the `as <label>` clause is omitted, the channel letter itself is used as the
+label in log messages.
+
+### AMS-4.18.2 Rules
+
+| Rule | Detail |
+|---|---|
+| Must precede all `state` blocks | `pulse.channel` after the first `state:` line is a parse error |
+| One declaration per channel | Duplicate `pulse.channel A` is a parse error |
+| Labels must be unique | Two channels with the same label is a parse error |
+| Label charset | `[A-Za-z0-9_]` only; other characters are a parse error |
+| Label length | 1–15 characters (NUL-terminated in `AMS_PULSE_LABEL_LEN` = 16) |
+| Undeclared use | `PULSE.fire` on an undeclared channel → parse error |
+| Declared-but-unused | `pulse.channel` declared but never used in `PULSE.fire` → parser warning (LOG_W) |
+
+### AMS-4.18.3 Physical mapping
+
+Channel letters map to physical GPIO pins defined in `config.h`:
+
+| Channel | Config constant | Default pin | Typical use |
+|---|---|---|---|
+| A | `PIN_PULSE_A` | 4  | Defined by `pulse.channel A as LABEL` in script |
+| B | `PIN_PULSE_B` | 15 | Defined by `pulse.channel B as LABEL` in script |
+| C | `PIN_PULSE_C` | 16 | Defined by `pulse.channel C as LABEL` in script |
+| D | `PIN_PULSE_D` | 17 | Defined by `pulse.channel D as LABEL` in script |
+
+### AMS-4.18.4 Examples
+
+```ams
+# Minimal: bare channel letters
+pulse.channel A
+pulse.channel B
+
+state DEPLOY:
+  on_enter:
+    PULSE.fire A
+    PULSE.fire B
+```
+
+```ams
+# With aliases
+pulse.channel A as DROGUE
+pulse.channel B as MAIN
+pulse.channel C as STAGE_SEP
+
+state BOOST:
+  on_enter:
+    PULSE.fire STAGE_SEP 200ms
+
+state APOGEE:
+  on_enter:
+    PULSE.fire DROGUE
+    PULSE.fire MAIN 1500ms
+```
+
+### AMS-4.18.5 Compliance
+
+| Standard | Clause | Requirement |
+|---|---|---|
+| PO10-3 | No heap allocation | `PulseChannelDecl` array is statically sized (`PulseChannel::COUNT` = 4) |
+| DO-178C | Traceable requirements | Declaration provides explicit audit trail for pyrotechnic use |
+| CERT | Validate all inputs | Label charset and length validated at parse time |
+
+### AMS-4.18.6 Error conditions
+
+| Condition | Error |
+|---|---|
+| Channel letter not A/B/C/D | Parse error: `pulse.channel: channel must be A, B, C, or D` |
+| Characters directly after channel letter (not `\0` or space) | Parse error: `pulse.channel: unexpected characters after channel letter` |
+| Space-separated token after channel letter that is not `as` (e.g. `pulse.channel A FOO`) | Parse error: `pulse.channel: unexpected token after channel letter; expected end-of-line or 'as LABEL'` |
+| Duplicate declaration | Parse error: `pulse.channel: duplicate declaration for the same channel` |
+| Empty label after `as` | Parse error: `pulse.channel: empty label after 'as'` |
+| Invalid character in label | Parse error: `pulse.channel: label contains invalid character` |
+| Label too long | Parse error: `pulse.channel: label exceeds maximum length` |
+| Label already used by another channel | Parse error: `pulse.channel: label already used by another channel` |
+| `pulse.channel` after a `state` block | Parse error: `'pulse.channel' must appear before any state block` |
+
+---
+
+## AMS-4.19 Pulse Safety System
+
+The pulse safety system provides five independent safety gates that must all be
+satisfied before `PULSE.fire` sends electrical energy to a pyrotechnic output
+channel. All directives are **pre-state** (they must appear before the first
+`state` block). All limits are enforced at **parse time** where possible; the
+remaining limits are enforced at **runtime** on every `PULSE.fire` call.
+
+### Overview
+
+| Directive | AMS section | Gate type |
+|---|---|---|
+| `pulse.safe_delay <ms>` | AMS-4.19.5 | Time — minimum elapsed since `arm()` |
+| `pulse.min_altitude <m>` | AMS-4.19.2 | Sensor — barometric altitude |
+| `pulse.require_continuity <ch>` | AMS-4.19.4 | Hardware — bridgewire continuity pin |
+| `PULSE.arm <ch>` (action) | AMS-4.19.1 | Logical — two-phase arm–fire |
+| `pulse.arm_timeout <ms>` | AMS-4.19.3 | Time — auto-disarm after N ms |
+| `pulse.no_baro_policy allow\|block` | AMS-4.19.6 | Policy — behaviour when no baro driver |
+
+All gates are evaluated in the order listed above. If any gate rejects the
+fire, the pulse is suppressed silently and a warning is logged via the event
+service; **no error state is entered**.
+
+All pulse safety runtime state — arm tokens, arm timestamps, the activation
+timestamp used by `pulse.safe_delay`, and the per-channel fired-status flags —
+is **reset to its initial value on every call to `deactivate()`**. This means a
+mission script that is deactivated and then re-activated with the same file
+starts each session with a clean slate; status bits reported by `getStatusBits()`
+reflect only the current session.
+
+---
+
+### AMS-4.19.1 Two-phase arm–fire (`PULSE.arm`)
+
+#### Purpose
+
+Prevents accidental pyrotechnic discharge by requiring an explicit arm action
+in an `on_enter` block before any `PULSE.fire` on the same channel is allowed.
+
+#### Syntax (action inside an `on_enter` block)
+
+```
+PULSE.arm <channel>
+```
+
+Where `<channel>` is a raw letter (A–D) or a label declared by `pulse.channel`.
+
+#### Rules
+
+1. `PULSE.arm` may only appear inside an `on_enter` block.
+2. If `PULSE.arm <ch>` appears anywhere in the script, every subsequent
+   `PULSE.fire <ch>` in the same or a later state **requires** a prior arm.
+3. The arm token is consumed (cleared) immediately after a successful
+   `PULSE.fire`.
+4. `PULSE.arm` and `PULSE.fire` may appear in the same `on_enter` block;
+   arm actions are executed before fire actions.
+5. If `pulse.arm_timeout` is declared, the arm token expires after the
+   specified number of milliseconds (AMS-4.19.3).
+
+#### Examples
+
+```ams
+state ARM:
+  on_enter:
+    PULSE.arm DROGUE       // sets arm token for DROGUE channel
+
+state FIRE:
+  on_enter:
+    PULSE.fire DROGUE      // only executes if arm token is present
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| `PULSE.arm` outside `on_enter` | Parse error: `PULSE.arm only allowed inside on_enter` |
+| Channel not declared | Parse error: `PULSE.arm: channel not declared` |
+
+---
+
+### AMS-4.19.2 Minimum altitude (`pulse.min_altitude`)
+
+#### Purpose
+
+Prevents pyrotechnic discharge below a configurable barometric altitude,
+protecting against ground-level or low-altitude accidental triggering.
+
+#### Syntax
+
+```
+pulse.min_altitude <altitude_m>
+```
+
+Where `<altitude_m>` is an integer in the range **[1, 50 000]** metres.
+
+#### Rules
+
+1. Must appear in the script metadata section (before the first `state` block).
+2. Only one `pulse.min_altitude` directive is allowed per script.
+3. At runtime, the altitude gate is evaluated using the first declared barometric
+   driver (`SIM_BARO` or a real `BARO` include). If the driver returns an error
+   or the current altitude is below the threshold, the fire is suppressed.
+4. The altitude is compared against the **absolute barometric altitude above
+   sea level** reported by the driver (not AGL).
+5. If no barometric driver is registered in the engine at construction time
+   (`baroCount = 0`), the altitude gate **always suppresses fire** regardless of
+   the threshold value. A `W`-level warning is emitted:
+   `PULSE ch=N blocked: pulse.min_altitude set but no baro driver registered`.
+
+#### Examples
+
+```ams
+pulse.channel A as DROGUE
+pulse.min_altitude 300        // PULSE.fire allowed only at or above 300 m ASL
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| Value < 1 | Parse error: `pulse.min_altitude: value out of range [1, 50000]` |
+| Value > 50 000 | Parse error: `pulse.min_altitude: value out of range [1, 50000]` |
+| Directive after a `state` block | Parse error: `'pulse.min_altitude' must appear before any state block` |
+| Duplicate directive | Parse error: `pulse.min_altitude: duplicate directive` |
+
+---
+
+### AMS-4.19.3 Arm timeout (`pulse.arm_timeout`)
+
+#### Purpose
+
+Limits the window during which a channel is considered armed. If the arm token
+is not consumed by a `PULSE.fire` within `<ms>` milliseconds, it is automatically
+cleared, preventing stale arming from persisting across unexpected delays.
+
+#### Syntax
+
+```
+pulse.arm_timeout <ms>
+```
+
+Where `<ms>` is an integer in the range **[500, 300 000]** milliseconds.
+
+#### Rules
+
+1. Must appear before the first `state` block.
+2. `pulse.arm_timeout` applies **globally** to all channels in the script.
+3. The timeout is checked on every `engine.tick()` call; expired arm tokens are
+   cleared at the start of each tick before state actions are evaluated.
+4. If `PULSE.arm` is never declared, `pulse.arm_timeout` has no effect.
+
+#### Examples
+
+```ams
+pulse.channel A as DROGUE
+pulse.arm_timeout 5000          // arm expires after 5 s if PULSE.fire not reached
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| Value < 500 | Parse error: `pulse.arm_timeout: value out of range [500, 300000]` |
+| Value > 300 000 | Parse error: `pulse.arm_timeout: value out of range [500, 300000]` |
+| Directive after a `state` block | Parse error: `'pulse.arm_timeout' must appear before any state block` |
+| Duplicate directive | Parse error: `pulse.arm_timeout: duplicate directive` |
+
+---
+
+### AMS-4.19.4 Continuity check (`pulse.require_continuity`)
+
+#### Purpose
+
+Verifies electrical continuity of the bridgewire (e.g., an e-match or
+initiator) before allowing discharge. A broken circuit (open bridgewire) will
+suppress the fire, preventing energy release into a disconnected load.
+
+#### Hardware wiring
+
+The continuity-sense GPIO for each channel is set in `src/config.h` via
+`PIN_PULSE_x_CONT`.  With only four pulse GPIOs available, a common pattern is
+to reassign unused fire channels as sense inputs — set the unwanted fire pin to
+`PIN_NO_FIRE` and assign its GPIO number to `PIN_PULSE_y_CONT`:
+
+```cpp
+// 2-fire + 2-cont example (src/config.h)
+constexpr uint8_t PIN_PULSE_A = 4;           // A fires
+constexpr uint8_t PIN_PULSE_B = 15;          // B fires
+constexpr uint8_t PIN_PULSE_C = PIN_NO_FIRE; // GPIO 16 freed for cont
+constexpr uint8_t PIN_PULSE_D = PIN_NO_FIRE; // GPIO 17 freed for cont
+constexpr uint8_t PIN_PULSE_A_CONT = 16;     // bridgewire return for A
+constexpr uint8_t PIN_PULSE_B_CONT = 17;     // bridgewire return for B
+```
+
+See [hardware/pin_map.md](../hardware/pin_map.md) for wiring details.
+
+#### Syntax
+
+```
+pulse.require_continuity <channel>
+```
+
+Where `<channel>` is a raw channel letter (A–D) or a declared label.
+
+#### Rules
+
+1. Must appear before the first `state` block.
+2. The directive is validated **at parse time**: if the hardware continuity pin
+   constant for the referenced channel is `PIN_NO_CONT` (0xFF), the script
+   activation fails with an error. This prevents deploying a script that relies
+   on a hardware feature that is not wired.
+3. Multiple channels can each have their own `pulse.require_continuity` line.
+4. At runtime, the continuity pin is sampled at the moment `PULSE.fire` is
+   evaluated; if the pin reads as open, the fire is suppressed.
+
+#### Examples
+
+```ams
+pulse.channel A as DROGUE
+pulse.require_continuity A    // PULSE.fire on A blocked if bridgewire is open
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| Channel has no hardware continuity pin wired | Parse error: `pulse.require_continuity: channel A has no hardware continuity pin` |
+| Channel not declared | Parse error: `pulse.require_continuity: channel not declared` |
+| Directive after a `state` block | Parse error: `'pulse.require_continuity' must appear before any state block` |
+
+---
+
+### AMS-4.19.5 Safe delay (`pulse.safe_delay`)
+
+#### Purpose
+
+Enforces a minimum elapsed time between the moment `engine.arm()` is called and
+the moment any `PULSE.fire` is evaluated. This prevents accidental discharge
+immediately after the mission engine is armed (e.g., due to spurious transitions
+or a race condition in the initial state).
+
+#### Syntax
+
+```
+pulse.safe_delay <ms>
+```
+
+Where `<ms>` is an integer in the range **[100, 60 000]** milliseconds.
+
+#### Rules
+
+1. Must appear before the first `state` block.
+2. The safe delay is measured from the instant `engine.arm()` is called, using
+   the monotonic 64-bit millisecond counter (`millis64()`).
+3. The gate applies to **all** channels declared in the script.
+4. Once the delay has elapsed it does not re-arm; it is a one-shot guard.
+
+#### Examples
+
+```ams
+pulse.channel A as DROGUE
+pulse.safe_delay 2000          // no PULSE.fire allowed within first 2 s of arm()
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| Value < 100 | Parse error: `pulse.safe_delay: value out of range [100, 60000]` |
+| Value > 60 000 | Parse error: `pulse.safe_delay: value out of range [100, 60000]` |
+| Directive after a `state` block | Parse error: `'pulse.safe_delay' must appear before any state block` |
+| Duplicate directive | Parse error: `pulse.safe_delay: duplicate directive` |
+
+---
+
+### AMS-4.19.6 No-baro policy (`pulse.no_baro_policy`)
+
+#### Purpose
+
+Controls the behaviour of the `pulse.min_altitude` gate when no barometric
+driver is registered in the engine. Because barometric hardware may be absent
+in some configurations (e.g. a propulsion board without an altitude sensor),
+the script author can explicitly choose what is safer for their deployment:
+block fire until baro is available, or allow fire and rely on the other safety
+gates.
+
+#### Syntax
+
+```
+pulse.no_baro_policy allow|block
+```
+
+| Value | Behaviour when no baro driver is registered |
+|---|---|
+| `block` | `PULSE.fire` is suppressed; `W`-level warning logged. **(Default when directive is absent.)** |
+| `allow` | The altitude gate is skipped; `I`-level note logged; other gates still apply. |
+
+#### Rules
+
+1. Must appear before the first `state` block.
+2. Only effective when `pulse.min_altitude` is also declared. If
+   `pulse.min_altitude` is absent, this directive is accepted but has no
+   runtime effect.
+3. When the directive is absent, the default policy is `block`.
+
+#### Examples
+
+```ams
+// Flight test without a baro sensor — altitude check skipped if baro absent
+pulse.channel A as DROGUE
+pulse.min_altitude    200
+pulse.no_baro_policy  allow
+```
+
+```ams
+// Production flight — explicitly require baro (same as default)
+pulse.channel A as DROGUE
+pulse.min_altitude    500
+pulse.no_baro_policy  block
+```
+
+#### Error conditions
+
+| Condition | Error |
+|---|---|
+| Value is neither `allow` nor `block` | Parse error: `pulse.no_baro_policy: invalid value (expected 'allow' or 'block')` |
+| Directive after a `state` block | Parse error: `'pulse.no_baro_policy' must appear before any state block` |
+| Duplicate `pulse.no_baro_policy` directive | Parse error: `pulse.no_baro_policy: duplicate directive (only one allowed per script)` |
+
+---
+
+### AMS-4.19.7 Combined example
+
+The following script activates all six safety directives on channel A:
+
+```ams
+include GPS as GPS
+include BARO as BARO
+include COM as COM
+include IMU as IMU
+
+pus.apid = 42
+pus.service 3 as HK
+pus.service 5 as EVENT
+pus.service 1 as TC
+
+pulse.channel A as DROGUE
+
+pulse.safe_delay    3000        // AMS-4.19.5: no fire for 3 s after arm()
+pulse.min_altitude  500         // AMS-4.19.2: must be at or above 500 m MSL
+pulse.no_baro_policy block      // AMS-4.19.6: block fire if baro absent (default, explicit here)
+pulse.require_continuity A      // AMS-4.19.4: bridgewire must be intact
+pulse.arm_timeout   10000       // AMS-4.19.3: arm token expires after 10 s
+
+state WAIT:
+  on_enter:
+    EVENT.info "Waiting for launch command"
+  transition to ARM when TC.command == LAUNCH
+
+state ARM:
+  on_enter:
+    PULSE.arm DROGUE            // AMS-4.19.1: set arm token
+    EVENT.info "Channel armed"
+  transition to FIRE when TC.command == FIRE
+
+state FIRE:
+  on_enter:
+    PULSE.fire DROGUE           // all 5 gates evaluated here
+    EVENT.info "Drogue deployed"
+```

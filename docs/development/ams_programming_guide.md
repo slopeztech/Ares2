@@ -1507,8 +1507,8 @@ fast path (AMS-5.9).
 | `ARM_FLIGHT`          | `engine_.arm()`                                                       | None                             |
 | `ABORT`               | `engine_.injectTcCommand("ABORT")`                                    | None                             |
 | `FACTORY_RESET`       | `engine_.injectTcCommand("RESET")`                                    | None                             |
-| `FIRE_PULSE_A`        | Fires pulse channel A (drogue) via `PulseDriver`                      | `status == RUNNING`              |
-| `FIRE_PULSE_B`        | Fires pulse channel B (main) via `PulseDriver`                        | `status == RUNNING`              |
+| `FIRE_PULSE_A`        | Fires pulse channel A via `PulseDriver`                               | `status == RUNNING`              |
+| `FIRE_PULSE_B`        | Fires pulse channel B via `PulseDriver`                               | `status == RUNNING`              |
 | `SET_MODE`            | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
 | `SET_FCS_ACTIVE`      | `engine_.setExecutionEnabled(payload[2] != 0)`                        | None                             |
 | `REQUEST_TELEMETRY`   | `engine_.requestTelemetry(nowMs)` — sends all active HK slots now     | None                             |

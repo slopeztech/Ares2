@@ -4,7 +4,7 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-2.1.1-blue)](#)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
@@ -551,7 +551,7 @@ Standards references:
 
 Software requirements are tracked in plain-text [StrictDoc](https://strictdoc.readthedocs.io/) format, which provides bidirectional traceability between requirements and source code, and can export to HTML or PDF.
 
-The initial SRS is derived from the coding standards and from the behaviour implemented in the current firmware (v2.0.0):
+The initial SRS is derived from the coding standards and from the behaviour implemented in the current firmware:
 
 - [docs/requirements/SRS.sdoc](docs/requirements/SRS.sdoc) — Software Requirements Specification
 
@@ -608,7 +608,7 @@ pio device monitor --baud 115200
 Structured log format:
 
 ```
-[   2000] I MAIN: ═══ ARES v2.0.0 ═══
+[   2000] I MAIN: ═══ ARES v2.x.x ═══
 [   2000] I MAIN: board: ESP32-S3 Zero Mini
 [   2100] I MAIN: Init complete — LED:OK WiFi:OK LoRa:OK State:OK
 ```
