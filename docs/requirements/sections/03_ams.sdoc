@@ -179,10 +179,10 @@ REFS: docs/standards/ams_standard.md AMS-4.10.2
 UID: SRS-2203
 STATUS: Active
 TAGS: AMS, Guards, Assertions
-STATEMENT: A script shall declare at most AMS_MAX_ASSERTS (8) assert directives. An assert condition is evaluated every tick regardless of the active state. If an assert fires it shall dispatch an EVENT.error frame and immediately transition the engine to ERROR status. An assert violation cannot be recovered by on_error.
+STATEMENT: A script may declare at most one assert: block containing at most AMS_MAX_ASSERTS (8) directives. Supported directives are: "reachable STATE" (BFS reachability from state[0]), "no_dead_states" (BFS coverage of all declared states), and "max_transition_depth < N" (acyclic DFS longest-path check). All assert directives are evaluated at parse time during activate(). If any directive fails, the script shall be rejected immediately and the engine shall remain in IDLE status with a descriptive error message. No assert directive shall produce runtime traffic or influence in-flight execution.
 VERIFICATION: Test
-RATIONALE: AMS-15. Asserts encode invariants that must hold across all states (e.g. "BARO.alt < 15000"). Violations indicate a hardware or calibration anomaly severe enough to halt the mission.
-REFS: docs/standards/ams_standard.md AMS-15, src/config.h AMS_MAX_ASSERTS
+RATIONALE: AMS-4.14. Parse-time structural verification catches unreachable states and unbounded transition chains before flight. Static checking eliminates runtime overhead and avoids the possibility of the assertion mechanism itself contributing to in-flight failure.
+REFS: docs/standards/ams_standard.md AMS-4.14, src/config.h AMS_MAX_ASSERTS
 
 [[/SECTION]]
 
@@ -379,6 +379,89 @@ STATEMENT: The injectTc() method shall be callable from any RTOS task (API handl
 VERIFICATION: Inspection
 RATIONALE: RTOS-4 / CERT-SIG30. TC injection from the REST API runs on the API task; from radio on the comms task. Mutex protection prevents concurrent modification of the TC pending slot. ISR calls would violate FreeRTOS mutex semantics.
 REFS: docs/standards/rtos_standard.md RTOS-4
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.9 State Timeout Handler
+
+[REQUIREMENT]
+UID: SRS-2800
+STATUS: Active
+TAGS: AMS, OnTimeout
+STATEMENT: A state may declare at most one on_timeout: block with the syntax "on_timeout Nms:" where N is a positive integer. If the state has been active for at least N milliseconds without any regular transition firing, the on_timeout handler shall execute: it shall dispatch the declared EVENT (if any), then execute the "transition to STATE" directive (if any). The handler shall fire at most once per state entry; after firing it shall not be re-armed within the same state visit.
+VERIFICATION: Test
+RATIONALE: AMS-4.10.3. Provides a named, annotated alternative to the bare fallback mechanism (SRS-2105) when an EVENT frame must accompany the forced transition (e.g. EVENT.warning before transitioning to SAFE). Unlike fallback, on_timeout is optional and allows an accompanying EVENT without requiring a destination state.
+REFS: docs/standards/ams_standard.md AMS-4.10.3
+
+[REQUIREMENT]
+UID: SRS-2801
+STATUS: Active
+TAGS: AMS, OnTimeout, Limits
+STATEMENT: An on_timeout: block shall accept at most one EVENT directive and at most one "transition to STATE" directive. A second on_timeout: block declared in the same state shall be a parse error. An on_timeout: block with neither an EVENT nor a transition directive shall be a parse error.
+VERIFICATION: Test
+RATIONALE: AMS-4.10.3. Exactly one on_timeout block per state prevents ambiguous timeout ordering. Requiring at least one action ensures the block is not a no-op that wastes a timer slot.
+REFS: docs/standards/ams_standard.md AMS-4.10.3
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.10 Background Task Blocks
+
+[REQUIREMENT]
+UID: SRS-2900
+STATUS: Active
+TAGS: AMS, Tasks
+STATEMENT: A script shall declare at most AMS_MAX_TASKS (4) background task blocks using the syntax "task NAME when in STATE [STATE...] every Nms:". A task block shall only execute when the current engine state appears in the task's "when in" clause. The "when in" clause shall accept at most AMS_MAX_TASK_ACTIVE_STATES (6) state names. Each task shall declare at most AMS_MAX_TASK_RULES (4) conditional if-rules.
+VERIFICATION: Test
+RATIONALE: AMS-4.13. Background tasks decouple periodic monitoring logic (e.g. maximum-altitude tracking, watchdog threshold checks) from the primary state machine transitions, keeping state blocks focused on flight events.
+REFS: docs/standards/ams_standard.md AMS-4.13, src/config.h AMS_MAX_TASKS, AMS_MAX_TASK_RULES, AMS_MAX_TASK_ACTIVE_STATES
+
+[REQUIREMENT]
+UID: SRS-2901
+STATUS: Active
+TAGS: AMS, Tasks, Constraints
+STATEMENT: A background task if-rule body shall execute set actions and dispatch at most one EVENT per rule firing. A task rule shall NOT contain a "transition to" directive; state transitions shall only occur via regular transitions, fallback, on_error, or on_timeout. Task-generated EVENTs shall be dispatched at the same priority as HK.report within the action arbitrator (SRS-2502).
+VERIFICATION: Test
+RATIONALE: AMS-4.13. Restricting tasks to set and EVENT prevents re-entrant state changes during task evaluation, which would violate the single-transition-per-tick constraint enforced by SRS-2106. Dispatching at HK priority avoids task events starving behind high-rate LOG traffic.
+REFS: docs/standards/ams_standard.md AMS-4.13
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.11 Pulse Channel Commands
+
+[REQUIREMENT]
+UID: SRS-2950
+STATUS: Active
+TAGS: AMS, PULSE
+STATEMENT: An on_enter: block shall support at most AMS_MAX_PULSE_ACTIONS (2) PULSE.fire directives. Valid channel identifiers are A and B. Each directive shall accept an optional duration override in the form "Nms" (positive integer, milliseconds); if omitted, the PULSE driver's configured default duration shall be used. PULSE.fire directives are only permitted inside on_enter: blocks; use in any other block context shall be a parse error.
+VERIFICATION: Test
+RATIONALE: AMS-4.17. Pyrotechnic firing is a one-shot action naturally associated with state entry (e.g. apogee detection triggers the ejection charge). Restricting PULSE.fire to on_enter: enforces that each firing is tied to exactly one state transition event and cannot be re-triggered by timer slots.
+REFS: docs/standards/ams_standard.md AMS-4.17, src/config.h AMS_MAX_PULSE_ACTIONS
+
+[REQUIREMENT]
+UID: SRS-2951
+STATUS: Active
+TAGS: AMS, PULSE, Safety
+STATEMENT: A PULSE.fire action shall be executed synchronously by the PULSE driver during on_enter: block processing. If the driver rejects the fire command (hardware fault or safety interlock not armed), the engine shall immediately enter ERROR status. The PULSE hardware safety interlock shall be explicitly enabled via PUT /api/config before any script containing PULSE.fire directives can be armed; attempting to arm such a script with the interlock disabled shall return HTTP 409 Conflict.
+VERIFICATION: Test
+RATIONALE: AMS-4.17 / DO-178C. Pyrotechnic channels must fail-safe: a rejected fire must halt the mission rather than silently skip the firing, which could mask a wiring fault or produce an unsafe partial-sequence scenario. The interlock prevents accidental firing during bench test activations.
+REFS: docs/standards/ams_standard.md AMS-4.17
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: 3.12 Script Radio Configuration Override
+
+[REQUIREMENT]
+UID: SRS-2980
+STATUS: Active
+TAGS: AMS, RadioConfig
+STATEMENT: A script may declare "radio.config PARAM_NAME = VALUE" directives in the metadata section (before any state block). Each directive overrides one APUS configuration parameter. Overrides shall be applied by the radio dispatcher immediately after a successful ARM command, before the first telemetry tick. Supported parameters include at minimum: "telem_interval" (ms, 100–60000) and "monitor.alt.high" (m, 0–15000). An unknown parameter name or a value outside its valid range shall be a parse error. At most one "radio.config" directive per parameter name is permitted; a duplicate is a parse error.
+VERIFICATION: Test
+RATIONALE: AMS-4.15. Mission-specific radio timing should be embedded in the script rather than requiring a separate PUT /api/config call, which risks misconfiguration between script upload and arm. Bounding parameters to a known table prevents injection of arbitrary radio register values.
+REFS: docs/standards/ams_standard.md AMS-4.15
 
 [[/SECTION]]
 

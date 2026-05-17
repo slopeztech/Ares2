@@ -67,10 +67,10 @@ REFS: docs/standards/apus_standard.md APUS-19
 UID: SRS-3004
 STATUS: Active
 TAGS: Radio, APUS, Payload
-STATEMENT: A single ARES Radio Protocol frame payload shall not exceed 255 bytes. The HK telemetry payload shall be a fixed 38-byte struct (APUS-3.6). Scripts that would produce an oversized HK payload due to too many fields shall be rejected at parse time with a descriptive error.
+STATEMENT: A single ARES Radio Protocol frame payload shall not exceed 255 bytes. The HK telemetry payload shall be a fixed 78-byte struct (APUS-3.6), verified at compile time by a static_assert. Scripts that would produce an oversized HK payload due to too many fields shall be rejected at parse time with a descriptive error.
 VERIFICATION: Test
-RATIONALE: APUS-15. The LoRa module MTU and protocol LEN field (1 byte) limit payload to 255 bytes. Oversized frames would be silently truncated by the driver, corrupting the HK struct alignment.
-REFS: docs/standards/apus_standard.md APUS-15, APUS-3.6
+RATIONALE: APUS-15. The LoRa module MTU and protocol LEN field (1 byte) limit payload to 255 bytes. Oversized frames would be silently truncated by the driver, corrupting the HK struct alignment. The 78-byte size is enforced by static_assert(sizeof(TelemetryPayload) == 78) in ares_radio_protocol.h.
+REFS: docs/standards/apus_standard.md APUS-15, APUS-3.6, src/comms/ares_radio_protocol.h TelemetryPayload
 
 [REQUIREMENT]
 UID: SRS-3005
