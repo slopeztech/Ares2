@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 133
+ * Test count: 135
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -29,6 +29,7 @@ extern void test_no_assert_block_activates_ok();
 extern void test_assert_no_silent_terminals_pass();
 extern void test_assert_no_silent_terminals_pass_with_hk();
 extern void test_assert_no_silent_terminals_fail();
+extern void test_assert_reachable_large_graph();
 
 // ── test_ams_engine_control.cpp ──────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ extern void test_limit_script_at_max_bytes_accepted();
 extern void test_limit_script_over_max_bytes_truncates();
 extern void test_limit_max_depth_full_chain_pass();
 extern void test_limit_max_depth_full_chain_fail();
+extern void test_limit_13_state_flight_profile_accepted();
 
 // ── test_ams_on_exit_set.cpp ─────────────────────────────────────────────────
 
@@ -223,6 +225,7 @@ int main()
     RUN_TEST(test_assert_no_silent_terminals_pass);
     RUN_TEST(test_assert_no_silent_terminals_pass_with_hk);
     RUN_TEST(test_assert_no_silent_terminals_fail);
+    RUN_TEST(test_assert_reachable_large_graph);
 
     // ams_engine_control
     RUN_TEST(test_abort_tc_deactivates_engine);
@@ -284,6 +287,7 @@ int main()
     RUN_TEST(test_limit_script_over_max_bytes_truncates);
     RUN_TEST(test_limit_max_depth_full_chain_pass);
     RUN_TEST(test_limit_max_depth_full_chain_fail);
+    RUN_TEST(test_limit_13_state_flight_profile_accepted);
 
     // ams_on_exit_set
     RUN_TEST(test_on_exit_set_script_parses_successfully);

@@ -84,7 +84,7 @@ TITLE: 3.2 State Machine
 UID: SRS-2100
 STATUS: Active
 TAGS: AMS, StateMachine
-STATEMENT: A single AMS script shall define at most AMS_MAX_STATES (10) states. Each state name shall be at most AMS_MAX_STATE_NAME-1 (15) characters (excluding the NUL terminator). A script that violates either bound shall be rejected at parse time.
+STATEMENT: A single AMS script shall define at most AMS_MAX_STATES (16) states. Each state name shall be at most AMS_MAX_STATE_NAME-1 (15) characters (excluding the NUL terminator). A script that violates either bound shall be rejected at parse time.
 VERIFICATION: Test
 RATIONALE: config.h constants. Bounds StateDef array size; ensures state names fit in checkpoint records and telemetry EVENT text without truncation.
 REFS: src/config.h AMS_MAX_STATES, AMS_MAX_STATE_NAME

@@ -1343,7 +1343,7 @@ assert:
 
 ### AMS-4.14.4 Algorithms
 
-BFS uses a `uint16_t` reachability bitmask (supports up to `AMS_MAX_STATES = 10` states).  
+BFS uses a `uint32_t` reachability bitmask (hard ceiling: 32 states; `AMS_MAX_STATES = 16` is the current practical limit).  
 DFS uses a bounded stack of `DfsFrame{state, depth, pathMask, child}` structs allocated
 on the C++ stack — no heap.
 

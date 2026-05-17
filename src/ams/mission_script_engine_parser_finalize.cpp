@@ -661,7 +661,7 @@ bool MissionScriptEngine::resolveTasksLocked()
  * @brief Evaluate formal assertions against the fully-resolved transition graph (AMS-15).
  *
  * Performs graph analysis entirely on the stack (no heap).  Uses a
- * @c uint16_t bitmask for reachability (AMS_MAX_STATES ≤ 16).
+ * @c uint32_t bitmask for reachability (AMS_MAX_STATES ≤ 32).
  * Iterative DFS with path-tracking detects cycles and measures depth.
  *
  * Called from @c parseScriptLocked() as the final validation step.
@@ -670,7 +670,7 @@ bool MissionScriptEngine::resolveTasksLocked()
  * @return @c true if all assertions hold.
  * @pre  Caller holds the engine mutex.  resolveTransitionsLocked() has run.
  */
-void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) const
+void MissionScriptEngine::computeBfsReachabilityLocked(uint32_t& reachable) const
 {
     reachable = 0U;
     uint8_t queue[ares::AMS_MAX_STATES] = {};
@@ -678,7 +678,7 @@ void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) cons
     uint8_t tail = 0U;
 
     queue[tail++] = 0U;
-    reachable |= static_cast<uint16_t>(1U << 0U);
+    reachable |= static_cast<uint32_t>(1U << 0U);
 
     while (head < tail)
     {
@@ -688,9 +688,9 @@ void MissionScriptEngine::computeBfsReachabilityLocked(uint16_t& reachable) cons
         auto visit = [&](uint8_t t)
         {
             if (t < program_.stateCount &&
-                !(reachable & static_cast<uint16_t>(1U << t)))
+                !(reachable & static_cast<uint32_t>(1U << t)))
             {
-                reachable |= static_cast<uint16_t>(1U << t);
+                reachable |= static_cast<uint32_t>(1U << t);
                 queue[tail++] = t;
             }
         };
@@ -721,7 +721,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
     {
         uint8_t  state;
         uint8_t  depth;
-        uint16_t pathMask;
+        uint32_t pathMask;
         uint8_t  child;
     };
 
@@ -731,7 +731,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
     DfsFrame dfsStack[ares::AMS_MAX_STATES + 1U] = {};
     uint8_t  dfsTop = 0U;
 
-    dfsStack[dfsTop++] = { 0U, 0U, static_cast<uint16_t>(1U << 0U), 0U };
+    dfsStack[dfsTop++] = { 0U, 0U, static_cast<uint32_t>(1U << 0U), 0U };
 
     while (dfsTop > 0U && !hasCycle)
     {
@@ -772,7 +772,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
 
             if (suc < program_.stateCount)
             {
-                if (f.pathMask & static_cast<uint16_t>(1U << suc))
+                if (f.pathMask & static_cast<uint32_t>(1U << suc))
                 {
                     hasCycle = true;
                     break;
@@ -782,7 +782,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
                     dfsStack[dfsTop++] = {
                         suc,
                         static_cast<uint8_t>(f.depth + 1U),
-                        static_cast<uint16_t>(f.pathMask | static_cast<uint16_t>(1U << suc)),
+                        static_cast<uint32_t>(f.pathMask | static_cast<uint32_t>(1U << suc)),
                         0U
                     };
                     pushed = true;
@@ -795,7 +795,7 @@ void MissionScriptEngine::computeDfsMaxDepthLocked(uint8_t& maxDepth, bool& hasC
 }
 
 bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-function-size)
-    const AssertDef& ad, uint16_t reachable, uint8_t maxDepth, bool hasCycle)
+    const AssertDef& ad, uint32_t reachable, uint8_t maxDepth, bool hasCycle)
 {
     switch (ad.kind)
     {
@@ -812,7 +812,7 @@ bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-func
             setErrorLocked(msg);
             return false;
         }
-        if (!(reachable & static_cast<uint16_t>(1U << idx)))
+        if (!(reachable & static_cast<uint32_t>(1U << idx)))
         {
             static char msg[80] = {};
             snprintf(msg, sizeof(msg),
@@ -827,13 +827,16 @@ bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-func
 
     case AssertKind::NO_DEAD_STATES:
     {
-        const uint16_t allMask = static_cast<uint16_t>(
-            (static_cast<uint32_t>(1U) << program_.stateCount) - 1U);
+        // Shifting a 32-bit value by exactly 32 is UB; guard against it so that
+        // raising AMS_MAX_STATES to 32 in the future remains safe.
+        const uint32_t allMask = (program_.stateCount >= 32U)
+            ? ~static_cast<uint32_t>(0U)
+            : (static_cast<uint32_t>(1U) << program_.stateCount) - 1U;
         if ((reachable & allMask) != allMask)
         {
             for (uint8_t s = 0U; s < program_.stateCount; s++)
             {
-                if (!(reachable & static_cast<uint16_t>(1U << s)))
+                if (!(reachable & static_cast<uint32_t>(1U << s)))
                 {
                     static char msg[80] = {};
                     snprintf(msg, sizeof(msg),
@@ -912,10 +915,10 @@ bool MissionScriptEngine::validateAssertionsLocked()
     if (program_.assertCount == 0U) { return true; }
     if (program_.stateCount  == 0U) { return true; }
 
-    static_assert(ares::AMS_MAX_STATES <= 16U,
-                  "validateAssertionsLocked: BFS bitmask requires AMS_MAX_STATES <= 16");
+    static_assert(ares::AMS_MAX_STATES <= 32U,
+                  "validateAssertionsLocked: BFS bitmask requires AMS_MAX_STATES <= 32");
 
-    uint16_t reachable = 0U;
+    uint32_t reachable = 0U;
     computeBfsReachabilityLocked(reachable);
 
     uint8_t maxDepth = 0U;
