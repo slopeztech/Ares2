@@ -50,7 +50,7 @@ struct FlightSample
     bool    gpsFix    = false;    ///< True if a valid 3-D fix is available.
 
     // ── Barometer ─────────────────────────────────────────────────────────────
-    float baroAltM    = 0.0f;     ///< Pressure altitude in metres.
+    float baroAltM    = 0.0f;     ///< MSL altitude in metres (matches BaroReading::altitudeM).
     float baroPressurePa = 101325.0f; ///< Absolute pressure in Pascals.
     float baroTempC   = 25.0f;    ///< Air temperature in °C.
 

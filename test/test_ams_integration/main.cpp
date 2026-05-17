@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 131
+ * Test count: 133
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -113,6 +113,7 @@ extern void test_pulse_fire_no_driver_no_crash();
 extern void test_pulse_channel_undeclared_fire_fails();
 extern void test_pulse_channel_alias_resolves();
 extern void test_pulse_channel_duplicate_decl_fails();
+extern void test_pulse_channel_bad_trailing_token_fails();
 
 // ── test_ams_pulse_safety.cpp ────────────────────────────────────────────────
 
@@ -139,6 +140,7 @@ extern void test_pulse_safe_delay_combined_with_arm();
 extern void test_pulse_arm_undeclared_channel_parse_error();
 extern void test_pulse_min_altitude_no_baro_blocks_fire();
 extern void test_pulse_safe_delay_duplicate_directive_fails();
+extern void test_pulse_no_baro_policy_duplicate_fails();
 extern void test_pulse_require_continuity_partial_channels();
 extern void test_pulse_require_continuity_null_interface_no_crash();
 
@@ -298,6 +300,7 @@ int main()
     RUN_TEST(test_pulse_channel_undeclared_fire_fails);
     RUN_TEST(test_pulse_channel_alias_resolves);
     RUN_TEST(test_pulse_channel_duplicate_decl_fails);
+    RUN_TEST(test_pulse_channel_bad_trailing_token_fails);
 
     // ams_pulse_safety
     RUN_TEST(test_pulse_safe_delay_blocks_early_fire);
@@ -323,6 +326,7 @@ int main()
     RUN_TEST(test_pulse_arm_undeclared_channel_parse_error);
     RUN_TEST(test_pulse_min_altitude_no_baro_blocks_fire);
     RUN_TEST(test_pulse_safe_delay_duplicate_directive_fails);
+    RUN_TEST(test_pulse_no_baro_policy_duplicate_fails);
     RUN_TEST(test_pulse_require_continuity_partial_channels);
     RUN_TEST(test_pulse_require_continuity_null_interface_no_crash);
 

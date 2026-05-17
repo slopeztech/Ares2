@@ -1671,7 +1671,8 @@ state APOGEE:
 | Condition | Error |
 |---|---|
 | Channel letter not A/B/C/D | Parse error: `pulse.channel: channel must be A, B, C, or D` |
-| Characters after channel letter (before ` as`) | Parse error: `pulse.channel: unexpected characters after channel letter` |
+| Characters directly after channel letter (not `\0` or space) | Parse error: `pulse.channel: unexpected characters after channel letter` |
+| Space-separated token after channel letter that is not `as` (e.g. `pulse.channel A FOO`) | Parse error: `pulse.channel: unexpected token after channel letter; expected end-of-line or 'as LABEL'` |
 | Duplicate declaration | Parse error: `pulse.channel: duplicate declaration for the same channel` |
 | Empty label after `as` | Parse error: `pulse.channel: empty label after 'as'` |
 | Invalid character in label | Parse error: `pulse.channel: label contains invalid character` |
@@ -2008,6 +2009,7 @@ pulse.no_baro_policy  block
 |---|---|
 | Value is neither `allow` nor `block` | Parse error: `pulse.no_baro_policy: invalid value (expected 'allow' or 'block')` |
 | Directive after a `state` block | Parse error: `'pulse.no_baro_policy' must appear before any state block` |
+| Duplicate `pulse.no_baro_policy` directive | Parse error: `pulse.no_baro_policy: duplicate directive (only one allowed per script)` |
 
 ---
 
@@ -2029,7 +2031,7 @@ pus.service 1 as TC
 pulse.channel A as DROGUE
 
 pulse.safe_delay    3000        // AMS-4.19.5: no fire for 3 s after arm()
-pulse.min_altitude  500         // AMS-4.19.2: must be at or above 500 m
+pulse.min_altitude  500         // AMS-4.19.2: must be at or above 500 m MSL
 pulse.no_baro_policy block      // AMS-4.19.6: block fire if baro absent (default, explicit here)
 pulse.require_continuity A      // AMS-4.19.4: bridgewire must be intact
 pulse.arm_timeout   10000       // AMS-4.19.3: arm token expires after 10 s

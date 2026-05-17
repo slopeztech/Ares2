@@ -84,11 +84,21 @@ bool PulseDriver::begin()
     }
 
     ready_ = true;
-    LOG_I(TAG, "ready (a=GPIO%u b=GPIO%u c=GPIO%u d=GPIO%u)",
-          static_cast<uint32_t>(channels_[PulseChannel::CH_A].firePin),
-          static_cast<uint32_t>(channels_[PulseChannel::CH_B].firePin),
-          static_cast<uint32_t>(channels_[PulseChannel::CH_C].firePin),
-          static_cast<uint32_t>(channels_[PulseChannel::CH_D].firePin));
+    {
+        // Build per-channel pin labels; print "--" for unassigned channels so
+        // "GPIO255" never appears in the ready message.
+        char la[8]; char lb[8]; char lc[8]; char ld[8];
+        const auto pinStr = [](char* buf, size_t sz, uint8_t pin) -> const char* {
+            if (pin == kNoPinAssigned) { return "--"; }
+            (void)snprintf(buf, sz, "GPIO%u", static_cast<uint32_t>(pin));
+            return buf;
+        };
+        LOG_I(TAG, "ready (a=%s b=%s c=%s d=%s)",
+              pinStr(la, sizeof(la), channels_[PulseChannel::CH_A].firePin),
+              pinStr(lb, sizeof(lb), channels_[PulseChannel::CH_B].firePin),
+              pinStr(lc, sizeof(lc), channels_[PulseChannel::CH_C].firePin),
+              pinStr(ld, sizeof(ld), channels_[PulseChannel::CH_D].firePin));
+    }
     return true;
 }
 

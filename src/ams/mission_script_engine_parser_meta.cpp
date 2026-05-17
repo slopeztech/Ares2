@@ -391,6 +391,17 @@ bool MissionScriptEngine::parsePulseChannelLabelLocked(const char* rest, char* l
     }
     else
     {
+        // No " as " clause found.  The only valid remainder is end-of-line or
+        // trailing whitespace.  A non-whitespace suffix (e.g. "pulse.channel A FOO")
+        // must be rejected: silently discarding an unrecognised token would make
+        // malformed scripts appear valid, which is inconsistent with the strict
+        // parsing enforced elsewhere (AMS-4.18.6).
+        if (!detail::isOnlyTrailingWhitespace(rest + 1U))
+        {
+            setErrorLocked("pulse.channel: unexpected token after channel letter; "
+                           "expected end-of-line or 'as LABEL'");
+            return false;
+        }
         // No alias — use the channel letter as the label.
         labelOut[0] = rest[0];
         labelOut[1] = '\0';
@@ -459,7 +470,7 @@ bool MissionScriptEngine::parsePulseRequireContinuityLineLocked(const char* line
 /**
  * @brief Parse a @c pulse.min_altitude directive (AMS-4.19.2).
  *
- * Syntax: @c "pulse.min_altitude N"  (N in metres AGL, range [1, 50000])
+ * Syntax: @c "pulse.min_altitude N"  (N in metres MSL, range [1, 50000])
  *
  * @param[in] line  Script line starting with @c "pulse.min_altitude ".
  * @return @c true on success.
@@ -612,6 +623,13 @@ bool MissionScriptEngine::parsePulseNoBaroPolicyLineLocked(const char* line)
         return false;
     }
 
+    if (program_.pulseHasNoBaroPolicy)
+    {
+        setErrorLocked("pulse.no_baro_policy: duplicate directive (only one allowed per script)");
+        return false;
+    }
+
+    program_.pulseHasNoBaroPolicy   = true;
     program_.pulseNoBaroPolicyAllow = policyAllow;
     LOG_I(TAG, "pulse.no_baro_policy = %s", policyAllow ? "allow" : "block");
     return true;

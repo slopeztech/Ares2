@@ -169,7 +169,7 @@ void test_pulse_safe_delay_blocks_early_fire()
     SafetyFixture f;
     f.init("/missions/sd.ams", kScriptSafeDelay);
 
-    // arm() → activationMs_ = ~0 ms.  Tick immediately (1 ms elapsed).
+    // armAndTickAt: arm() at t=1 ms (activationMs_=1); elapsed at tick = 1 ms < 5000 ms safe_delay.
     f.armAndTickAt("sd.ams", 1U);
 
     // PULSE.fire blocked because 1 ms < 5000 ms safe_delay.
@@ -181,7 +181,7 @@ void test_pulse_safe_delay_allows_fire_after_delay()
     SafetyFixture f;
     f.init("/missions/sd.ams", kScriptSafeDelay);
 
-    // arm() at t=0, tick at t=6000 ms (> 5000 ms safe_delay).
+    // armAndTickAt: arm() at t=1 ms (activationMs_=1); elapsed at tick = 6000 ms > 5000 ms safe_delay.
     f.armAndTickAt("sd.ams", 6000U);
 
     // Channel A must have fired.
@@ -1068,4 +1068,38 @@ void test_pulse_require_continuity_null_interface_no_crash()
     // Engine must be RUNNING (or COMPLETE after terminal FIRE state).
     TEST_ASSERT_TRUE(snap.status == EngineStatus::RUNNING
                   || snap.status == EngineStatus::COMPLETE);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T10: pulse.no_baro_policy duplicate declaration is a parse error (AMS-4.19.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_pulse_no_baro_policy_duplicate_fails()
+{
+    static const char kScript[] =
+        "include SIM_GPS as GPS\n"
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "include SIM_IMU as IMU\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 5 as EVENT\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "pulse.channel A\n"
+        "pulse.no_baro_policy allow\n"
+        "pulse.no_baro_policy block\n"   // duplicate — must fail
+        "\n"
+        "state WAIT:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"W\"\n";
+
+    SafetyFixture f;
+    f.init("/missions/dup_nbp.ams", kScript);
+    TEST_ASSERT_FALSE(f.engine.activate("dup_nbp.ams"));
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "duplicate"));
 }

@@ -380,3 +380,45 @@ void test_pulse_channel_duplicate_decl_fails()
     TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
     TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "duplicate"));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AMS-4.18.6: A non-'as' token after the channel letter is a parse error.
+// Input "pulse.channel A FOO" must be rejected; previously it was silently
+// accepted with FOO discarded and label defaulting to "A".
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_pulse_channel_bad_trailing_token_fails()
+{
+    static const char kScript[] =
+        "include SIM_GPS as GPS\n"
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "include SIM_IMU as IMU\n"
+        "\n"
+        "pus.apid = 1\n"
+        "\n"
+        "pus.service 3 as HK\n"
+        "pus.service 5 as EVENT\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "pulse.channel A FOO\n"
+        "\n"
+        "state WAIT:\n"
+        "  transition to DONE when TC.command == LAUNCH\n"
+        "\n"
+        "state DONE:\n"
+        "  on_enter:\n"
+        "    PULSE.fire A\n"
+        "    EVENT.info \"DONE\"\n";
+
+    PulseFixture f;
+    f.init("/missions/badtoken.ams", kScript);
+
+    const bool ok = f.engine.activate("badtoken.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL(strstr(snap.lastError, "unexpected token"));
+}

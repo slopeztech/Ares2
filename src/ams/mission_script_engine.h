@@ -742,8 +742,9 @@ private:
         // ── AMS-4.19: Pulse safety directives ────────────────────────────────
         uint32_t pulseSafeDelayMs                            = 0U;    ///< AMS-4.19.5: ms from arm() before any PULSE.fire is allowed (0 = disabled).
         bool     pulseHasMinAlt                              = false;  ///< AMS-4.19.2: true when a pulse.min_altitude guard is active.
-        uint32_t pulseMinAltitudeM                           = 0U;    ///< AMS-4.19.2: minimum baro altitude (m AGL) required for PULSE.fire.
+        uint32_t pulseMinAltitudeM                           = 0U;    ///< AMS-4.19.2: minimum baro altitude (m MSL) required for PULSE.fire.
         bool     pulseNoBaroPolicyAllow                      = false; ///< AMS-4.19.6: when true, altitude gate is bypassed if no baro driver registered.
+        bool     pulseHasNoBaroPolicy                        = false; ///< AMS-4.19.6: true once "pulse.no_baro_policy" has been parsed (duplicate guard).
         bool     pulseRequireContinuity[PulseChannel::COUNT] = {};    ///< AMS-4.19.4: channel requires intact bridgewire before fire.
         bool     pulseNeedsArm[PulseChannel::COUNT]          = {};    ///< AMS-4.19.1: channel requires prior PULSE.arm in on_enter.
         uint32_t pulseArmTimeoutMs                           = 0U;    ///< AMS-4.19.3: ms after PULSE.arm before auto-disarm (0 = no timeout).

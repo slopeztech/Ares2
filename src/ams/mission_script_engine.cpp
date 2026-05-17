@@ -276,11 +276,21 @@ bool MissionScriptEngine::arm()
         // AMS-4.19.5: start safe_delay timer.  Guard against millis64()==0 at
         // very early boot: if activationMs_ were 0 the safe_delay gate condition
         // (activationMs_ > 0U) would be false and the delay would be bypassed.
+        //
+        // Design note: activationMs_ is intentionally NOT included in the
+        // checkpoint record (buildCheckpointRecordLocked does not serialise it)
+        // and deactivateLocked() explicitly resets it to 0.  Consequently,
+        // pulse.safe_delay is always measured from the current arm() call and
+        // is NOT preserved across deactivation or power cycles.  Every mission
+        // activation starts a fresh safe_delay window; this is the intended
+        // semantics.
         const uint64_t nowMs = millis64();
         activationMs_ = (nowMs > 0U) ? nowMs : 1U;
         LOG_I(TAG, "arm: execution enabled, LAUNCH queued");
 
-        (void)saveResumePointLocked(millis64(), true);
+        // Pass the already-captured nowMs so the checkpoint elapsed-time fields
+        // are consistent with activationMs_ (avoids a second millis64() call).
+        (void)saveResumePointLocked(nowMs, true);
     } // Mutex released; checkpoint staged.
 
     flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).

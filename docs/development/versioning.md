@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.1.0"
+#define ARES_VERSION_STRING "2.1.1"
 ```
 
 ---
@@ -42,6 +42,7 @@ Each version has its own file under `docs/changelog/`:
 docs/changelog/
     v2.0.0.md   ← first structured release
     v2.1.0.md   ← pulse.channel / 4 channels / pin rename
+    v2.1.1.md   ← AMS-4.18.6 strict token check (bug fix)
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -54,3 +55,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 |---------|------------|-------|---------------------------------------------------------------|
 | [2.0.0](../changelog/v2.0.0.md) | 2026-05-11 | Release | First structured release; modular AMS; REST auth             |
 | [2.1.0](../changelog/v2.1.0.md) | 2026-05-17 | Minor | AMS-4.18 `pulse.channel`; 4 pulse channels; pin rename       |
+| [2.1.1](../changelog/v2.1.1.md) | 2026-05-17 | Patch | AMS-4.18.6 strict token check; reject `pulse.channel A FOO`  |
