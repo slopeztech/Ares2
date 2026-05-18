@@ -55,3 +55,14 @@ using SemaphoreHandle_t = StaticSemaphore_t*;
 // ── Task delay (no-op in single-threaded sim) ────────────────────────────────
 
 inline void vTaskDelay(TickType_t /*xTicksToDelay*/) {}
+
+// ── Task stack and TCB (static allocation support) ──────────────────────────
+
+/// Stack word type — matches the real FreeRTOS StackType_t (uint8_t on ESP32).
+using StackType_t = uint8_t;
+
+/// Static task TCB placeholder — zero-size since no real scheduler exists.
+struct StaticTask_t {};
+
+/// No-affinity core selector (both cores acceptable on SMP FreeRTOS targets).
+static constexpr UBaseType_t tskNO_AFFINITY = ~static_cast<UBaseType_t>(0U);

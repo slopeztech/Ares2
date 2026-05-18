@@ -43,3 +43,31 @@ struct HardwareSerialStub
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static HardwareSerialStub Serial;
+
+/**
+ * @brief Minimal HardwareSerial stub.
+ *
+ * bus_scan_handler.cpp stores and dereferences HardwareSerial* pointers.
+ * In the api_routing environment those pointers are always nullptr so the
+ * dereference paths are never reached, but the type must be complete for
+ * compilation.  The methods below satisfy the compiler without linking to
+ * any platform code.
+ */
+class HardwareSerial
+{
+public:
+    int available() { return 0; }
+    int peek()      { return -1; }
+    int read()      { return -1; }
+};
+
+/// Minimal ESP stub (ESP.getFreeHeap() etc.)
+struct EspClassStub
+{
+    uint32_t getFreeHeap()        { return 0U; }
+    uint32_t getHeapSize()        { return 0U; }
+    uint32_t getMinFreeHeap()     { return 0U; }
+    uint32_t getMaxAllocHeap()    { return 0U; }
+};
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static EspClassStub ESP;
