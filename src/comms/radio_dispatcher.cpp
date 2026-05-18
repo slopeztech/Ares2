@@ -372,6 +372,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
     const bool isCritical = (cmd == proto::CommandId::ABORT         ||
                              cmd == proto::CommandId::FIRE_PULSE_A  ||
                              cmd == proto::CommandId::FIRE_PULSE_B  ||
+                             cmd == proto::CommandId::FIRE_PULSE_C  ||
+                             cmd == proto::CommandId::FIRE_PULSE_D  ||
                              cmd == proto::CommandId::FACTORY_RESET);
     if (isCritical && ((frame.flags & proto::FLAG_PRIORITY) == 0U))
     {
@@ -437,6 +439,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     case proto::CommandId::FIRE_PULSE_A:
     case proto::CommandId::FIRE_PULSE_B:
+    case proto::CommandId::FIRE_PULSE_C:
+    case proto::CommandId::FIRE_PULSE_D:
     {
         // ── APUS-7.2: pulse commands require engine RUNNING (armed) ────────
         ares::ams::EngineSnapshot snap = {};
@@ -455,9 +459,10 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
             return proto::FailureCode::EXECUTION_ERROR;
         }
 
-        const uint8_t ch = (cmd == proto::CommandId::FIRE_PULSE_A)
-                           ? PulseChannel::CH_A
-                           : PulseChannel::CH_B;
+        uint8_t ch = PulseChannel::CH_A;
+        if      (cmd == proto::CommandId::FIRE_PULSE_B) { ch = PulseChannel::CH_B; }
+        else if (cmd == proto::CommandId::FIRE_PULSE_C) { ch = PulseChannel::CH_C; }
+        else if (cmd == proto::CommandId::FIRE_PULSE_D) { ch = PulseChannel::CH_D; }
 
         if (!pulse_->fire(ch, static_cast<uint32_t>(ares::FIRE_DURATION_MS)))
         {
@@ -879,7 +884,7 @@ bool RadioDispatcher::sendReliable(const proto::Frame& frame, uint32_t nowMs)
  * @brief Return the priority level for a given CommandId (APUS-2.1).
  *
  * Priority levels:
- *   - 0 (CRITICAL): ABORT, FIRE_PULSE_A/B, FACTORY_RESET
+ *   - 0 (CRITICAL): ABORT, FIRE_PULSE_A/B/C/D, FACTORY_RESET
  *   - 1 (HIGH):     ARM_FLIGHT, SET_MODE, SET_FCS_ACTIVE, SET_CONFIG_PARAM
  *   - 2 (NORMAL):   REQUEST_TELEMETRY, SET_TELEM_INTERVAL
  *   - 3 (LOW):      REQUEST_STATUS, REQUEST_CONFIG, VERIFY_CONFIG
@@ -894,6 +899,8 @@ uint8_t RadioDispatcher::commandPriority(proto::CommandId id)
     case proto::CommandId::ABORT:
     case proto::CommandId::FIRE_PULSE_A:
     case proto::CommandId::FIRE_PULSE_B:
+    case proto::CommandId::FIRE_PULSE_C:
+    case proto::CommandId::FIRE_PULSE_D:
     case proto::CommandId::FACTORY_RESET:
         return kCriticalPriority;
 

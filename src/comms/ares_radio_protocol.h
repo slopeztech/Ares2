@@ -133,6 +133,8 @@ enum class CommandId : uint8_t
     ABORT              = 0x02,
     FIRE_PULSE_A       = 0x03,
     FIRE_PULSE_B       = 0x04,
+    FIRE_PULSE_C       = 0x07,
+    FIRE_PULSE_D       = 0x08,
     SET_MODE           = 0x05,
     SET_FCS_ACTIVE     = 0x06,
     REQUEST_TELEMETRY  = 0x10,
