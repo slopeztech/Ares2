@@ -690,7 +690,12 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
             ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
             return false;
         }
-        return formatScaledFloat(ve->value, 2U, out, outSize);
+        if (!formatScaledFloat(ve->value, 2U, out, outSize))
+        {
+            ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+            return false;
+        }
+        return true;
     }
 
     float val = 0.0f;
@@ -719,7 +724,12 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
         decimals = 2U; break;
     }
 
-    return formatScaledFloat(val, decimals, out, outSize);
+    if (!formatScaledFloat(val, decimals, out, outSize))
+    {
+        ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+        return false;
+    }
+    return true;
 }
 
 // ── sendEventLocked ──────────────────────────────────────────────────────────
