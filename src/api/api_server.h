@@ -220,11 +220,19 @@ private:
     // pulse/
     void handlePulseStatus(class WiFiClient& client);  ///< GET /api/pulse/status (AMS-4.17)
 
+public:
     // ── Request routing (PO10-4.1: decomposed from handleClient) ─
+    //
+    // routeRequest is public so that integration tests in test_api_routing
+    // can inject hand-crafted requests directly without going through the
+    // RTOS task machinery (handleClient asserts task-handle identity which
+    // is meaningless in a native test process).
     void routeRequest(class WiFiClient& client,
                       const char* method, const char* path,
                       const char* body, uint32_t bodyLen,
                       const char* authToken);
+
+private:
     bool routeStatusAndConfigRequest(class WiFiClient& client,
                                      const char* method,
                                      const char* path,

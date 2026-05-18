@@ -44,3 +44,37 @@ inline TaskHandle_t xTaskGetCurrentTaskHandle()
     static int kSimTaskSentinel = 0;
     return static_cast<TaskHandle_t>(&kSimTaskSentinel);
 }
+
+// ── Static task creation ──────────────────────────────────────────────────────
+
+/**
+ * Stub for xTaskCreateStaticPinnedToCore.
+ *
+ * begin() calls this but tests never call begin(), so the stub just
+ * returns the sentinel handle to satisfy the linker without starting
+ * an actual RTOS task.
+ */
+inline TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*/*pxTaskCode*/)(void*),
+    const char* /*pcName*/,
+    uint32_t    /*ulStackDepth*/,
+    void*       /*pvParameters*/,
+    UBaseType_t /*uxPriority*/,
+    StackType_t*  /*puxStackBuffer*/,
+    StaticTask_t* /*pxTaskBuffer*/,
+    BaseType_t    /*xCoreID*/)
+{
+    return xTaskGetCurrentTaskHandle();
+}
+
+// ── Stack monitoring ──────────────────────────────────────────────────────────
+
+/**
+ * Return a plausible high-water mark so the stack-monitor log path in
+ * run() compiles and exercises the log branch without triggering the
+ * low-water warning.
+ */
+inline UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t /*task*/)
+{
+    return static_cast<UBaseType_t>(8192U);
+}
