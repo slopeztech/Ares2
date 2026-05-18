@@ -33,6 +33,10 @@ extern void test_pow10u_exponent_nine();
 extern void test_log_setlevel_changes_level();
 extern void test_log_setlevel_none_accepted();
 extern void test_log_emit_does_not_crash();
+extern void test_log_null_tag_is_safe();
+extern void test_log_null_fmt_is_safe();
+extern void test_log_long_message_is_truncated_safely();
+extern void test_log_hex_format_does_not_crash();
 
 // formatScaledFloat()
 extern void test_fsf_null_out_returns_false();
@@ -82,6 +86,10 @@ int main()
     RUN_TEST(test_log_setlevel_changes_level);
     RUN_TEST(test_log_setlevel_none_accepted);
     RUN_TEST(test_log_emit_does_not_crash);
+    RUN_TEST(test_log_null_tag_is_safe);
+    RUN_TEST(test_log_null_fmt_is_safe);
+    RUN_TEST(test_log_long_message_is_truncated_safely);
+    RUN_TEST(test_log_hex_format_does_not_crash);
 
     return UNITY_END();
 }
