@@ -777,8 +777,9 @@ void test_ack_frame_short_no_payload()
 
 /**
  * COMMAND with commandId 0x25 (beyond CommandId::LAST == 0x24): executeCommand
- * returns UNKNOWN_COMMAND.  Acceptance ACK sent; no FLAG_ACK_REQ.
- * Expected sendCount == 1.
+ * returns UNKNOWN_COMMAND.  FLAG_ACK_REQ triggers a completion ACK whose
+ * failureCode must equal FailureCode::UNKNOWN_COMMAND.
+ * Expected sendCount == 2  (acceptance ACK + completion ACK/NACK).
  */
 void test_cmd_nonfrag_unknown_commandid()
 {
@@ -788,7 +789,7 @@ void test_cmd_nonfrag_unknown_commandid()
     tx.node       = NODE_ROCKET;
     tx.type       = MsgType::COMMAND;
     tx.seq        = 53U;
-    tx.flags      = 0U;
+    tx.flags      = FLAG_ACK_REQ;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = 0x25U;  // One past CommandId::LAST (0x24).
     tx.len        = 2U;
@@ -800,7 +801,21 @@ void test_cmd_nonfrag_unknown_commandid()
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
     f.dispatcher.poll(1000U);
 
-    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+    // Acceptance ACK (handleCommand) + completion ACK/NACK (drainCmdQueue).
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
+
+    // Decode the last sent frame (completion ACK) and verify the failure code.
+    Frame ackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), ackFrame));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(ackFrame.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), ackFrame.len);
+    AckPayload ack = {};
+    (void)memcpy(&ack, ackFrame.payload, sizeof(ack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::UNKNOWN_COMMAND), ack.failureCode);
 }
 
 /**
@@ -1033,10 +1048,11 @@ void test_cmd_nonfrag_set_telem_interval_short_payload()
 /**
  * COMMAND with commandId 0x09: within the declared range [0x01..0x24] but
  * without a corresponding case in the switch → hits the default branch and
- * returns UNKNOWN_COMMAND.  Acceptance ACK only.
+ * returns UNKNOWN_COMMAND.  FLAG_ACK_REQ triggers a completion ACK whose
+ * failureCode must equal FailureCode::UNKNOWN_COMMAND.
  * (Note: 0x07=FIRE_PULSE_C and 0x08=FIRE_PULSE_D are now valid commands;
  *  0x09 is the first true gap in the enum.)
- * Expected sendCount == 1.
+ * Expected sendCount == 2  (acceptance ACK + completion ACK/NACK).
  */
 void test_cmd_nonfrag_gap_commandid_default_case()
 {
@@ -1046,7 +1062,7 @@ void test_cmd_nonfrag_gap_commandid_default_case()
     tx.node       = NODE_ROCKET;
     tx.type       = MsgType::COMMAND;
     tx.seq        = 81U;
-    tx.flags      = 0U;
+    tx.flags      = FLAG_ACK_REQ;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = 0x09U;  // In range [0x01..0x24] but has no case in switch.
     tx.len        = 2U;
@@ -1058,7 +1074,21 @@ void test_cmd_nonfrag_gap_commandid_default_case()
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
     f.dispatcher.poll(1000U);
 
-    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+    // Acceptance ACK (handleCommand) + completion ACK/NACK (drainCmdQueue).
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
+
+    // Decode the last sent frame (completion ACK) and verify the failure code.
+    Frame ackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), ackFrame));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(ackFrame.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), ackFrame.len);
+    AckPayload ack = {};
+    (void)memcpy(&ack, ackFrame.payload, sizeof(ack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::UNKNOWN_COMMAND), ack.failureCode);
 }
 
 /**
