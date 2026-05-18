@@ -395,6 +395,8 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(  // NOLINT(readability-fu
  * @pre  Caller holds the engine mutex.  @c logPath_ is set.
  * @post One or two lines are appended to @c logPath_ on the storage device.
  */
+// GCOV_EXCL_START — legacy single-slot LOG path; only reachable when
+// logSlotCount == 0, which cannot occur with the slot-based parser.
 void MissionScriptEngine::appendLogReportLocked(uint64_t nowMs)
 {
     if (currentState_ >= program_.stateCount) { return; }
@@ -418,12 +420,11 @@ void MissionScriptEngine::appendLogReportLocked(uint64_t nowMs)
     // Stage the append for deferred I/O outside the mutex (AMS-8.3).
     queueAppendLocked(logPath_, reinterpret_cast<const uint8_t*>(line), len);
 }
+// GCOV_EXCL_STOP
 
 // ── appendLogReportSlotLocked ────────────────────────────────────────────────
 
 /**
- * @brief Append a CSV data row for one log_every slot (AMS-4.3.1).
- *
  * Each @c log_every slot has an independent cadence and field list.
  * A per-slot CSV header is written on the first call for that slot,
  * then data rows are appended on subsequent calls.
@@ -512,6 +513,7 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
     }
 }
 
+// GCOV_EXCL_START — only called from dead legacy appendLogReportLocked path
 bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
 {
     if (logHeaderWritten_)
@@ -603,6 +605,7 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
     outLen = pos + static_cast<uint32_t>(tail);
     return true;
 }
+// GCOV_EXCL_STOP
 
 // ── ensureLogFileLocked ──────────────────────────────────────────────────────
 

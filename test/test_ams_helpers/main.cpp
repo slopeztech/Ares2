@@ -29,6 +29,11 @@ extern void test_pow10u_exponent_two();
 extern void test_pow10u_exponent_five();
 extern void test_pow10u_exponent_nine();
 
+// ares::log API
+extern void test_log_setlevel_changes_level();
+extern void test_log_setlevel_none_accepted();
+extern void test_log_emit_does_not_crash();
+
 // formatScaledFloat()
 extern void test_fsf_null_out_returns_false();
 extern void test_fsf_zero_outsize_returns_false();
@@ -73,6 +78,10 @@ int main()
     RUN_TEST(test_fsf_buffer_too_small_returns_false);
     RUN_TEST(test_fsf_negative_integer_rounding_no_decimals);
     RUN_TEST(test_fsf_large_value_formats);
+
+    RUN_TEST(test_log_setlevel_changes_level);
+    RUN_TEST(test_log_setlevel_none_accepted);
+    RUN_TEST(test_log_emit_does_not_crash);
 
     return UNITY_END();
 }
