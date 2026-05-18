@@ -135,6 +135,8 @@ enum class CommandId : uint8_t
     FIRE_PULSE_B       = 0x04,
     SET_MODE           = 0x05,
     SET_FCS_ACTIVE     = 0x06,
+    FIRE_PULSE_C       = 0x07,
+    FIRE_PULSE_D       = 0x08,
     REQUEST_TELEMETRY  = 0x10,
     SET_TELEM_INTERVAL = 0x11,
     REQUEST_STATUS     = 0x20,

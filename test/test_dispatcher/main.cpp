@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 45
+ * Test count: 50
  */
 #include <unity.h>
 
@@ -74,6 +74,12 @@ extern void test_cmd_nonfrag_gap_commandid_default_case();
 // SET_CONFIG_PARAM unknown paramId and monitor-param success
 extern void test_cmd_nonfrag_set_config_unknown_paramid();
 extern void test_cmd_nonfrag_set_config_param_monitor_valid();
+// FIRE_PULSE_B/C/D: FLAG_PRIORITY guard and PRECONDITION_FAIL paths
+extern void test_cmd_nonfrag_fire_pulse_b_missing_priority_rejected();
+extern void test_cmd_nonfrag_fire_pulse_c_missing_priority_rejected();
+extern void test_cmd_nonfrag_fire_pulse_d_missing_priority_rejected();
+extern void test_cmd_nonfrag_fire_pulse_c_engine_not_running();
+extern void test_cmd_nonfrag_fire_pulse_d_engine_not_running();
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -139,6 +145,13 @@ int main()
     RUN_TEST(test_cmd_nonfrag_gap_commandid_default_case);
     RUN_TEST(test_cmd_nonfrag_set_config_unknown_paramid);
     RUN_TEST(test_cmd_nonfrag_set_config_param_monitor_valid);
+
+    // FIRE_PULSE_B/C/D
+    RUN_TEST(test_cmd_nonfrag_fire_pulse_b_missing_priority_rejected);
+    RUN_TEST(test_cmd_nonfrag_fire_pulse_c_missing_priority_rejected);
+    RUN_TEST(test_cmd_nonfrag_fire_pulse_d_missing_priority_rejected);
+    RUN_TEST(test_cmd_nonfrag_fire_pulse_c_engine_not_running);
+    RUN_TEST(test_cmd_nonfrag_fire_pulse_d_engine_not_running);
 
     return UNITY_END();
 }
