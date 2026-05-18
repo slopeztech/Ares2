@@ -65,8 +65,6 @@ static constexpr const char* TAG = "AMS";
  * @pre  Caller holds the engine mutex.  @c currentState_ is valid.
  * @post A TELEMETRY frame is transmitted; @c seq_ is advanced.
  */
-// GCOV_EXCL_START — legacy single-slot HK path; only reachable when
-// hkSlotCount == 0, which cannot occur with the slot-based parser.
 void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs)
 {
     if (currentState_ >= program_.stateCount) { return; }
@@ -88,7 +86,6 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs)
     finaliseHkPayloadLocked(tm, nowMs);
     transmitHkFrameLocked(tm, "HK");
 }
-// GCOV_EXCL_STOP
 
 // ── sendHkReportSlotLocked ───────────────────────────────────────────────────
 

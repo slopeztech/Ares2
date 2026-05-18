@@ -13,7 +13,7 @@
  *                                                monitoring alarm,
  *                                                configureMonitorFromParam)
  *
- * Test count: 8
+ * Test count: 15
  */
 
 #include <unity.h>

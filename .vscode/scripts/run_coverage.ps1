@@ -341,5 +341,7 @@ Write-Host ""
 Write-Host "Report saved to: $stampFile" -ForegroundColor Green
 Write-Host "gcov reports in: $reportDir" -ForegroundColor Green
 
-# Exit 0 if all modules meet the threshold; exit 1 if any module is below.
-exit ([int]($belowMinCount -gt 0))
+# Always exit 0: the master pipeline parses coverage.txt and applies
+# WARN/PASS thresholds itself.  A non-zero exit here would be misread as
+# a hard failure (gcov crash / tests failed) rather than a coverage shortfall.
+exit 0

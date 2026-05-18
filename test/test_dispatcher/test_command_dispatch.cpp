@@ -40,7 +40,7 @@ using ares::ams::ImuEntry;
 
 // ── Shared resting flight profile ────────────────────────────────────────────
 
-static const ares::sim::FlightProfile kRestProfile2 = {
+static const ares::sim::FlightProfile kRestProfile = {
     .count   = 1U,
     .samples = {
         { .timeMs          = 0U,
@@ -59,9 +59,9 @@ static const ares::sim::FlightProfile kRestProfile2 = {
 struct CmdDispatchFixture
 {
     ares::sim::SimStorageDriver storage;
-    ares::sim::SimGpsDriver     gps{kRestProfile2};
-    ares::sim::SimBaroDriver    baro{kRestProfile2};
-    ares::sim::SimImuDriver     imu{kRestProfile2};
+    ares::sim::SimGpsDriver     gps{kRestProfile};
+    ares::sim::SimBaroDriver    baro{kRestProfile};
+    ares::sim::SimImuDriver     imu{kRestProfile};
     ares::sim::SimRadioDriver   engineRadio;
 
     GpsEntry  gpsEntry  = { "SIM_GPS",  &gps        };

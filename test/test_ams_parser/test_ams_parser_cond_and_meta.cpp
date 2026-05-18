@@ -3,8 +3,8 @@
  * @brief Parser corpus — falling/rising conditions, delta conditions,
  *        and radio.config directive coverage.
  *
- * All tests use the same ParserFixture defined in test_ams_parser_corpus.cpp
- * and exercise `parseScriptLocked` paths not currently covered by the SITL
+ * These tests use the local `CondParserFixture` defined in this file and
+ * exercise `parseScriptLocked` paths not currently covered by the SITL
  * integration suite.
  *
  * Test count: 9
