@@ -48,6 +48,7 @@ docs/changelog/
     v2.2.1.md   ← CI: branch coverage, uncovered lines, trend
     v2.2.2.md   ← Safety: FIRE_PULSE_C/D dispatcher + tests
     v2.2.3.md   ← Coverage: ares_log.cpp null guards + truncation tests (H2)
+    v2.2.4.md   ← Test: test_api_routing — 10 HTTP routing + auth integration tests (H3)
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
