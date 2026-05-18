@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 142
+ * Test count: 157
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -214,6 +214,24 @@ extern void test_wakeup_state_with_transitions_returns_sensor_rate();
 extern void test_wakeup_pure_reporting_state_capped_at_radio_max();
 extern void test_wakeup_hk_slot_tightens_deadline();
 
+// ── test_ams_coverage_ext.cpp ─────────────────────────────────────────────────
+
+extern void test_on_exit_event_parses_ok();
+extern void test_on_exit_event_fires_on_transition();
+extern void test_calibrate_set_action_executes();
+extern void test_max_set_action_parses_ok();
+extern void test_max_set_action_executes();
+extern void test_delta_set_action_executes();
+extern void test_rich_hk_fields_emitted();
+extern void test_monitoring_alarm_triggers();
+extern void test_on_exit_warning_parses_ok();
+extern void test_on_exit_error_parses_ok();
+extern void test_imu_gyro_hk_fields_emitted();
+extern void test_on_exit_unknown_verb_rejected();
+extern void test_bad_gps_field_rejected();
+extern void test_bad_baro_field_rejected();
+extern void test_bad_imu_field_rejected();
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -407,6 +425,23 @@ int main()
     RUN_TEST(test_wakeup_state_with_transitions_returns_sensor_rate);
     RUN_TEST(test_wakeup_pure_reporting_state_capped_at_radio_max);
     RUN_TEST(test_wakeup_hk_slot_tightens_deadline);
+
+    // ams_coverage_ext
+    RUN_TEST(test_on_exit_event_parses_ok);
+    RUN_TEST(test_on_exit_event_fires_on_transition);
+    RUN_TEST(test_calibrate_set_action_executes);
+    RUN_TEST(test_max_set_action_parses_ok);
+    RUN_TEST(test_max_set_action_executes);
+    RUN_TEST(test_delta_set_action_executes);
+    RUN_TEST(test_rich_hk_fields_emitted);
+    RUN_TEST(test_monitoring_alarm_triggers);
+    RUN_TEST(test_on_exit_warning_parses_ok);
+    RUN_TEST(test_on_exit_error_parses_ok);
+    RUN_TEST(test_imu_gyro_hk_fields_emitted);
+    RUN_TEST(test_on_exit_unknown_verb_rejected);
+    RUN_TEST(test_bad_gps_field_rejected);
+    RUN_TEST(test_bad_baro_field_rejected);
+    RUN_TEST(test_bad_imu_field_rejected);
 
     return UNITY_END();
 }

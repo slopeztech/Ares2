@@ -197,15 +197,27 @@ function Parse-UnityOutput([string]$path) {
 }
 
 function Parse-CoverageOutput([string]$path) {
-    # Returns @{CoveredLines=N; TotalLines=N; Pct=X.X}
-    if (-not (Test-Path $path)) { return @{ CoveredLines=0; TotalLines=0; Pct=0.0 } }
+    # Returns @{CoveredLines=N; TotalLines=N; Pct=X.X; BranchCov=N; BranchTotal=N; BranchPct=X.X}
+    # Line coverage:   matched via "N  N  X.X%" (master-pipeline-compatible format)
+    # Branch coverage: matched via trailing "N/N  X.X%" on the TOTAL line (optional, new format)
+    $empty = @{ CoveredLines=0; TotalLines=0; Pct=0.0; BranchCov=0; BranchTotal=0; BranchPct=0.0 }
+    if (-not (Test-Path $path)) { return $empty }
     $lines = Get-Content $path
     $totalLine = $lines | Where-Object { $_ -match '^TOTAL\s' } | Select-Object -Last 1
     if ($totalLine -match '(\d+)\s+(\d+)\s+([\d.,]+)%') {
         $pctNorm = $Matches[3] -replace ',', '.'
-        return @{ CoveredLines=[int]$Matches[1]; TotalLines=[int]$Matches[2]; Pct=[double]$pctNorm }
+        $result  = @{ CoveredLines=[int]$Matches[1]; TotalLines=[int]$Matches[2]; Pct=[double]$pctNorm
+                      BranchCov=0; BranchTotal=0; BranchPct=0.0 }
+        # Extract optional branch totals: trailing "N/N  X.X%" on same line
+        if ($totalLine -match '(\d+)/(\d+)\s+([\d.,]+)%\s*$') {
+            $brPctNorm          = $Matches[3] -replace ',', '.'
+            $result.BranchCov   = [int]$Matches[1]
+            $result.BranchTotal = [int]$Matches[2]
+            $result.BranchPct   = [double]$brPctNorm
+        }
+        return $result
     }
-    return @{ CoveredLines=0; TotalLines=0; Pct=0.0 }
+    return $empty
 }
 
 # Resolve metric file paths from evidence/latest/
@@ -285,19 +297,22 @@ if ($r6.ExitCode -ne 0 -or $unityM.Failures -gt 0) {
     }
 }
 
-# Coverage: treat < 60% as WARN, failure to run as FAIL
+# Coverage: treat < 70% as WARN, failure to run as FAIL.
+# Scope: SITL-compilable src/ modules only (ESP32-only TUs are excluded).
 if ($r7.ExitCode -ne 0) {
     $r7.Status = 'FAIL'
     $r7.Detail = "gcov run failed (exit=$($r7.ExitCode))"
 } elseif ($covM.TotalLines -eq 0) {
     $r7.Status = 'WARN'
     $r7.Detail = "no coverage data found"
-} elseif ($covM.Pct -lt 60.0) {
+} elseif ($covM.Pct -lt 70.0) {
     $r7.Status = 'WARN'
-    $r7.Detail = "$($covM.CoveredLines)/$($covM.TotalLines) lines  $($covM.Pct)% (below 60% threshold)"
+    $brDetail  = if ($covM.BranchTotal -gt 0) { "  |  $($covM.BranchCov)/$($covM.BranchTotal) branches $($covM.BranchPct)%" } else { '' }
+    $r7.Detail = "$($covM.CoveredLines)/$($covM.TotalLines) lines  $($covM.Pct)%$brDetail [SITL subset] (below 70% threshold)"
 } else {
     $r7.Status = 'PASS'
-    $r7.Detail = "$($covM.CoveredLines)/$($covM.TotalLines) lines  $($covM.Pct)%"
+    $brDetail  = if ($covM.BranchTotal -gt 0) { "  |  $($covM.BranchCov)/$($covM.BranchTotal) branches $($covM.BranchPct)%" } else { '' }
+    $r7.Detail = "$($covM.CoveredLines)/$($covM.TotalLines) lines  $($covM.Pct)%$brDetail [SITL subset]"
 }
 
 # ── Build master report ───────────────────────────────────────────────────────
