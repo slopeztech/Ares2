@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.2.0"
+#define ARES_VERSION_STRING "2.2.3"
 ```
 
 ---
@@ -47,6 +47,7 @@ docs/changelog/
     v2.2.0.md   ← AMS-4.8.8 arithmetic expressions in set
     v2.2.1.md   ← CI: branch coverage, uncovered lines, trend
     v2.2.2.md   ← Safety: FIRE_PULSE_C/D dispatcher + tests
+    v2.2.3.md   ← Coverage: ares_log.cpp null guards + truncation tests (H2)
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -64,3 +65,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.2.0](../changelog/v2.2.0.md) | 2026-05-17 | Minor   | AMS-4.8.8 arithmetic expressions in `set` statements         |
 | [2.2.1](../changelog/v2.2.1.md) | 2026-05-18 | Patch   | CI: branch coverage, uncovered lines, trend (`run_coverage.ps1`) |
 | [2.2.2](../changelog/v2.2.2.md) | 2026-05-18 | Patch   | Safety: `FIRE_PULSE_C`/`FIRE_PULSE_D` dispatcher + tests |
+| [2.2.3](../changelog/v2.2.3.md) | 2026-05-18 | Patch   | Coverage: `ares_log.cpp` null guards + truncation tests (H2) |
