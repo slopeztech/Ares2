@@ -5,9 +5,9 @@
  * Covers paths in ares_log.cpp:
  *   - setLevel() / getLevel()             (lines 24-31)
  *   - emit() / emitV() normal path        (lines 82-88)
- *   - emitV() null-tag guard              (line 39)
- *   - emitV() null-fmt guard              (line 40)
- *   - emitV() truncation guard            (lines 73-76)
+ *   - emitV() null-tag guard              (line 38)
+ *   - emitV() null-fmt guard              (line 39)
+ *   - emitV() truncation guard            (lines 72-75)
  *   - emitV() hex format string           (normal path, %x specifier)
  *
  * Test count: 7
