@@ -489,10 +489,9 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
     for (uint8_t i = 0; i < slot.fieldCount && pos < sizeof(line) - 2U; i++)
     {
         char value[32] = {};
-        const bool hasValue = formatHkFieldValueLocked(slot.fields[i], value, sizeof(value));
-        const int32_t n = static_cast<int32_t>(hasValue
-                    ? snprintf(&line[pos], sizeof(line) - pos, ",%s", value)
-                    : snprintf(&line[pos], sizeof(line) - pos, ","));
+        formatHkFieldValueLocked(slot.fields[i], value, sizeof(value));
+        // value is always populated: real reading or "nan" error sentinel.
+        const int32_t n = snprintf(&line[pos], sizeof(line) - pos, ",%s", value);
         if (n <= 0) { break; }
         pos += static_cast<uint32_t>(n);
     }
@@ -573,10 +572,9 @@ bool MissionScriptEngine::buildLogDataRowLocked(const StateDef& st,
     for (uint8_t i = 0; i < st.logFieldCount; i++)
     {
         char value[32] = {};
-        const bool hasValue = formatHkFieldValueLocked(st.logFields[i], value, sizeof(value));
-        const int32_t n = static_cast<int32_t>(hasValue
-                    ? snprintf(&outLine[pos], outSize - pos, ",%s", value)
-                    : snprintf(&outLine[pos], outSize - pos, ","));
+        formatHkFieldValueLocked(st.logFields[i], value, sizeof(value));
+        // value is always populated: real reading or "nan" error sentinel.
+        const int32_t n = snprintf(&outLine[pos], outSize - pos, ",%s", value);
         if (n <= 0)
         {
             return false;
@@ -664,13 +662,17 @@ bool MissionScriptEngine::ensureLogFileLocked(const char* fileName)
  *   - ACCEL_* / GYRO_*: 3 decimal places
  *   - all others: 2 decimal places
  *
- * Returns @c "nan" (still writes @c true) when the driver read fails, to
- * preserve CSV column alignment.
+ * Returns @c "nan" in @p out when the driver read fails so CSV columns stay
+ * aligned; in that case the function returns @c false so callers can
+ * distinguish a valid sample from an error sentinel.
  *
  * @param[in]  f        Field descriptor.
- * @param[out] out      Output buffer (NUL-terminated).
+ * @param[out] out      Output buffer (NUL-terminated).  Set to @c "nan" on
+ *                      any driver failure so the CSV column remains visible.
  * @param[in]  outSize  Capacity of @p out in bytes.
- * @return @c true on success (including the nan fallback case).
+ * @return @c true if @p out contains a real sensor reading;
+ *         @c false if @p out was set to the @c "nan" error sentinel or the
+ *         output parameters are invalid.
  * @pre  Caller holds the engine mutex.
  */
 bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
@@ -685,17 +687,22 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
         const VarEntry* ve = findVarLocked(f.alias);
         if (ve == nullptr || !ve->valid)
         {
-            ares::util::copyZ(out, "nan", outSize);
-            return true;  // write placeholder so CSV columns stay aligned
+            ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+            return false;
         }
-        return formatScaledFloat(ve->value, 2U, out, outSize);
+        if (!formatScaledFloat(ve->value, 2U, out, outSize))
+        {
+            ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+            return false;
+        }
+        return true;
     }
 
     float val = 0.0f;
     if (!readSensorFloatLocked(f.alias, f.field, val))
     {
-        ares::util::copyZ(out, "nan", outSize);
-        return true;  // write placeholder so CSV columns stay aligned
+        ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+        return false;
     }
 
     uint8_t decimals = 2U;
@@ -717,7 +724,12 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
         decimals = 2U; break;
     }
 
-    return formatScaledFloat(val, decimals, out, outSize);
+    if (!formatScaledFloat(val, decimals, out, outSize))
+    {
+        ares::util::copyZ(out, "nan", outSize);  // error sentinel for post-flight analysis
+        return false;
+    }
+    return true;
 }
 
 // ── sendEventLocked ──────────────────────────────────────────────────────────

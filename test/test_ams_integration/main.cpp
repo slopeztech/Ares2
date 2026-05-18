@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 157
+ * Test count: 159
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -213,6 +213,11 @@ extern void test_wakeup_loaded_engine_returns_sensor_rate();
 extern void test_wakeup_state_with_transitions_returns_sensor_rate();
 extern void test_wakeup_pure_reporting_state_capped_at_radio_max();
 extern void test_wakeup_hk_slot_tightens_deadline();
+
+// ── test_ams_telemetry_sentinel.cpp ─────────────────────────────────────────
+
+extern void test_failed_sensor_writes_nan_sentinel_in_csv();
+extern void test_valid_sensor_writes_numeric_value_in_csv();
 
 // ── test_ams_coverage_ext.cpp ─────────────────────────────────────────────────
 
@@ -425,6 +430,10 @@ int main()
     RUN_TEST(test_wakeup_state_with_transitions_returns_sensor_rate);
     RUN_TEST(test_wakeup_pure_reporting_state_capped_at_radio_max);
     RUN_TEST(test_wakeup_hk_slot_tightens_deadline);
+
+    // ams_telemetry_sentinel
+    RUN_TEST(test_failed_sensor_writes_nan_sentinel_in_csv);
+    RUN_TEST(test_valid_sensor_writes_numeric_value_in_csv);
 
     // ams_coverage_ext
     RUN_TEST(test_on_exit_event_parses_ok);
