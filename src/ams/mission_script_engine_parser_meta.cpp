@@ -1068,7 +1068,7 @@ bool MissionScriptEngine::ensureConstDoesNotConflictLocked(const char* name)
  * @return Pointer to the @c ConstEntry, or @c nullptr if not found.
  * @pre  Caller holds the engine mutex.
  */
-const MissionScriptEngine::ConstEntry*
+const ConstEntry*
 MissionScriptEngine::findConstLocked(const char* name) const
 {
     if (name == nullptr) { return nullptr; }
