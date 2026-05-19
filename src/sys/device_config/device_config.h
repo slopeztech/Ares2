@@ -51,6 +51,7 @@
 class DeviceConfig
 {
 public:
+    /** @brief Construct with compile-time factory defaults. */
     DeviceConfig();
 
     // Non-copyable, non-movable (CERT-18.3)
@@ -67,7 +68,7 @@ public:
      * If the file does not exist, or if parsing fails, all fields
      * are set to their compile-time defaults.
      *
-     * @param storage  Storage backend.  Passing nullptr uses defaults.
+     * @param[in] storage  Storage backend.  Passing nullptr uses defaults.
      * @return true if a valid config file was found and applied,
      *         false if defaults were used.
      */
@@ -76,7 +77,7 @@ public:
     /**
      * Persist the current configuration (including api_token) to LittleFS.
      *
-     * @param storage  Storage backend.  Must not be nullptr.
+     * @param[in] storage  Storage backend.  Must not be nullptr.
      * @return true on success.
      */
     bool save(StorageInterface* storage) const;
@@ -109,8 +110,8 @@ public:
      * The token is write-only through this interface to prevent accidental
      * leakage in GET responses.
      *
-     * @param buf      Destination buffer.
-     * @param bufSize  Capacity of @p buf (must be > 0).
+     * @param[out] buf      Destination buffer.
+     * @param[in]  bufSize  Capacity of @p buf (must be > 0).
      * @return Number of bytes written (excluding the NUL terminator).
      */
     uint32_t toPublicJson(char* buf, uint32_t bufSize) const;
@@ -138,7 +139,7 @@ public:
      * A byte-XOR accumulator is used so the comparison always runs the
      * full length of the stored token regardless of where a mismatch occurs.
      *
-     * @param provided  NUL-terminated candidate token from the HTTP header.
+     * @param[in] provided  NUL-terminated candidate token from the HTTP header.
      *                  May be nullptr (treated as empty).
      * @return true if @p provided exactly matches the stored token.
      *         Always false when auth is disabled or when @p provided is nullptr.
@@ -155,8 +156,8 @@ public:
      *   Access-Control-Allow-Headers: Content-Type, X-ARES-Token\r\n
      * @endcode
      *
-     * @param out      Destination buffer.
-     * @param outSize  Capacity of @p out.
+     * @param[out] out      Destination buffer.
+     * @param[in]  outSize  Capacity of @p out.
      */
     void buildCorsHeader(char* out, size_t outSize) const;
 

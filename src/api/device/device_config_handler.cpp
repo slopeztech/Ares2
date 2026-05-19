@@ -50,7 +50,7 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
     }
 
     // ── Phase 1: validate + apply ──────────────────────────────
-    char errBuf[96] = {};
+    static char errBuf[96] = {};
     if (!devCfg_.applyJson(body, bodyLen,
                            errBuf, static_cast<uint8_t>(sizeof(errBuf))))
     {

@@ -87,7 +87,7 @@ bool DeviceConfig::load(StorageInterface* storage)
     }
     rawBuf[bytesRead] = '\0';
 
-    char errBuf[96] = {};
+    static char errBuf[96] = {};
     if (!applyJson(reinterpret_cast<const char*>(rawBuf), bytesRead,
                    errBuf, static_cast<uint8_t>(sizeof(errBuf))))
     {
@@ -240,7 +240,7 @@ static bool validateCors(JsonVariant v,
     const size_t vlen = strlen(val);
     if (vlen == 0U || vlen >= outSize)
     {
-        char tmp[80] = {};
+        static char tmp[80] = {};
         (void)snprintf(tmp, sizeof(tmp), "cors_origin must be 1-%u chars",
                        static_cast<unsigned>(outSize - 1U));
         return setFieldErr(errOut, errLen, tmp);
@@ -265,7 +265,7 @@ bool DeviceConfig::applyJson(const char* json, uint32_t len,
     const DeserializationError err = deserializeJson(doc, json, len);
     if (err)
     {
-        char tmp[80] = {};
+        static char tmp[80] = {};
         (void)snprintf(tmp, sizeof(tmp), "JSON: %s", err.c_str());
         return setFieldErr(errOut, errLen, tmp);
     }

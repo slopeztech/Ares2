@@ -85,7 +85,7 @@ bool Bmp280Driver::begin()
         {
             break;
         }
-        delay(ares::BMP280_POLL_DELAY_MS);
+        delay(ares::BMP280_POLL_DELAY_MS); // RTOS-1.1: intentional busy-wait during HW init before scheduler starts
     }
 
     if (!readCalibration())
