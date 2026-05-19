@@ -340,7 +340,7 @@ void MissionScriptEngine::executeExprSetActionLocked(SetAction& act,
     float acc = 0.0f;
     if (!evaluateExprOperandLocked(act.exprTerms[0U], acc))
     {
-        char msg[72] = {};
+        static char msg[72] = {};
         snprintf(msg, sizeof(msg),
                  "set expr '%s': operand 0 unavailable", act.varName);
         LOG_W(TAG, "%s", msg);
@@ -354,7 +354,7 @@ void MissionScriptEngine::executeExprSetActionLocked(SetAction& act,
         float rhs = 0.0f;
         if (!evaluateExprOperandLocked(act.exprTerms[i + 1U], rhs))
         {
-            char msg[72] = {};
+            static char msg[72] = {};
             snprintf(msg, sizeof(msg),
                      "set expr '%s': operand %u unavailable",
                      act.varName, static_cast<unsigned>(i + 1U));
@@ -370,9 +370,9 @@ void MissionScriptEngine::executeExprSetActionLocked(SetAction& act,
         case ExprOp::SUB: acc -= rhs; break;
         case ExprOp::MUL: acc *= rhs; break;
         case ExprOp::DIV:
-            if (rhs == 0.0f)
+            if (fabsf(rhs) < std::numeric_limits<float>::min())
             {
-                char msg[72] = {};
+                static char msg[72] = {};
                 snprintf(msg, sizeof(msg),
                          "set expr '%s': division by zero at runtime", act.varName);
                 LOG_W(TAG, "%s", msg);
@@ -388,7 +388,7 @@ void MissionScriptEngine::executeExprSetActionLocked(SetAction& act,
 
     if (std::isnan(acc) || std::isinf(acc))
     {
-        char msg[72] = {};
+        static char msg[72] = {};
         snprintf(msg, sizeof(msg),
                  "set expr '%s': result is NaN/Inf, value not updated", act.varName);
         LOG_W(TAG, "%s", msg);

@@ -326,7 +326,7 @@ void MissionScriptEngine::writeAbortMarkerLocked(const char* stateName, uint64_t
     if (logPath_[0] == '\0') { return; }
 
     // Build row body without newline so CRC8 covers only the data content.
-    char line[100] = {};
+    static char line[100] = {};
     const int32_t bodyLen = static_cast<int32_t>(
         snprintf(line, sizeof(line) - 5U,  // reserve room for ",xx\n\0"
                  "%" PRIu64 ",ABORT,aborted_in_state=%s",

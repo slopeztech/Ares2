@@ -15,6 +15,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include <limits>
 
 namespace ares
 {
@@ -294,7 +296,7 @@ bool MissionScriptEngine::parseSetActionCoreLocked(const char* line,
     ARES_ASSERT(line != nullptr);
 
     char varName[ares::AMS_VAR_NAME_LEN] = {};
-    char rhsBuf[96] = {};
+    static char rhsBuf[96] = {};
 
     // cppcheck-suppress [cert-err34-c]
     const int32_t n = static_cast<int32_t>(sscanf(line, "set %15s = %95[^\n]", varName, rhsBuf));
@@ -586,7 +588,7 @@ bool MissionScriptEngine::parseExprTermLocked(const char* token, ExprOperand& ou
                     out.field = sf;
                     return true;
                 }
-                char msg[80] = {};
+                static char msg[80] = {};
                 snprintf(msg, sizeof(msg),
                          "set expr: field '%s' not valid for alias '%s'",
                          fieldStr, aliasStr);
@@ -615,7 +617,7 @@ bool MissionScriptEngine::parseExprTermLocked(const char* token, ExprOperand& ou
         return true;
     }
 
-    char msg[72] = {};
+    static char msg[72] = {};
     snprintf(msg, sizeof(msg),
              "set expr: '%s' is not a sensor, variable, or literal", token);
     setErrorLocked(msg);
@@ -638,7 +640,7 @@ static uint8_t stripAndTokenizeExpr(const char* rhs,
                                     uint8_t     maxToks)
 {
     // Strip parentheses into a working buffer.
-    char     work[96] = {};
+    static char work[96] = {};
     uint32_t wIdx     = 0U;
     for (const char* p = rhs; *p != '\0' && wIdx < sizeof(work) - 1U; p++)
     {
@@ -707,7 +709,7 @@ bool MissionScriptEngine::buildExprOpsLocked(const char        tokens[][32],
         case '/':
             ops[i] = ExprOp::DIV;
             if (terms[i + 1U].kind == ExprOperand::Kind::LITERAL &&
-                terms[i + 1U].literal == 0.0f)
+                fabsf(terms[i + 1U].literal) < std::numeric_limits<float>::min())
             {
                 setErrorLocked("set expr: division by literal zero");
                 return false;

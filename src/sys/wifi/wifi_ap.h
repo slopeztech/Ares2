@@ -44,7 +44,7 @@ public:
      * compile-time default in config.h when the device config has been loaded
      * from LittleFS before this call).
      *
-     * @param cfg  Device security configuration (read-only, must outlive the AP).
+     * @param[in] cfg  Device security configuration (read-only, must outlive the AP).
      * @return true on success, false if WiFi init failed.
      * @pre  Called once from setup() after DeviceConfig::load() has been called.
      * @post AP is broadcasting and accepting client connections.

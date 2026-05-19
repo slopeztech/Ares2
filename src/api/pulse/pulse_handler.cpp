@@ -33,8 +33,8 @@ void ApiServer::handlePulseStatus(WiFiClient& client)
 {
     if (pulse_ == nullptr)
     {
-        sendError(client, 503, "pulse subsystem not available");
-        LOG_W(TAG, "GET /api/pulse/status 503 (no driver)");
+        sendError(client, 500, "pulse subsystem not available");
+        LOG_W(TAG, "GET /api/pulse/status 500 (no driver)");
         return;
     }
 

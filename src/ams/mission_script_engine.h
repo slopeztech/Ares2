@@ -1265,23 +1265,25 @@ private:
     // keeps blocking LittleFS latency out of the critical section so that
     // injectTcCommand("ABORT") and other API callers cannot timeout on I/O.
     //
-    // Worst-case pending appends per tick:
-    //   1 header + 1 data row per LOG slot = 2 × AMS_MAX_HK_SLOTS = 8,
-    //   plus 1 legacy header + 1 legacy data row = 10 entries total.
+    /// Worst-case pending appends per tick:
+    ///   1 header + 1 data row per LOG slot = 2 × AMS_MAX_HK_SLOTS = 8,
+    ///   plus 1 legacy header + 1 legacy data row = 10 entries total.
     static constexpr uint8_t kMaxPendingAppends =
         static_cast<uint8_t>(ares::AMS_MAX_HK_SLOTS * 2U + 2U);
 
+    /** @brief Staged checkpoint record awaiting flush to LittleFS (AMS-8.3). */
     struct PendingCheckpoint
     {
-        char    buf[512];  ///< Serialised v4 checkpoint record.
+        char    buf[512];  ///< Serialised v4 checkpoint record (static-size member).
         int32_t len;       ///< Valid bytes in buf[]; 0 = nothing staged.
         bool    pending;   ///< True iff buf[] holds an unflushed record.
     };
 
+    /** @brief Staged CSV log-row awaiting flush to LittleFS (AMS-8.3). */
     struct PendingAppend
     {
         char     path[ares::STORAGE_MAX_PATH]; ///< Target LittleFS path.
-        uint8_t  data[256];                    ///< Serialised row bytes.
+        uint8_t  data[256];                    ///< Serialised row bytes (static-size member).
         uint32_t len;                          ///< Valid bytes in data[].
         /// If non-null, set to true when appendFile succeeds.
         /// Used by CSV header entries so the written flag is only raised
@@ -1311,7 +1313,7 @@ private:
     mutable BaroReading baroCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
     mutable uint64_t    baroCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        baroCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
-    static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = ares::AMS_SENSOR_CACHE_TTL_MS;
+    static constexpr uint32_t BARO_CACHE_MAX_AGE_MS = ares::AMS_SENSOR_CACHE_TTL_MS; ///< Cache TTL for BARO readings; reuse if age < this value (ms).
 
     // GPS: per-alias cache.  GPS sentences update at 1–10 Hz; a short TTL
     // (AMS_SENSOR_CACHE_TTL_MS, config.h) amortises redundant UART reads for
@@ -1321,7 +1323,7 @@ private:
     mutable GpsReading  gpsCachedReadings_[ares::AMS_MAX_INCLUDES] = {};
     mutable uint64_t    gpsCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};
     mutable bool        gpsCacheValid_[ares::AMS_MAX_INCLUDES]      = {};
-    static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = ares::AMS_SENSOR_CACHE_TTL_MS;
+    static constexpr uint32_t GPS_CACHE_MAX_AGE_MS  = ares::AMS_SENSOR_CACHE_TTL_MS;  ///< Cache TTL for GPS readings; reuse if age < this value (ms).
 
     // ── Adaptive tick scheduling ──────────────────────────────────────────────
     /// Maximum time the main loop may sleep even when no sensor condition is

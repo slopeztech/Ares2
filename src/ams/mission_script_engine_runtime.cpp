@@ -130,7 +130,7 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
               state.name);
         // Emit an auditable ERROR event so the ground station knows which state
         // was active when the unhandled ABORT triggered the force-deactivation.
-        char abortMsg[80] = {};
+        static char abortMsg[80] = {};
         snprintf(abortMsg, sizeof(abortMsg),
                  "ABORT: forced in state=%s", state.name);
         sendEventLocked(EventVerb::ERROR,

@@ -165,7 +165,7 @@ bool MissionScriptEngine::resolveTargetNameLocked(const char* name,
     {
         char sug[40] = {};
         suggestStateNameLocked(name, sug, sizeof(sug));
-        char msg[80] = {};
+        static char msg[80] = {};
         snprintf(msg, sizeof(msg), "unknown %s target: '%s'%s", kindStr, name, sug);
         setErrorLocked(msg);
         return false;
@@ -641,7 +641,7 @@ bool MissionScriptEngine::resolveTasksLocked()
             {
                 char sug[40] = {};
                 suggestStateNameLocked(td.activeStateNames[j], sug, sizeof(sug));
-                char msg[96] = {};
+                static char msg[96] = {};
                 snprintf(msg, sizeof(msg),
                          "task '%s': unknown state '%s' in 'when in' filter%s",
                          td.name, td.activeStateNames[j], sug);
@@ -806,7 +806,7 @@ bool MissionScriptEngine::evaluateOneAssertionLocked( // NOLINT(readability-func
         {
             char sug[40] = {};
             suggestStateNameLocked(ad.targetName, sug, sizeof(sug));
-            char msg[96] = {};
+            static char msg[96] = {};
             snprintf(msg, sizeof(msg), "assert reachable: unknown state '%s'%s",
                      ad.targetName, sug);
             setErrorLocked(msg);
