@@ -346,8 +346,102 @@ bool encodeFrag(Frame&         frame,
 /**
  * Check if SEQ is a duplicate (same as lastSeq).
  * @return true if @p seq equals @p lastSeq.
+ *
+ * @note This function only catches exact retransmissions.  For full
+ *       sliding-window replay protection use @ref SeqBitmap.
  */
 bool isDuplicate(uint8_t seq, uint8_t lastSeq);
+
+/**
+ * @brief Sliding-window replay-protection bitmap for COMMAND SEQ numbers.
+ *
+ * Tracks the last @c kWindowSize accepted SEQ values using a 64-bit bitmap.
+ * A SEQ is declared a *duplicate* (and therefore rejected) if:
+ *   - It exactly matches the highest accepted SEQ seen so far, OR
+ *   - It falls within the look-back window and its bit is already set, OR
+ *   - It is more than @c kWindowSize-1 positions behind the highest SEQ.
+ *
+ * The window slides forward whenever a SEQ that is ahead of the current
+ * highest is accepted.
+ *
+ * SEQ arithmetic is performed modulo 256 (uint8_t natural wrap).  A SEQ
+ * that is 1–127 positions ahead of the current highest is treated as a
+ * new, not-yet-seen value; 128–255 positions ahead is treated as behind
+ * (wrap-around assumption: senders never skip > 127 in one burst).
+ *
+ * Standards: APUS-4.7 (duplicate detection, hardened).
+ * PO10-3: no heap — struct is statically allocatable.
+ */
+struct SeqBitmap
+{
+    static constexpr uint8_t kWindowSize = 64U;  ///< Number of SEQ slots tracked.
+
+    uint64_t bits_  = 0U;     ///< Bit i set → (high_ − i) mod 256 has been seen.
+    uint8_t  high_  = 0U;     ///< Highest accepted SEQ so far.
+    bool     init_  = false;  ///< True after the first SEQ is accepted.
+
+    /**
+     * @brief Check @p seq against the bitmap and, if new, record it.
+     *
+     * @param seq  Incoming frame SEQ byte.
+     * @return     true  — @p seq is a duplicate or replay; caller must discard.
+     *             false — @p seq is new; state has been updated.
+     */
+    bool checkAndMark(uint8_t seq)
+    {
+        if (!init_)
+        {
+            high_  = seq;
+            bits_  = 1U;   // bit 0 represents high_ itself
+            init_  = true;
+            return false;
+        }
+
+        // fwd = (seq - high_) mod 256.
+        // fwd == 0            → same as high_ (duplicate)
+        // 1 ≤ fwd ≤ 127      → seq is ahead (new)
+        // 128 ≤ fwd ≤ 255    → seq is behind high_ by (256 - fwd) positions
+        const uint8_t fwd = static_cast<uint8_t>(seq - high_);
+
+        if (fwd == 0U)
+        {
+            return true;  // exact repeat of the highest seen SEQ
+        }
+
+        if (fwd < 128U)
+        {
+            // seq is ahead: advance the window.
+            if (fwd < kWindowSize)
+            {
+                bits_ = (bits_ << fwd) | 1U;  // shift old bits, mark bit 0 (new high_)
+            }
+            else
+            {
+                bits_ = 1U;  // jumped > window size: all old entries are irrelevant
+            }
+            high_ = seq;
+            return false;
+        }
+
+        // seq is behind high_.  behind = (high_ - seq) mod 256.
+        const uint8_t behind = static_cast<uint8_t>(high_ - seq);
+
+        if (behind < kWindowSize)
+        {
+            const uint64_t mask = (1ULL << behind);
+            if ((bits_ & mask) != 0U)
+            {
+                return true;  // already seen within the window → replay
+            }
+            bits_ |= mask;
+            return false;
+        }
+
+        // More than kWindowSize-1 positions behind: outside the window.
+        // Treat as replay (too old to distinguish legitimately).
+        return true;
+    }
+};
 
 // ── ST[20] parameter management (APUS-16) ────────────────────────────────────
 

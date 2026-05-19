@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 53
+ * Test count: 55
  */
 #include <unity.h>
 
@@ -39,6 +39,9 @@ extern void test_cmd_nonfrag_set_telem_interval_valid();
 extern void test_cmd_flag_ack_req_triggers_completion_ack();
 // Duplicate detection
 extern void test_cmd_duplicate_is_discarded();
+// Anti-replay ([H5])
+extern void test_cmd_replay_previous_seq_rejected();
+extern void test_cmd_replay_outside_window_rejected();
 // HEARTBEAT
 extern void test_heartbeat_gets_response();
 // Discard paths
@@ -117,8 +120,10 @@ int main()
     RUN_TEST(test_cmd_nonfrag_set_telem_interval_valid);
     RUN_TEST(test_cmd_flag_ack_req_triggers_completion_ack);
 
-    // duplicate detection
+    // duplicate detection and anti-replay ([H5])
     RUN_TEST(test_cmd_duplicate_is_discarded);
+    RUN_TEST(test_cmd_replay_previous_seq_rejected);
+    RUN_TEST(test_cmd_replay_outside_window_rejected);
 
     // HEARTBEAT
     RUN_TEST(test_heartbeat_gets_response);

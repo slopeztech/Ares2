@@ -37,8 +37,6 @@ RadioDispatcher::RadioDispatcher(RadioInterface&               radio,
     , rxBuf_{}
     , rxLen_(0U)
     , txSeq_(0U)
-    , lastRxSeq_(0U)
-    , seenFirst_(false)
 {
 }
 
@@ -252,12 +250,13 @@ void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs) /
 
 void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
 {
-    // ── APUS-4.7: duplicate detection ──────────────────────────────────────
-    // A duplicate is the same SEQ as the last accepted command.
-    // Silently discard — the sender already received the acceptance ACK.
-    if (seenFirst_ && proto::isDuplicate(frame.seq, lastRxSeq_))
+    // ── APUS-4.7: sliding-window anti-replay guard ([H5]) ─────────────────
+    // SeqBitmap tracks the last 64 accepted SEQ values.  A frame is rejected
+    // if its SEQ was already seen (exact repeat, out-of-order replay, or any
+    // SEQ more than 63 positions behind the highest accepted).
+    if (rxSeqBitmap_.checkAndMark(frame.seq))
     {
-        LOG_D(TAG, "COMMAND seq=%u duplicate — discarded",
+        LOG_D(TAG, "COMMAND seq=%u duplicate/replay — discarded",
               static_cast<unsigned>(frame.seq));
         return;
     }
@@ -271,10 +270,6 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
 
     // ── APUS-9.1: acceptance ACK — sent unconditionally ────────────────────
     sendAckNack(frame.seq, frame.node, proto::FailureCode::NONE, 0U);
-
-    // Record SEQ after acceptance ACK is queued.
-    lastRxSeq_ = frame.seq;
-    seenFirst_ = true;
 
     // ── APUS-2.2: insert into the priority queue; drainCmdQueue() executes ──
     if (!enqueueCmd(frame))
@@ -1187,10 +1182,6 @@ void RadioDispatcher::handleFragmentedCommand(const proto::Frame& frame, // NOLI
     assembled.len = copyLen;
 
     fragSession_ = FragReceiveSession{};   // clear session
-
-    // SEQ tracking and queue insertion for the assembled command.
-    lastRxSeq_ = frame.seq;
-    seenFirst_ = true;
 
     if (!enqueueCmd(assembled))
     {

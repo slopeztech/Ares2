@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_radio_protocol
  *
- * Test count: 55
+ * Test count: 63
  */
 #include <unity.h>
 
@@ -76,6 +76,16 @@ extern void test_encode_frag_single_segment();
 extern void test_encode_frag_max_payload_segment();
 extern void test_is_duplicate_wraparound_zero_after_max();
 
+// SeqBitmap tests ([H5])
+extern void test_seq_bitmap_first_seq_not_duplicate();
+extern void test_seq_bitmap_same_seq_is_duplicate();
+extern void test_seq_bitmap_sequential_no_duplicate();
+extern void test_seq_bitmap_outside_window_rejected();
+extern void test_seq_bitmap_back_edge_of_window_accepted();
+extern void test_seq_bitmap_out_of_order_within_window();
+extern void test_seq_bitmap_wraparound_255_to_0();
+extern void test_seq_bitmap_jump_ahead_resets_window();
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -142,6 +152,16 @@ int main()
     RUN_TEST(test_encode_frag_single_segment);
     RUN_TEST(test_encode_frag_max_payload_segment);
     RUN_TEST(test_is_duplicate_wraparound_zero_after_max);
+
+    // SeqBitmap ([H5])
+    RUN_TEST(test_seq_bitmap_first_seq_not_duplicate);
+    RUN_TEST(test_seq_bitmap_same_seq_is_duplicate);
+    RUN_TEST(test_seq_bitmap_sequential_no_duplicate);
+    RUN_TEST(test_seq_bitmap_outside_window_rejected);
+    RUN_TEST(test_seq_bitmap_back_edge_of_window_accepted);
+    RUN_TEST(test_seq_bitmap_out_of_order_within_window);
+    RUN_TEST(test_seq_bitmap_wraparound_255_to_0);
+    RUN_TEST(test_seq_bitmap_jump_ahead_resets_window);
 
     return UNITY_END();
 }

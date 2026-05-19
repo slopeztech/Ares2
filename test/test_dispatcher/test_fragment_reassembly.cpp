@@ -229,15 +229,20 @@ void test_frag_session_timeout_discards_and_restarts()
     const uint16_t len = make_cmd_frag(wire, 20U, 0x0003U, 0U, 3U, segData, 1U);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
+    // Retry frame uses a new SEQ (protocol-correct retransmission after timeout).
+    uint8_t wire2[MAX_FRAME_LEN];
+    const uint16_t len2 = make_cmd_frag(wire2, 21U, 0x0003U, 0U, 3U, segData, 1U);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, len2);
+
     // T=0: segment arrives, session created.
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
     f.dispatcher.poll(0U);
     TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
 
-    // T=35000 (past kFragTimeoutMs=30000): same segment re-arrives.
+    // T=35000 (past kFragTimeoutMs=30000): retransmission with new SEQ arrives.
     // The dispatcher must detect the timeout, discard the old session,
     // and start a fresh one — sending a second ACK.
-    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire2, len2));
     f.dispatcher.poll(35000U);
     TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
 }

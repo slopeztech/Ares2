@@ -269,7 +269,7 @@ Command uplink is optional and depends on hardware configuration.
 | APUS-4.4  | ✅ Implemented   | `src/comms/radio_dispatcher.cpp` — `poll()` called from `loop()` every SENSOR_RATE_MS interval |
 | APUS-4.5  | ⏳ Planned       | Retransmit logic not yet implemented (ground-side responsibility for now) |
 | APUS-4.6  | ⏳ Planned       | `FLAG_RETRANSMIT` checked in `isDuplicate()` path |
-| APUS-4.7  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — `seenFirst_` guard + `isDuplicate(seq, lastRxSeq_)` |
+| APUS-4.7  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — `proto::SeqBitmap::checkAndMark()`, 64-slot sliding-window bitmap ([H5]) |
 
 ### Transmission cadence
 
