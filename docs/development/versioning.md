@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.2.7"
+#define ARES_VERSION_STRING "2.2.8"
 ```
 
 ---
@@ -52,6 +52,7 @@ docs/changelog/
     v2.2.5.md   ← Safety: formatHkFieldValueLocked returns false for sensor failures; "nan" sentinel in CSV (H4)
     v2.2.6.md   ← Fix: resolve all ares_code_lint findings (1 ERROR + 39 WARNINGs); CERT/DOX/MISRA/RTOS compliance
     v2.2.7.md   ← Refactor: split mission_script_engine.h into _types.h and _internal.h ([M1])
+    v2.2.8.md   ← Fix: replace hardcoded TELEM_INTERVAL limits with TELEMETRY_INTERVAL_MIN/MAX ([M2])
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -74,3 +75,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.2.5](../changelog/v2.2.5.md) | 2026-05-18 | Patch   | Safety: `formatHkFieldValueLocked` returns false for sensor failures; `"nan"` sentinel in CSV (H4) |
 | [2.2.6](../changelog/v2.2.6.md) | 2026-05-19 | Patch   | Fix: resolve all `ares_code_lint` findings (1 ERROR + 39 WARNINGs); CERT/DOX/MISRA/RTOS compliance |
 | [2.2.7](../changelog/v2.2.7.md) | 2026-05-19 | Patch   | Refactor: split `mission_script_engine.h` into `_types.h` + `_internal.h` ([M1]); −39% header size |
+| [2.2.8](../changelog/v2.2.8.md) | 2026-05-19 | Patch   | Fix: replace hardcoded `[100, 60000]` limits with `TELEMETRY_INTERVAL_MIN/MAX` constants ([M2]); 3 new boundary tests |

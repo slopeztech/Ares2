@@ -546,11 +546,14 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
         // MISRA 10.3: use memcpy to avoid unaligned read on ESP32.
         uint32_t intervalMs = 0U;
         (void)memcpy(&intervalMs, &frame.payload[2U], sizeof(intervalMs));
-        // Sanity bounds: 100 ms .. 60 000 ms.
-        if (intervalMs < 100U || intervalMs > 60000U)
+        // Sanity bounds: [TELEMETRY_INTERVAL_MIN, TELEMETRY_INTERVAL_MAX] (config.h).
+        if (intervalMs < ares::TELEMETRY_INTERVAL_MIN ||
+            intervalMs > ares::TELEMETRY_INTERVAL_MAX)
         {
-            LOG_W(TAG, "SET_TELEM_INTERVAL: %u ms out of range [100, 60000]",
-                  static_cast<unsigned>(intervalMs));
+            LOG_W(TAG, "SET_TELEM_INTERVAL: %u ms out of range [%u, %u]",
+                  static_cast<unsigned>(intervalMs),
+                  static_cast<unsigned>(ares::TELEMETRY_INTERVAL_MIN),
+                  static_cast<unsigned>(ares::TELEMETRY_INTERVAL_MAX));
             return proto::FailureCode::INVALID_PARAM;
         }
         if (!engine_.setTelemInterval(intervalMs))

@@ -1247,3 +1247,124 @@ void test_cmd_nonfrag_fire_pulse_d_engine_not_running()
 
     TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
 }
+
+// ── SET_TELEM_INTERVAL boundary tests ([M2]) ──────────────────────────────────
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MIN (100 ms):
+ * exactly at the lower bound → accepted by range check.
+ * Engine has no active HK slots → setTelemInterval() returns false →
+ * EXECUTION_ERROR.  FLAG_ACK_REQ triggers completion ACK.
+ * Expected sendCount == 2; failureCode == EXECUTION_ERROR.
+ */
+void test_cmd_nonfrag_set_telem_interval_at_min()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MIN;  // 100 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 89U, FLAG_ACK_REQ,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    // Acceptance ACK + completion ACK (EXECUTION_ERROR: no HK slots).
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
+
+    Frame ackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), ackFrame));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(ackFrame.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), ackFrame.len);
+    AckPayload ack = {};
+    (void)memcpy(&ack, ackFrame.payload, sizeof(ack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::EXECUTION_ERROR), ack.failureCode);
+}
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MAX (60 000 ms):
+ * exactly at the upper bound → accepted by range check.
+ * Engine has no active HK slots → setTelemInterval() returns false →
+ * EXECUTION_ERROR.  FLAG_ACK_REQ triggers completion ACK.
+ * Expected sendCount == 2; failureCode == EXECUTION_ERROR.
+ */
+void test_cmd_nonfrag_set_telem_interval_at_max()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MAX;  // 60 000 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 90U, FLAG_ACK_REQ,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    // Acceptance ACK + completion ACK (EXECUTION_ERROR: no HK slots).
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
+
+    Frame ackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), ackFrame));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(ackFrame.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), ackFrame.len);
+    AckPayload ack = {};
+    (void)memcpy(&ack, ackFrame.payload, sizeof(ack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::EXECUTION_ERROR), ack.failureCode);
+}
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MAX + 1 (60 001 ms):
+ * one above the upper bound → INVALID_PARAM.  FLAG_ACK_REQ triggers
+ * completion ACK.
+ * Expected sendCount == 2; failureCode == INVALID_PARAM.
+ */
+void test_cmd_nonfrag_set_telem_interval_above_max()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MAX + 1U;  // 60 001 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 91U, FLAG_ACK_REQ,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    // Acceptance ACK + completion ACK (INVALID_PARAM: out of range).
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
+
+    Frame ackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), ackFrame));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(ackFrame.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), ackFrame.len);
+    AckPayload ack = {};
+    (void)memcpy(&ack, ackFrame.payload, sizeof(ack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::INVALID_PARAM), ack.failureCode);
+}
