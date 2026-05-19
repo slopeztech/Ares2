@@ -417,7 +417,7 @@ struct SeqBitmap
             }
             else
             {
-                bits_ = 1U;  // jumped > window size: all old entries are irrelevant
+                bits_ = 1U;  // jumped >= window size: all old entries are irrelevant
             }
             high_ = seq;
             return false;
