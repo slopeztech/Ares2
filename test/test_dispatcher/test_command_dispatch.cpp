@@ -581,6 +581,65 @@ void test_cmd_duplicate_is_discarded()
     TEST_ASSERT_EQUAL_UINT32(afterFirst, f.dispatchRadio.sendCount());
 }
 
+// ── Anti-replay tests ([H5]) ──────────────────────────────────────────────────
+
+/**
+ * SEQ N-1 replayed after SEQ N has been accepted: the old code accepted it
+ * (equality-only check); the sliding-window bitmap must reject it.
+ * Expected: second sendCount equals first (replay is silently dropped).
+ */
+void test_cmd_replay_previous_seq_rejected()
+{
+    CmdDispatchFixture f;
+    uint8_t wireN[MAX_FRAME_LEN];
+    uint8_t wireN1[MAX_FRAME_LEN];
+
+    // Accept SEQ = 50.
+    const uint16_t lenN  = make_cmd(wireN,  50U, 0U, CommandId::REQUEST_STATUS);
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wireN, lenN));
+    f.dispatcher.poll(1000U);
+    const uint32_t after50 = f.dispatchRadio.sendCount();
+
+    // Accept SEQ = 51.
+    const uint16_t lenN1 = make_cmd(wireN1, 51U, 0U, CommandId::REQUEST_STATUS);
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wireN1, lenN1));
+    f.dispatcher.poll(2000U);
+    const uint32_t after51 = f.dispatchRadio.sendCount();
+    TEST_ASSERT_GREATER_THAN_UINT32(after50, after51);
+
+    // Replay of SEQ = 50 (one behind current high) — must be discarded.
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wireN, lenN));
+    f.dispatcher.poll(3000U);
+    TEST_ASSERT_EQUAL_UINT32(after51, f.dispatchRadio.sendCount());
+}
+
+/**
+ * SEQ that is 64 (kWindowSize) behind the current high is outside the
+ * look-back window and must be silently discarded.
+ */
+void test_cmd_replay_outside_window_rejected()
+{
+    CmdDispatchFixture f;
+    uint8_t wire10[MAX_FRAME_LEN];
+    uint8_t wire74[MAX_FRAME_LEN];
+
+    // Accept SEQ = 10.
+    const uint16_t len10 = make_cmd(wire10, 10U, 0U, CommandId::REQUEST_STATUS);
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire10, len10));
+    f.dispatcher.poll(1000U);
+
+    // Advance high to SEQ = 74 (fwd = 64 → full window reset, 10 is now outside).
+    const uint16_t len74 = make_cmd(wire74, 74U, 0U, CommandId::REQUEST_STATUS);
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire74, len74));
+    f.dispatcher.poll(2000U);
+    const uint32_t after74 = f.dispatchRadio.sendCount();
+
+    // Replay of SEQ = 10 (64 behind 74) — outside window → discarded.
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire10, len10));
+    f.dispatcher.poll(3000U);
+    TEST_ASSERT_EQUAL_UINT32(after74, f.dispatchRadio.sendCount());
+}
+
 // ── HEARTBEAT test ────────────────────────────────────────────────────────────
 
 /**

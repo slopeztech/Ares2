@@ -91,10 +91,9 @@ private:
 
     // ── Receive state ────────────────────────────────────────
     uint8_t  rxBuf_[kRxBufLen];  ///< Byte accumulation buffer (static, PO10-3).
-    uint16_t rxLen_     = 0U;    ///< Number of valid bytes currently in rxBuf_.
-    uint8_t  txSeq_     = 0U;    ///< TX sequence counter for outgoing ACK/NACK/HBEAT frames.
-    uint8_t  lastRxSeq_ = 0U;    ///< SEQ of the last accepted COMMAND (APUS-4.7).
-    bool     seenFirst_ = false; ///< True after the first COMMAND is accepted.
+    uint16_t rxLen_          = 0U;   ///< Number of valid bytes currently in rxBuf_.
+    uint8_t  txSeq_          = 0U;   ///< TX sequence counter for outgoing ACK/NACK/HBEAT frames.
+    proto::SeqBitmap rxSeqBitmap_;   ///< Sliding-window anti-replay bitmap (APUS-4.7, [H5]).
 
     // ── TX retry buffer (APUS-4.5, APUS-4.6, APUS-2.3) ─────────────────────
     /**

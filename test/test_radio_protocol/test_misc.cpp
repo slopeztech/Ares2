@@ -352,3 +352,91 @@ void test_is_duplicate_wraparound_zero_after_max()
     // seq=0 repeated while lastSeq=0 is a genuine duplicate.
     TEST_ASSERT_TRUE(isDuplicate(0U, 0U));
 }
+
+// ── SeqBitmap tests ([H5] sliding-window anti-replay) ────────────────────────
+
+/// First SEQ accepted is never a duplicate (window is uninitialised).
+void test_seq_bitmap_first_seq_not_duplicate()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(42U));
+}
+
+/// Same SEQ submitted twice: second must be a duplicate.
+void test_seq_bitmap_same_seq_is_duplicate()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(10U));
+    TEST_ASSERT_TRUE(b.checkAndMark(10U));
+}
+
+/// Monotonically increasing SEQs (1..63 steps ahead) are never duplicates.
+void test_seq_bitmap_sequential_no_duplicate()
+{
+    SeqBitmap b;
+    for (uint8_t s = 0U; s < 64U; ++s)
+    {
+        TEST_ASSERT_FALSE(b.checkAndMark(s));
+    }
+}
+
+/// SEQ that is exactly kWindowSize (64) behind the current high is rejected
+/// (outside the look-back window).
+void test_seq_bitmap_outside_window_rejected()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(100U));   // high = 100
+    TEST_ASSERT_FALSE(b.checkAndMark(164U));   // advance to 164 (fwd=64 → full reset)
+    // SEQ 100 is now 64 positions behind 164 → outside window → replay.
+    TEST_ASSERT_TRUE(b.checkAndMark(100U));
+}
+
+/// SEQ exactly at the back-edge of the window (kWindowSize-1 = 63 behind) is accepted.
+void test_seq_bitmap_back_edge_of_window_accepted()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(130U));   // high_ = 130, bits_ = 1 (only 130 seen)
+    // SEQ 67 = 130 − 63 → exactly 63 behind high_, not in bitmap → accepted.
+    TEST_ASSERT_FALSE(b.checkAndMark(67U));
+    // Replay of 67 → duplicate.
+    TEST_ASSERT_TRUE(b.checkAndMark(67U));
+}
+
+/// Out-of-order SEQ within the window is accepted once and rejected thereafter.
+void test_seq_bitmap_out_of_order_within_window()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(50U));    // high = 50
+    TEST_ASSERT_FALSE(b.checkAndMark(55U));    // advance high to 55
+    // SEQ 52 arrived late — 3 behind high, within window.
+    TEST_ASSERT_FALSE(b.checkAndMark(52U));
+    // Replay of SEQ 52 → rejected.
+    TEST_ASSERT_TRUE(b.checkAndMark(52U));
+}
+
+/// Wrap-around: seq wraps from 255 to 0 and is treated as a new SEQ.
+void test_seq_bitmap_wraparound_255_to_0()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(255U));   // high = 255
+    // fwd = (0 - 255) mod 256 = 1 → one step ahead → new SEQ.
+    TEST_ASSERT_FALSE(b.checkAndMark(0U));
+    // Repeat of 0 → duplicate.
+    TEST_ASSERT_TRUE(b.checkAndMark(0U));
+}
+
+/// Jump more than kWindowSize ahead causes a full window reset; subsequent
+/// SEQs in the old window are no longer recognised (outside window now).
+void test_seq_bitmap_jump_ahead_resets_window()
+{
+    SeqBitmap b;
+    TEST_ASSERT_FALSE(b.checkAndMark(10U));    // high = 10
+    TEST_ASSERT_FALSE(b.checkAndMark(11U));    // high = 11, bit for 10 set
+    // Jump 80 steps ahead (fwd = 80 >= kWindowSize) → full reset.
+    TEST_ASSERT_FALSE(b.checkAndMark(91U));    // high = 91, bits = 1
+    // SEQ 11 is now 80 behind 91 → outside window → replay.
+    TEST_ASSERT_TRUE(b.checkAndMark(11U));
+    // SEQ 29 is 62 behind 91 → inside window → accepted (first time).
+    TEST_ASSERT_FALSE(b.checkAndMark(29U));
+}
+
