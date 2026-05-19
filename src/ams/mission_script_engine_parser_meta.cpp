@@ -486,7 +486,7 @@ bool MissionScriptEngine::parsePulseMinAltLineLocked(const char* line)
     if (*rest == '\0') { setErrorLocked("pulse.min_altitude: missing value"); return false; }
 
     char* endp = nullptr;
-    const int32_t val = static_cast<int32_t>(strtol(rest, &endp, 10));
+    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
     if (endp == rest || val <= 0 || val > 50000)
     {
         setErrorLocked("pulse.min_altitude: value must be in range [1, 50000] m");
@@ -526,7 +526,7 @@ bool MissionScriptEngine::parsePulseSafeDelayLineLocked(const char* line)
     if (*rest == '\0') { setErrorLocked("pulse.safe_delay: missing value"); return false; }
 
     char* endp = nullptr;
-    const int32_t val = static_cast<int32_t>(strtol(rest, &endp, 10));
+    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
     if (endp == rest || val < 100 || val > 60000)
     {
         setErrorLocked("pulse.safe_delay: value must be in range [100, 60000] ms");
@@ -565,7 +565,7 @@ bool MissionScriptEngine::parsePulseArmTimeoutLineLocked(const char* line)
     if (*rest == '\0') { setErrorLocked("pulse.arm_timeout: missing value"); return false; }
 
     char* endp = nullptr;
-    const int32_t val = static_cast<int32_t>(strtol(rest, &endp, 10));
+    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
     if (endp == rest || val < 500 || val > 300000)
     {
         setErrorLocked("pulse.arm_timeout: value must be in range [500, 300000] ms");
