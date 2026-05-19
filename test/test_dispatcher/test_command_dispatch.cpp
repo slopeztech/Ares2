@@ -1247,3 +1247,86 @@ void test_cmd_nonfrag_fire_pulse_d_engine_not_running()
 
     TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
 }
+
+// ── SET_TELEM_INTERVAL boundary tests ([M2]) ──────────────────────────────────
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MIN (100 ms):
+ * exactly at the lower bound → accepted by range check.
+ * Engine has no active HK slots → setTelemInterval() returns false →
+ * EXECUTION_ERROR.  Acceptance ACK only.
+ * Expected sendCount == 1.
+ */
+void test_cmd_nonfrag_set_telem_interval_at_min()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MIN;  // 100 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 89U, 0U,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    // Accepted by range check; EXECUTION_ERROR (no HK slots) → 1 ACK.
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+}
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MAX (60 000 ms):
+ * exactly at the upper bound → accepted by range check.
+ * Engine has no active HK slots → setTelemInterval() returns false →
+ * EXECUTION_ERROR.  Acceptance ACK only.
+ * Expected sendCount == 1.
+ */
+void test_cmd_nonfrag_set_telem_interval_at_max()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MAX;  // 60 000 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 90U, 0U,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    // Accepted by range check; EXECUTION_ERROR (no HK slots) → 1 ACK.
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+}
+
+/**
+ * SET_TELEM_INTERVAL with interval == TELEMETRY_INTERVAL_MAX + 1 (60 001 ms):
+ * one above the upper bound → INVALID_PARAM.  Acceptance ACK only.
+ * Expected sendCount == 1.
+ */
+void test_cmd_nonfrag_set_telem_interval_above_max()
+{
+    CmdDispatchFixture f;
+    const uint32_t intervalMs = ares::TELEMETRY_INTERVAL_MAX + 1U;  // 60 001 ms
+    const uint8_t extra[4U] = {
+        static_cast<uint8_t>( intervalMs        & 0xFFU),
+        static_cast<uint8_t>((intervalMs >>  8U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 16U) & 0xFFU),
+        static_cast<uint8_t>((intervalMs >> 24U) & 0xFFU),
+    };
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t len = make_cmd(wire, 91U, 0U,
+                                  CommandId::SET_TELEM_INTERVAL, extra, 4U);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
+    f.dispatcher.poll(1000U);
+
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+}

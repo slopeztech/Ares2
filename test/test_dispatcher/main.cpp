@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 50
+ * Test count: 53
  */
 #include <unity.h>
 
@@ -80,6 +80,10 @@ extern void test_cmd_nonfrag_fire_pulse_c_missing_priority_rejected();
 extern void test_cmd_nonfrag_fire_pulse_d_missing_priority_rejected();
 extern void test_cmd_nonfrag_fire_pulse_c_engine_not_running();
 extern void test_cmd_nonfrag_fire_pulse_d_engine_not_running();
+// SET_TELEM_INTERVAL boundary tests ([M2])
+extern void test_cmd_nonfrag_set_telem_interval_at_min();
+extern void test_cmd_nonfrag_set_telem_interval_at_max();
+extern void test_cmd_nonfrag_set_telem_interval_above_max();
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -152,6 +156,11 @@ int main()
     RUN_TEST(test_cmd_nonfrag_fire_pulse_d_missing_priority_rejected);
     RUN_TEST(test_cmd_nonfrag_fire_pulse_c_engine_not_running);
     RUN_TEST(test_cmd_nonfrag_fire_pulse_d_engine_not_running);
+
+    // SET_TELEM_INTERVAL boundary tests ([M2])
+    RUN_TEST(test_cmd_nonfrag_set_telem_interval_at_min);
+    RUN_TEST(test_cmd_nonfrag_set_telem_interval_at_max);
+    RUN_TEST(test_cmd_nonfrag_set_telem_interval_above_max);
 
     return UNITY_END();
 }
