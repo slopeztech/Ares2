@@ -147,7 +147,7 @@ bool MissionScriptEngine::parseImuSensorField(const char* fieldStr, SensorField&
  * @return Pointer to the matching @c AliasEntry, or @c nullptr if not found.
  * @note Caller must hold the engine mutex (Locked suffix convention).
  */
-const MissionScriptEngine::AliasEntry*
+const AliasEntry*
 MissionScriptEngine::findAliasLocked(const char* alias) const
 {
     if (alias == nullptr || alias[0] == '\0') { return nullptr; }

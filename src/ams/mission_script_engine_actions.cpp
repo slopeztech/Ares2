@@ -38,7 +38,7 @@ static constexpr const char* TAG = "AMS";
  * @return Pointer to the @c VarEntry, or @c nullptr if not found.
  * @pre  mutex_ is held by the caller.
  */
-MissionScriptEngine::VarEntry* MissionScriptEngine::findVarLocked(const char* name)
+VarEntry* MissionScriptEngine::findVarLocked(const char* name)
 {
     for (uint8_t i = 0; i < program_.varCount; i++)
     {
@@ -56,7 +56,7 @@ MissionScriptEngine::VarEntry* MissionScriptEngine::findVarLocked(const char* na
  * @return Const pointer to the @c VarEntry, or @c nullptr if not found.
  * @pre  mutex_ is held by the caller.
  */
-const MissionScriptEngine::VarEntry* MissionScriptEngine::findVarLocked(
+const VarEntry* MissionScriptEngine::findVarLocked(
     const char* name) const
 {
     for (uint8_t i = 0; i < program_.varCount; i++)
@@ -641,7 +641,7 @@ void MissionScriptEngine::executePulseActionsLocked(const StateDef& st, uint64_t
 
     for (uint8_t i = 0U; i < st.pulseActionCount; i++)
     {
-        const StateDef::PulseAction& act = st.pulseActions[i];
+        const PulseAction& act = st.pulseActions[i];
 
         // AMS-4.19: Evaluate all safety gates before firing.
         if (!checkPulseSafetyLocked(act.channel, nowMs)) { continue; }
