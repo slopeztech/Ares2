@@ -27,7 +27,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.2.9"
+#define ARES_VERSION_STRING "2.3.0"
 
 namespace ares
 {
@@ -229,6 +229,15 @@ constexpr UBaseType_t TASK_PRIORITY_LED   = 1;  ///< Low    — status heartbeat
 constexpr uint32_t SENSOR_RATE_MS    = 10;   ///< 100 Hz.
 constexpr uint32_t FLIGHT_RATE_MS    = 20;   ///<  50 Hz.
 constexpr uint32_t LOOP_TICK_WARN_MS = 50;   ///< Max tick work duration (ms) before a LOG_W overrun warning is emitted.
+/// Maximum vTaskDelay in loop() — must be less than half CONFIG_ESP_TASK_WDT_TIMEOUT_S
+/// (5 s) so the TWDT reset at the top of each iteration is always reached in time.
+constexpr uint32_t LOOP_SLEEP_MAX_MS = 2000U; ///< 2 s < (5 s / 2) = 2.5 s.
+// Compile-time guard: if the watchdog timeout macro is defined, verify the cap
+// is safely below half its value so the TWDT reset is always reached in time.
+#ifdef CONFIG_ESP_TASK_WDT_TIMEOUT_S
+static_assert((LOOP_SLEEP_MAX_MS * 2U) < (static_cast<uint32_t>(CONFIG_ESP_TASK_WDT_TIMEOUT_S) * 1000U),
+              "LOOP_SLEEP_MAX_MS must be less than half CONFIG_ESP_TASK_WDT_TIMEOUT_S");
+#endif
 constexpr uint32_t LOG_RATE_MS       = 100;  ///<  10 Hz.
 constexpr uint32_t TELEMETRY_RATE_MS = 2000; ///< 0.5 Hz — must exceed air TX time (~1.85 s @ 2.4 kbps).
 constexpr uint32_t API_RATE_MS       = 50;   ///<  20 Hz.

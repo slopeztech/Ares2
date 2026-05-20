@@ -36,6 +36,7 @@
 #include "hal/radio/radio_interface.h"
 #include "hal/pulse/pulse_interface.h"
 
+#include <atomic>
 #include <cstdint>
 
 namespace ares
@@ -70,6 +71,19 @@ public:
      * @param[in] nowMs  Current millis() timestamp.
      */
     void poll(uint32_t nowMs);
+
+    /**
+     * @brief Return the cumulative count of frames dropped because the TX
+     *        retry buffer (@c kMaxRetrySlots) was full (APUS-4.5).
+     *
+     * A non-zero and growing value indicates link degradation: ACKs are not
+     * arriving fast enough to free retry slots before new reliable frames
+     * need to be enqueued.  The counter is monotonically increasing and never
+     * wraps (saturates at UINT32_MAX).
+     *
+     * @return Number of retry-buffer overflow events since boot.
+     */
+    uint32_t retryDrops() const { return retryDrops_.load(); }
 
 private:
     // Two full frames of buffer space so a partial-frame tail can coexist
@@ -113,6 +127,9 @@ private:
     };
     static constexpr uint8_t kMaxRetrySlots = 4U;
     TxRetrySlot retrySlots_[kMaxRetrySlots] = {};
+
+    /// Cumulative count of frames dropped due to retry-buffer overflow (APUS-4.5).
+    std::atomic<uint32_t> retryDrops_{0U};
 
     // ── Priority command queue (APUS-2.1, APUS-2.2, APUS-2.4) ──────────────
     static constexpr uint8_t kCriticalPriority = 0U;  ///< ABORT, FIRE_PULSE, FACTORY_RESET.

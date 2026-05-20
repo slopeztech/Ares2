@@ -102,14 +102,17 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
     "wifi": true,
     "baro": true,
     "gps": true,
-    "imu": true
+    "imu": true,
+    "radio_retry_drops": 0
   },
   "baro": {
+    "driver": "BMP390",
     "pressurePa": 101325.0,
     "temperatureC": 22.5,
     "altitudeM": 0.42
   },
   "gps": {
+    "driver": "u-blox M8",
     "fix": true,
     "latitude": 00.000000,
     "longitude": 00.000000,
@@ -120,6 +123,7 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
     "satellites": 8
   },
   "imu": {
+    "driver": "ICM-42688-P",
     "accelX": 0.12, "accelY": -0.03, "accelZ": 9.81,
     "gyroX": 0.8, "gyroY": -0.2, "gyroZ": 0.1,
     "tempC": 31.4
@@ -127,7 +131,9 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
 }
 ```
 
-`baro`, `gps`, and `imu` objects are only present when the corresponding `health` flag is `true`.
+`baro`, `gps`, and `imu` objects are **always present** in the response. Each always contains a `driver` field with the sensor model string. Measurement fields (`pressurePa`, `latitude`, `accelX`, etc.) are only included when the corresponding `health` flag is `true`.
+
+`health.radio_retry_drops` is the cumulative count of TX frames dropped because the retry buffer (`kMaxRetrySlots = 4`) was full.  A value of `0` is normal; a non-zero and growing value indicates that ACKs from the ground station are not arriving fast enough to free retry slots (link degradation — APUS-4.5).
 
 ---
 

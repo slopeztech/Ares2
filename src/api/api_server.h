@@ -47,6 +47,7 @@
 #include "sys/wifi/wifi_ap.h"
 
 class StatusLed;  ///< Forward declaration — avoids circular headers.
+namespace ares { class RadioDispatcher; } ///< Forward declaration — full type used only in status_handler.cpp.
 class TwoWire;
 class HardwareSerial;
 
@@ -89,6 +90,8 @@ public:
      * @param[in] loraUart   Pointer to LoRa UART port (nullable).
      * @param[in] radio      Pointer to radio interface (nullable).
      * @param[in] pulse      Pointer to pulse channel interface (nullable).
+     * @param[in] dispatcher Pointer to RadioDispatcher (nullable — retry_drops
+     *                       not reported when null).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
               GpsInterface& gps, ImuInterface& imu,
@@ -101,7 +104,8 @@ public:
               HardwareSerial* gpsUart = nullptr,
               HardwareSerial* loraUart = nullptr,
               RadioInterface* radio = nullptr,
-              PulseInterface* pulse = nullptr);
+              PulseInterface* pulse = nullptr,
+              ares::RadioDispatcher* dispatcher = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;
@@ -309,8 +313,9 @@ private:
     TwoWire*             i2c1_;      ///< Nullable — board I2C1 bus.
     HardwareSerial*      gpsUart_;   ///< Nullable — UART1 monitor handle.
     HardwareSerial*      loraUart_;  ///< Nullable — UART2 monitor handle.
-    RadioInterface*      radio_;     ///< Nullable — radio health probe.
-    PulseInterface*      pulse_;     ///< Nullable — pulse status disabled if null.
+    RadioInterface*      radio_;      ///< Nullable — radio health probe.
+    PulseInterface*      pulse_;      ///< Nullable — pulse status disabled if null.
+    ares::RadioDispatcher* dispatcher_; ///< Nullable — retry_drops counter source.
 
     // ── Shared state ────────────────────────────────────────
     RuntimeConfig config_ = {};

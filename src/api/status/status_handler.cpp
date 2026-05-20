@@ -8,6 +8,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "comms/radio_dispatcher.h"
 #include "debug/ares_log.h"
 
 #include <Arduino.h>
@@ -91,6 +92,14 @@ void ApiServer::handleStatus(WiFiClient& client)
     doc["wifiClients"] = wifi_.clientCount();
 
     doc["health"]["wifi"] = wifi_.isReady();
+
+    // Radio retry-drop counter: non-zero value signals that the TX retry
+    // buffer was exhausted and frames were sent without tracking (APUS-4.5).
+    // Ground station should alert on this field > 0.
+    if (dispatcher_ != nullptr)
+    {
+        doc["health"]["radio_retry_drops"] = dispatcher_->retryDrops();
+    }
 
     appendBaroSnapshot(baro_, doc);
     appendGpsSnapshot(gps_, doc);

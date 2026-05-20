@@ -54,6 +54,7 @@ docs/changelog/
     v2.2.7.md   ← Refactor: split mission_script_engine.h into _types.h and _internal.h ([M1])
     v2.2.8.md   ← Fix: replace hardcoded TELEM_INTERVAL limits with TELEMETRY_INTERVAL_MIN/MAX ([M2])
     v2.2.9.md   ← Fix: sliding-window anti-replay bitmap for COMMAND SEQ ([H5])
+    v2.3.0.md   ← Minor: radio_retry_drops health counter + TWDT sleep cap
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -78,3 +79,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.2.7](../changelog/v2.2.7.md) | 2026-05-19 | Patch   | Refactor: split `mission_script_engine.h` into `_types.h` + `_internal.h` ([M1]); −39% header size |
 | [2.2.8](../changelog/v2.2.8.md) | 2026-05-19 | Patch   | Fix: replace hardcoded `[100, 60000]` limits with `TELEMETRY_INTERVAL_MIN/MAX` constants ([M2]); 3 new boundary tests |
 | [2.2.9](../changelog/v2.2.9.md) | 2026-05-19 | Patch   | Fix: replace equality-only SEQ duplicate check with 64-slot sliding-window `SeqBitmap` ([H5]); 10 new unit tests |
+| [2.3.0](../changelog/v2.3.0.md) | 2026-05-20 | Minor   | New: `radio_retry_drops` health counter in `GET /api/status` (APUS-4.5); Fix: TWDT sleep cap `LOOP_SLEEP_MAX_MS = 2000U`; 4 new unit tests |

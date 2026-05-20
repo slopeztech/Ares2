@@ -769,6 +769,8 @@ bool RadioDispatcher::enqueueRetry(const proto::Frame& frame, uint32_t nowMs)
     }
     LOG_W(TAG, "retry buffer full — seq=%u sent best-effort",
           static_cast<unsigned>(frame.seq));
+    // Saturating increment: stop at UINT32_MAX to avoid wrap-around.
+    if (retryDrops_.load() < UINT32_MAX) { retryDrops_.fetch_add(1U); }
     return false;
 }
 

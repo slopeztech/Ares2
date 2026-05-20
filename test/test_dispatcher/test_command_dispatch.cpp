@@ -1427,3 +1427,149 @@ void test_cmd_nonfrag_set_telem_interval_above_max()
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<uint8_t>(FailureCode::INVALID_PARAM), ack.failureCode);
 }
+
+// ── retry_drops counter (APUS-4.5) ───────────────────────────────────────────
+
+/**
+ * Fresh dispatcher starts with zero retry drops.
+ */
+void test_retry_drops_initial_zero()
+{
+    CmdDispatchFixture f;
+    TEST_ASSERT_EQUAL_UINT32(0U, f.dispatcher.retryDrops());
+}
+
+/**
+ * Saturate the retry buffer (kMaxRetrySlots = 4) by calling sendReliable()
+ * four times and withholding ACKs, then send a fifth frame.
+ *
+ * The fifth enqueueRetry() call must fail (buffer full) and retryDrops()
+ * must return 1.
+ */
+void test_retry_drops_increments_on_buffer_full()
+{
+    CmdDispatchFixture f;
+
+    // Fill all four retry slots.  No ACK is ever injected, so slots stay
+    // occupied.  sendReliable() is the only path that calls enqueueRetry().
+    for (uint8_t seq = 1U; seq <= 4U; ++seq)
+    {
+        Frame fr = {};
+        fr.ver   = PROTOCOL_VERSION;
+        fr.node  = NODE_ROCKET;
+        fr.type  = MsgType::TELEMETRY;
+        fr.seq   = seq;
+        fr.flags = 0U;
+        fr.len   = 0U;
+        TEST_ASSERT_TRUE(f.dispatcher.sendReliable(fr, 1000U));
+    }
+
+    // Buffer is full; drop counter must still be zero before overflow.
+    TEST_ASSERT_EQUAL_UINT32(0U, f.dispatcher.retryDrops());
+
+    // Fifth call — buffer is full → best-effort send + drop counter incremented.
+    Frame fr5 = {};
+    fr5.ver   = PROTOCOL_VERSION;
+    fr5.node  = NODE_ROCKET;
+    fr5.type  = MsgType::TELEMETRY;
+    fr5.seq   = 5U;
+    fr5.flags = 0U;
+    fr5.len   = 0U;
+    (void)f.dispatcher.sendReliable(fr5, 1000U);
+
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatcher.retryDrops());
+}
+
+/**
+ * Each additional overflow increments the counter by one.
+ */
+void test_retry_drops_accumulates()
+{
+    CmdDispatchFixture f;
+
+    // Fill four slots.
+    for (uint8_t seq = 1U; seq <= 4U; ++seq)
+    {
+        Frame fr = {};
+        fr.ver   = PROTOCOL_VERSION;
+        fr.node  = NODE_ROCKET;
+        fr.type  = MsgType::TELEMETRY;
+        fr.seq   = seq;
+        fr.flags = 0U;
+        fr.len   = 0U;
+        (void)f.dispatcher.sendReliable(fr, 1000U);
+    }
+
+    // Two more overflows.
+    for (uint8_t seq = 5U; seq <= 6U; ++seq)
+    {
+        Frame fr = {};
+        fr.ver   = PROTOCOL_VERSION;
+        fr.node  = NODE_ROCKET;
+        fr.type  = MsgType::TELEMETRY;
+        fr.seq   = seq;
+        fr.flags = 0U;
+        fr.len   = 0U;
+        (void)f.dispatcher.sendReliable(fr, 1000U);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatcher.retryDrops());
+}
+
+/**
+ * ACK clears a retry slot, so the next sendReliable() succeeds and the
+ * drop counter remains unchanged.
+ */
+void test_retry_drops_not_incremented_after_ack_frees_slot()
+{
+    CmdDispatchFixture f;
+
+    // Fill four slots (seq 11..14) via sendReliable().
+    for (uint8_t seq = 11U; seq <= 14U; ++seq)
+    {
+        Frame fr = {};
+        fr.ver   = PROTOCOL_VERSION;
+        fr.node  = NODE_ROCKET;
+        fr.type  = MsgType::TELEMETRY;
+        fr.seq   = seq;
+        fr.flags = 0U;
+        fr.len   = 0U;
+        (void)f.dispatcher.sendReliable(fr, 1000U);
+    }
+
+    // Send an ACK for seq=11 to free one slot.
+    {
+        Frame ackTx = {};
+        ackTx.ver   = PROTOCOL_VERSION;
+        ackTx.node  = NODE_ROCKET;
+        ackTx.type  = MsgType::ACK;
+        ackTx.seq   = 20U;
+        ackTx.flags = 0U;
+        AckPayload ap = {};
+        ap.originalSeq  = 11U;  // matches slot with seq=11
+        ap.failureCode  = static_cast<uint8_t>(FailureCode::NONE);
+        (void)memcpy(ackTx.payload, &ap, sizeof(ap));
+        ackTx.len = static_cast<uint8_t>(sizeof(ap));
+
+        uint8_t wire[MAX_FRAME_LEN];
+        const uint16_t wlen = encode(ackTx, wire, sizeof(wire));
+        TEST_ASSERT_GREATER_THAN_UINT16(0U, wlen);
+        TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wlen));
+        f.dispatcher.poll(1000U);
+        f.dispatchRadio.resetCapture();
+    }
+
+    // Now one slot is free — a new reliable frame should enqueue without drop.
+    {
+        Frame fr15 = {};
+        fr15.ver   = PROTOCOL_VERSION;
+        fr15.node  = NODE_ROCKET;
+        fr15.type  = MsgType::TELEMETRY;
+        fr15.seq   = 15U;
+        fr15.flags = 0U;
+        fr15.len   = 0U;
+        (void)f.dispatcher.sendReliable(fr15, 1000U);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(0U, f.dispatcher.retryDrops());
+}

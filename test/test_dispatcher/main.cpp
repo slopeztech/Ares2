@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 55
+ * Test count: 59
  */
 #include <unity.h>
 
@@ -87,6 +87,11 @@ extern void test_cmd_nonfrag_fire_pulse_d_engine_not_running();
 extern void test_cmd_nonfrag_set_telem_interval_at_min();
 extern void test_cmd_nonfrag_set_telem_interval_at_max();
 extern void test_cmd_nonfrag_set_telem_interval_above_max();
+// retry_drops counter (APUS-4.5)
+extern void test_retry_drops_initial_zero();
+extern void test_retry_drops_increments_on_buffer_full();
+extern void test_retry_drops_accumulates();
+extern void test_retry_drops_not_incremented_after_ack_frees_slot();
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -166,6 +171,12 @@ int main()
     RUN_TEST(test_cmd_nonfrag_set_telem_interval_at_min);
     RUN_TEST(test_cmd_nonfrag_set_telem_interval_at_max);
     RUN_TEST(test_cmd_nonfrag_set_telem_interval_above_max);
+
+    // retry_drops counter (APUS-4.5)
+    RUN_TEST(test_retry_drops_initial_zero);
+    RUN_TEST(test_retry_drops_increments_on_buffer_full);
+    RUN_TEST(test_retry_drops_accumulates);
+    RUN_TEST(test_retry_drops_not_incremented_after_ack_frees_slot);
 
     return UNITY_END();
 }
