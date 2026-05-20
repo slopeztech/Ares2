@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_api_handlers tests.
  *
- * Test count: 48
+ * Test count: 62
  */
 #include <unity.h>
 
@@ -69,6 +69,26 @@ extern void test_gps_str_not_ready();
 extern void test_gps_str_timeout();
 extern void test_gps_str_invalid_default();
 
+// ── owsSkipLeading (http_parse_pure.h) ───────────────────────────────────────
+
+extern void test_ows_skip_no_whitespace();
+extern void test_ows_skip_single_space();
+extern void test_ows_skip_single_tab();
+extern void test_ows_skip_mixed_sp_htab();
+extern void test_ows_skip_more_than_four_spaces();
+extern void test_ows_skip_all_whitespace_bound();
+extern void test_ows_skip_empty_string();
+
+// ── owsTrimTrailing (http_parse_pure.h) ──────────────────────────────────────
+
+extern void test_ows_trim_no_trailing();
+extern void test_ows_trim_single_trailing_space();
+extern void test_ows_trim_single_trailing_tab();
+extern void test_ows_trim_multiple_trailing();
+extern void test_ows_trim_all_whitespace();
+extern void test_ows_trim_empty();
+extern void test_ows_trim_token_trailing_space_accepted();
+
 int main(int /*argc*/, char** /*argv*/)
 {
     UNITY_BEGIN();
@@ -128,6 +148,24 @@ int main(int /*argc*/, char** /*argv*/)
     RUN_TEST(test_gps_str_not_ready);
     RUN_TEST(test_gps_str_timeout);
     RUN_TEST(test_gps_str_invalid_default);
+
+    // owsSkipLeading — RFC 7230 §3.2.3 leading OWS (M3)
+    RUN_TEST(test_ows_skip_no_whitespace);
+    RUN_TEST(test_ows_skip_single_space);
+    RUN_TEST(test_ows_skip_single_tab);
+    RUN_TEST(test_ows_skip_mixed_sp_htab);
+    RUN_TEST(test_ows_skip_more_than_four_spaces);
+    RUN_TEST(test_ows_skip_all_whitespace_bound);
+    RUN_TEST(test_ows_skip_empty_string);
+
+    // owsTrimTrailing — RFC 7230 §3.2.3 trailing OWS (M14)
+    RUN_TEST(test_ows_trim_no_trailing);
+    RUN_TEST(test_ows_trim_single_trailing_space);
+    RUN_TEST(test_ows_trim_single_trailing_tab);
+    RUN_TEST(test_ows_trim_multiple_trailing);
+    RUN_TEST(test_ows_trim_all_whitespace);
+    RUN_TEST(test_ows_trim_empty);
+    RUN_TEST(test_ows_trim_token_trailing_space_accepted);
 
     return UNITY_END();
 }
