@@ -8,6 +8,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "comms/radio_dispatcher.h"
 #include "debug/ares_log.h"
 
 #include <Arduino.h>

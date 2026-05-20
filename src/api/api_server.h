@@ -41,13 +41,13 @@
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
 #include "hal/pulse/pulse_interface.h"
-#include "comms/radio_dispatcher.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
 #include "sys/device_config/device_config.h"
 #include "sys/wifi/wifi_ap.h"
 
 class StatusLed;  ///< Forward declaration — avoids circular headers.
+namespace ares { class RadioDispatcher; } ///< Forward declaration — full type used only in status_handler.cpp.
 class TwoWire;
 class HardwareSerial;
 
