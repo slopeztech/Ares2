@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.2.9"
+#define ARES_VERSION_STRING "2.3.1"
 ```
 
 ---
@@ -55,6 +55,7 @@ docs/changelog/
     v2.2.8.md   ← Fix: replace hardcoded TELEM_INTERVAL limits with TELEMETRY_INTERVAL_MIN/MAX ([M2])
     v2.2.9.md   ← Fix: sliding-window anti-replay bitmap for COMMAND SEQ ([H5])
     v2.3.0.md   ← Minor: radio_retry_drops health counter + TWDT sleep cap
+    v2.3.1.md   ← Fix: RFC 7230 OWS compliance in parseHeaders() [M3, M14]
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -80,3 +81,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.2.8](../changelog/v2.2.8.md) | 2026-05-19 | Patch   | Fix: replace hardcoded `[100, 60000]` limits with `TELEMETRY_INTERVAL_MIN/MAX` constants ([M2]); 3 new boundary tests |
 | [2.2.9](../changelog/v2.2.9.md) | 2026-05-19 | Patch   | Fix: replace equality-only SEQ duplicate check with 64-slot sliding-window `SeqBitmap` ([H5]); 10 new unit tests |
 | [2.3.0](../changelog/v2.3.0.md) | 2026-05-20 | Minor   | New: `radio_retry_drops` health counter in `GET /api/status` (APUS-4.5); Fix: TWDT sleep cap `LOOP_SLEEP_MAX_MS = 2000U`; 4 new unit tests |
+| [2.3.1](../changelog/v2.3.1.md) | 2026-05-20 | Patch   | Fix: RFC 7230 §3.2.3 OWS compliance in `parseHeaders()` — unbounded leading OWS + trailing OWS on token ([M3], [M14]); 13 new unit tests |

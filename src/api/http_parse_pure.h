@@ -30,8 +30,8 @@ namespace api
  *
  * @param p    Pointer to the start of the field value (after the colon).
  * @param max  Maximum number of OWS characters to skip.
- * @return Pointer to the first non-OWS character, or @p p + @p max if
- *         the entire field is whitespace.
+ * @return Pointer to the first non-OWS character, or to the NUL terminator /
+ *         @p p + @p max, whichever comes first.
  */
 inline const char* owsSkipLeading(const char* p, size_t max)
 {
