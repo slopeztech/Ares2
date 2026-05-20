@@ -3,10 +3,11 @@
  * @brief Unit tests for pure API-handler validation helpers.
  *
  * Tests the logic extracted into *_pure.h headers, covering:
- *   - flight_pure.h   : validateModeTransition
- *   - storage_pure.h  : isValidLogFilename, buildLogPath
- *   - mission_pure.h  : isValidMissionFilename, buildMissionPath, toStatusText
- *   - status_pure.h   : gpsStatusToString
+ *   - flight_pure.h      : validateModeTransition
+ *   - storage_pure.h     : isValidLogFilename, buildLogPath
+ *   - mission_pure.h     : isValidMissionFilename, buildMissionPath, toStatusText
+ *   - status_pure.h      : gpsStatusToString
+ *   - http_parse_pure.h  : owsSkipLeading, owsTrimTrailing (RFC 7230 §3.2.3)
  *
  * No Arduino / WiFi / hardware dependencies — runs in [env:native].
  */
@@ -17,6 +18,7 @@
 #include "api/storage/storage_pure.h"
 #include "api/mission/mission_pure.h"
 #include "api/status/status_pure.h"
+#include "api/http_parse_pure.h"
 
 using ares::OperatingMode;
 using ares::api::validateModeTransition;
@@ -26,6 +28,8 @@ using ares::api::isValidMissionFilename;
 using ares::api::buildMissionPath;
 using ares::api::toStatusText;
 using ares::api::gpsStatusToString;
+using ares::api::owsSkipLeading;
+using ares::api::owsTrimTrailing;
 
 // ── validateModeTransition ────────────────────────────────────────────────────
 
@@ -313,4 +317,120 @@ void test_gps_str_invalid_default()
 {
     const auto bad = static_cast<GpsStatus>(0xFFU);
     TEST_ASSERT_EQUAL_STRING("invalid", gpsStatusToString(bad));
+}
+
+// ── owsSkipLeading (RFC 7230 §3.2.3) ──────────────────────────────────────────
+
+// No whitespace — pointer unchanged.
+void test_ows_skip_no_whitespace()
+{
+    const char* s = "value";
+    TEST_ASSERT_EQUAL_PTR(s, owsSkipLeading(s, 64U));
+}
+
+// Single space stripped.
+void test_ows_skip_single_space()
+{
+    const char* s = " value";
+    TEST_ASSERT_EQUAL_PTR(s + 1, owsSkipLeading(s, 64U));
+}
+
+// Single tab stripped.
+void test_ows_skip_single_tab()
+{
+    const char* s = "\tvalue";
+    TEST_ASSERT_EQUAL_PTR(s + 1, owsSkipLeading(s, 64U));
+}
+
+// Mixed SP and HTAB, all stripped.
+void test_ows_skip_mixed_sp_htab()
+{
+    const char* s = " \t value";   // SP + HTAB + SP = 3 OWS chars before 'v'
+    TEST_ASSERT_EQUAL_PTR(s + 3, owsSkipLeading(s, 64U));
+}
+
+// More than 4 spaces stripped — key regression for M3 (old cap was 4).
+void test_ows_skip_more_than_four_spaces()
+{
+    const char* s = "          value";  // 10 leading spaces
+    TEST_ASSERT_EQUAL_PTR(s + 10, owsSkipLeading(s, 64U));
+}
+
+// All whitespace, bound reached — pointer advanced exactly max chars.
+void test_ows_skip_all_whitespace_bound()
+{
+    const char* s = "     ";  // 5 spaces, max = 3
+    TEST_ASSERT_EQUAL_PTR(s + 3, owsSkipLeading(s, 3U));
+}
+
+// Empty string — pointer unchanged.
+void test_ows_skip_empty_string()
+{
+    const char* s = "";
+    TEST_ASSERT_EQUAL_PTR(s, owsSkipLeading(s, 64U));
+}
+
+// ── owsTrimTrailing (RFC 7230 §3.2.3) ──────────────────────────────────────
+
+// No trailing whitespace — string unchanged, length returned.
+void test_ows_trim_no_trailing()
+{
+    char buf[] = "mytoken";
+    size_t len = owsTrimTrailing(buf, 7U);
+    TEST_ASSERT_EQUAL_size_t(7U, len);
+    TEST_ASSERT_EQUAL_STRING("mytoken", buf);
+}
+
+// Single trailing space removed.
+void test_ows_trim_single_trailing_space()
+{
+    char buf[] = "mytoken ";
+    size_t len = owsTrimTrailing(buf, 8U);
+    TEST_ASSERT_EQUAL_size_t(7U, len);
+    TEST_ASSERT_EQUAL_STRING("mytoken", buf);
+}
+
+// Single trailing tab removed.
+void test_ows_trim_single_trailing_tab()
+{
+    char buf[] = "mytoken\t";
+    size_t len = owsTrimTrailing(buf, 8U);
+    TEST_ASSERT_EQUAL_size_t(7U, len);
+    TEST_ASSERT_EQUAL_STRING("mytoken", buf);
+}
+
+// Multiple trailing SP/HTAB all removed.
+void test_ows_trim_multiple_trailing()
+{
+    char buf[] = "tok  \t ";
+    size_t len = owsTrimTrailing(buf, 7U);
+    TEST_ASSERT_EQUAL_size_t(3U, len);
+    TEST_ASSERT_EQUAL_STRING("tok", buf);
+}
+
+// All whitespace — result is empty string.
+void test_ows_trim_all_whitespace()
+{
+    char buf[] = "   ";
+    size_t len = owsTrimTrailing(buf, 3U);
+    TEST_ASSERT_EQUAL_size_t(0U, len);
+    TEST_ASSERT_EQUAL_STRING("", buf);
+}
+
+// Empty string (len = 0) — no-op.
+void test_ows_trim_empty()
+{
+    char buf[] = "";
+    size_t len = owsTrimTrailing(buf, 0U);
+    TEST_ASSERT_EQUAL_size_t(0U, len);
+    TEST_ASSERT_EQUAL_STRING("", buf);
+}
+
+// Key regression for M14: token with trailing space must survive round-trip.
+void test_ows_trim_token_trailing_space_accepted()
+{
+    // Simulate a header value copied as "secret " (trailing space).
+    char token[] = "secret ";
+    owsTrimTrailing(token, 7U);
+    TEST_ASSERT_EQUAL_STRING("secret", token);
 }

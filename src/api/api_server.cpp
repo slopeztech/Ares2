@@ -12,6 +12,7 @@
 
 #include "api/api_server.h"
 #include "api/api_common.h"
+#include "api/http_parse_pure.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
 #include "sys/led/status_led.h"
@@ -320,27 +321,24 @@ static void parseHeaders(WiFiClient& client,
         // Content-Length (case-insensitive prefix match)
         if (strncasecmp(hdr, "Content-Length:", 15) == 0)
         {
-            const char* val = hdr + 15;
-            uint8_t skip = 0;
-            while (*val == ' ' && skip < 4U) { val++; skip++; }
+            // RFC 7230 §3.2.3: strip leading OWS (any number of SP/HTAB).
+            const char* val = ares::api::owsSkipLeading(hdr + 15, HTTP_HEADER_MAX);
             contentLength = static_cast<uint32_t>(
                 strtoul(val, nullptr, 10));
         }
         // REST-2.4: Content-Type
         else if (strncasecmp(hdr, "Content-Type:", 13) == 0)
         {
-            const char* val = hdr + 13;
-            uint8_t skip = 0;
-            while (*val == ' ' && skip < 4U) { val++; skip++; }
+            // RFC 7230 §3.2.3: strip leading OWS (any number of SP/HTAB).
+            const char* val = ares::api::owsSkipLeading(hdr + 13, HTTP_HEADER_MAX);
             hasJsonContentType =
                 (strncasecmp(val, "application/json", 16) == 0);
         }
         // X-ARES-Token: bearer token for API authentication
         else if (strncasecmp(hdr, "X-ARES-Token:", 13) == 0)
         {
-            const char* val = hdr + 13;
-            uint8_t skip = 0;
-            while (*val == ' ' && skip < 4U) { val++; skip++; }
+            // RFC 7230 §3.2.3: strip leading OWS (any number of SP/HTAB).
+            const char* val = ares::api::owsSkipLeading(hdr + 13, HTTP_HEADER_MAX);
             // Copy at most authTokenMax-1 chars (CERT-4.1: bounded copy).
             uint8_t tIdx = 0;
             while (*val != '\0' && tIdx < (authTokenMax - 1U))
@@ -350,6 +348,9 @@ static void parseHeaders(WiFiClient& client,
                 val++;
             }
             authToken[tIdx] = '\0';
+            // RFC 7230 §3.2.3: strip trailing OWS so checkToken() never
+            // rejects a valid token that arrived with trailing spaces/tabs.
+            ares::api::owsTrimTrailing(authToken, tIdx);
         }
 
         headerCount++;
