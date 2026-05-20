@@ -81,12 +81,14 @@ ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
                      HardwareSerial* gpsUart,
                      HardwareSerial* loraUart,
                      RadioInterface* radio,
-                     PulseInterface* pulse)
+                     PulseInterface* pulse,
+                     ares::RadioDispatcher* dispatcher)
         : wifi_(wifi), baro_(baro), gps_(gps), imu_(imu),
           devCfg_(devCfg),
           storage_(storage), mission_(mission), statusLed_(statusLed),
           i2c0_(i2c0), i2c1_(i2c1), gpsUart_(gpsUart),
-          loraUart_(loraUart), radio_(radio), pulse_(pulse)
+          loraUart_(loraUart), radio_(radio), pulse_(pulse),
+          dispatcher_(dispatcher)
 {
 }
 

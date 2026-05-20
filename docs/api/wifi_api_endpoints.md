@@ -102,7 +102,8 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
     "wifi": true,
     "baro": true,
     "gps": true,
-    "imu": true
+    "imu": true,
+    "radio_retry_drops": 0
   },
   "baro": {
     "pressurePa": 101325.0,
@@ -128,6 +129,8 @@ Endpoints subject to the flight lock: `PUT /api/config`, `POST /api/mode`, `POST
 ```
 
 `baro`, `gps`, and `imu` objects are only present when the corresponding `health` flag is `true`.
+
+`health.radio_retry_drops` is the cumulative count of TX frames dropped because the retry buffer (`kMaxRetrySlots = 4`) was full.  A value of `0` is normal; a non-zero and growing value indicates that ACKs from the ground station are not arriving fast enough to free retry slots (link degradation — APUS-4.5).
 
 ---
 

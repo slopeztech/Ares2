@@ -41,6 +41,7 @@
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
 #include "hal/pulse/pulse_interface.h"
+#include "comms/radio_dispatcher.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
 #include "sys/device_config/device_config.h"
@@ -89,6 +90,8 @@ public:
      * @param[in] loraUart   Pointer to LoRa UART port (nullable).
      * @param[in] radio      Pointer to radio interface (nullable).
      * @param[in] pulse      Pointer to pulse channel interface (nullable).
+     * @param[in] dispatcher Pointer to RadioDispatcher (nullable — retry_drops
+     *                       not reported when null).
      */
     ApiServer(WifiAp& wifi, BarometerInterface& baro,
               GpsInterface& gps, ImuInterface& imu,
@@ -101,7 +104,8 @@ public:
               HardwareSerial* gpsUart = nullptr,
               HardwareSerial* loraUart = nullptr,
               RadioInterface* radio = nullptr,
-              PulseInterface* pulse = nullptr);
+              PulseInterface* pulse = nullptr,
+              ares::RadioDispatcher* dispatcher = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;
@@ -309,8 +313,9 @@ private:
     TwoWire*             i2c1_;      ///< Nullable — board I2C1 bus.
     HardwareSerial*      gpsUart_;   ///< Nullable — UART1 monitor handle.
     HardwareSerial*      loraUart_;  ///< Nullable — UART2 monitor handle.
-    RadioInterface*      radio_;     ///< Nullable — radio health probe.
-    PulseInterface*      pulse_;     ///< Nullable — pulse status disabled if null.
+    RadioInterface*      radio_;      ///< Nullable — radio health probe.
+    PulseInterface*      pulse_;      ///< Nullable — pulse status disabled if null.
+    ares::RadioDispatcher* dispatcher_; ///< Nullable — retry_drops counter source.
 
     // ── Shared state ────────────────────────────────────────
     RuntimeConfig config_ = {};

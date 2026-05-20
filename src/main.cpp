@@ -103,6 +103,10 @@ static ares::ams::MissionScriptEngine missionEngine(
     kComDrivers,  static_cast<uint8_t>(1),
     kImuDrivers,  static_cast<uint8_t>(2),
     &pulse);
+// Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
+// frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
+static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
+
 static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
                            deviceConfig,
                            &storageIf, &missionEngine,
@@ -110,11 +114,8 @@ static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[
                            &Wire, &imuWire,
                            &gpsSerial, &loraSerial,
                            &radioIf,
-                           &pulse);
-
-// Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
-// frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
-static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
+                           &pulse,
+                           &radioDispatcher);
 
 // ═══════════════════════════════════════════════════════════
 void setup()
@@ -258,8 +259,14 @@ void loop()
 
     // Adaptive sleep: wake up exactly when the next engine event is due.
     // Falls back to SENSOR_RATE_MS for states with active conditions.
+    // The sleep is capped at LOOP_SLEEP_MAX_MS so esp_task_wdt_reset() at
+    // the top of the next iteration is always reached before the TWDT
+    // timeout (CONFIG_ESP_TASK_WDT_TIMEOUT_S = 5 s).
     const uint64_t wakeupMs  = missionEngine.nextWakeupMs(nowAms);
     const uint64_t sleepMs64 = (wakeupMs > nowAms) ? (wakeupMs - nowAms) : 1ULL;
-    const uint32_t sleepMs   = static_cast<uint32_t>(sleepMs64 > 60000ULL ? 60000ULL : sleepMs64);
+    const uint32_t sleepMs   = static_cast<uint32_t>(
+        sleepMs64 > static_cast<uint64_t>(ares::LOOP_SLEEP_MAX_MS)
+        ? ares::LOOP_SLEEP_MAX_MS
+        : sleepMs64);
     vTaskDelay(pdMS_TO_TICKS(sleepMs));
 }
