@@ -280,12 +280,21 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
     }
 
     // ── APUS-17: HMAC-SHA256 command authentication ────────────────
-    // If a key is provisioned every non-fragmented COMMAND must carry FLAG_MAC
-    // and pass verification.  Fragmented commands bypass MAC (the reassembled
-    // payload carries its own integrity protection via CRC-32).
+    // When a MAC key is provisioned, every COMMAND frame — including
+    // fragmented ones — must pass authentication.  Fragmented frames are
+    // rejected outright: per-fragment MAC is not supported, and CRC-32
+    // provides integrity only (it is attacker-computable, not a MAC).
     const bool isFragmented = ((frame.flags & proto::FLAG_FRAGMENT) != 0U);
-    if (macKeySet_ && !isFragmented)
+    if (macKeySet_)
     {
+        if (isFragmented)
+        {
+            LOG_W(TAG, "COMMAND seq=%u: fragmented COMMAND rejected — "
+                  "MAC key requires non-fragmented frames (APUS-17)",
+                  static_cast<unsigned>(frame.seq));
+            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+            return;
+        }
         if ((frame.flags & proto::FLAG_MAC) == 0U)
         {
             LOG_W(TAG, "COMMAND seq=%u: MAC key set but FLAG_MAC absent — NACK",
