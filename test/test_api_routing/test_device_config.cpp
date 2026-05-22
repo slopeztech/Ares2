@@ -222,40 +222,75 @@ void test_put_no_wifi_password_change_returns_200(void)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// [M8] URI Too Long → 414
+// [M8] URI Too Long → 414 (via parseRequestLine / handleClient)
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// NOTE: The 414 path is detected inside handleClient() after parseRequestLine()
+// signals pathTruncated.  handleClient() is private; it cannot be called
+// directly from unit tests.  The behavior is verified by the SITL integration
+// suite (test_sitl_sim).
+//
+// This test verifies the *routing-layer* safety guarantee: when routeRequest()
+// receives a path longer than HTTP_PATH_MAX (which would arrive pre-truncated
+// from handleClient), the server returns 404 gracefully without crashing.
+// That path length robustness is the testable boundary from this suite.
 
-void test_uri_too_long_returns_414(void)
+void test_oversized_path_routerequest_returns_404(void)
 {
     WifiAp     wifi;
     NullBaroDC baro; NullGpsDC gps; NullImuDC imu;
     DeviceConfig devCfg;
     ApiServer srv{wifi, baro, gps, imu, devCfg};
 
-    // Build a path that is longer than HTTP_PATH_MAX (128 bytes).
-    // SimWiFiClient uses the string as the pre-buffered "request line".
-    // The path alone must overflow the path buffer.
+    // A path of 255 chars — well above HTTP_PATH_MAX (128).
+    // When handleClient calls routeRequest it has already been truncated to
+    // HTTP_PATH_MAX; here we pass the full string to verify no crash or UB
+    // occurs at the routing layer regardless of input length.
     char longPath[256] = {};
     (void)memset(longPath, 'a', sizeof(longPath) - 1U);
     longPath[sizeof(longPath) - 1U] = '\0';
 
-    char requestLine[512] = {};
-    (void)snprintf(requestLine, sizeof(requestLine),
-                   "GET /%s HTTP/1.1\r\n\r\n", longPath);
-
-    SimWiFiClient c{requestLine};
-    // routeRequest parses the request itself from the SimWiFiClient buffer
-    // when called with empty method/path (empty strings trigger re-parse).
-    // For SimWiFiClient the raw request is pre-fed — call handleClient path
-    // via the existing routeRequest overload.
+    SimWiFiClient c{""};
     srv.routeRequest(c, "GET", longPath, "", 0U, "");
-    // The path here is already truncated — 414 is detected inside handleClient,
-    // not routeRequest.  We test routeRequest knowing it receives the full path:
-    // if it's longer than HTTP_PATH_MAX the test expects 404 (path unknown after
-    // truncation) OR 414 if handleClient pre-checks.
-    // This test verifies the 414 path through SimWiFiClient's raw-request feed.
-    (void)c;  // suppress unused warning — full path is tested via raw request
-    TEST_PASS();  // Compile-only guard; raw-request path tested by SITL
+    // The path matches no known route → 404.
+    TEST_ASSERT_EQUAL_INT(404, c.statusCode());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [H7] 202 response body contains reboot_required flag
+// ═══════════════════════════════════════════════════════════════════════════
+
+void test_put_wifi_password_202_has_reboot_required(void)
+{
+    WifiAp     wifi;
+    NullBaroDC baro; NullGpsDC gps; NullImuDC imu;
+    DeviceConfig devCfg;
+    setWifiPass(devCfg, "StartPass123");
+    ApiServer srv{wifi, baro, gps, imu, devCfg};
+
+    const char* body = R"({"wifi_password":"NewPass1234"})";
+    SimWiFiClient c{""};
+    srv.routeRequest(c, "PUT", "/api/device/config",
+                     body, static_cast<uint32_t>(strlen(body)), "");
+    TEST_ASSERT_EQUAL_INT(202, c.statusCode());
+    // The response JSON must include the reboot_required flag.
+    TEST_ASSERT_NOT_NULL(strstr(c.response().c_str(), "\"reboot_required\":true"));
+}
+
+void test_put_no_wifi_change_200_no_reboot_required(void)
+{
+    WifiAp     wifi;
+    NullBaroDC baro; NullGpsDC gps; NullImuDC imu;
+    DeviceConfig devCfg;
+    ApiServer srv{wifi, baro, gps, imu, devCfg};
+
+    // Only change cors_origin — no wifi_password change → 200, no flag.
+    const char* body = R"({"cors_origin":"https://gcs.example.com"})";
+    SimWiFiClient c{""};
+    srv.routeRequest(c, "PUT", "/api/device/config",
+                     body, static_cast<uint32_t>(strlen(body)), "");
+    TEST_ASSERT_EQUAL_INT(200, c.statusCode());
+    TEST_ASSERT_NULL(strstr(c.response().c_str(), "reboot_required"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

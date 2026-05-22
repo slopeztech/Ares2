@@ -450,9 +450,9 @@ Omitting a field leaves it unchanged. Sending `""` for `wifi_password` is a no-o
 | Scenario | Status | Body |
 |----------|--------|------|
 | Only non-password fields changed | `200 OK` | Current device config |
-| `wifi_password` changed | `202 Accepted` | Current device config + AP-restart notice |
+| `wifi_password` changed | `202 Accepted` | Current device config + `"reboot_required": true` |
 
-**Important:** The `wifi_password` change is applied immediately to the stored config and survives reboot, but the running soft-AP will not use the new password until the device is rebooted. The `202 Accepted` response is the signal that a reboot is needed. All other fields (`api_token`, `cors_origin`) take effect immediately.
+**Important:** The `wifi_password` change is applied immediately to the stored config and survives reboot, but the running soft-AP will not use the new password until the device is rebooted. The `202 Accepted` status code together with the `"reboot_required": true` field in the response body are the signals that a reboot is needed. All other fields (`api_token`, `cors_origin`) take effect immediately.
 
 > **Security note:** This endpoint itself is protected when token auth is enabled — you must supply `X-ARES-Token` to change the security configuration.
 

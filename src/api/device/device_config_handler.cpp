@@ -67,19 +67,30 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
 
     // ── Phase 2: persist to LittleFS ──────────────────────────
     const bool saved = devCfg_.save(storage_);
+    if (!saved && storage_ != nullptr)
+    {
+        // storage_ is set but write failed — the change is in RAM only and
+        // will be lost on reboot.  Return 500 so the client knows to retry.
+        sendError(client, 500, "config applied but persist failed — changes are transient");
+        LOG_E(TAG, "PUT /api/device/config 500: LittleFS write error");
+        return;
+    }
     if (!saved)
     {
-        // Applied in RAM but not persisted — warn in the response.
-        LOG_W(TAG, "PUT /api/device/config: applied but save failed");
+        // storage_ is null (no-storage build / test environment) — expected.
+        LOG_W(TAG, "PUT /api/device/config: no storage backend, running in-memory only");
     }
 
     // ── Phase 3: refresh runtime state ────────────────────────
+    // CORS headers must be updated so subsequent responses reflect the
+    // new Access-Control-Allow-Origin value immediately.
     refreshCorsHeaders();
 
     // ── Phase 4: respond ──────────────────────────────────────
-    // H7: When wifi_password was changed, return 202 Accepted with a
-    // reboot_required flag so the client knows the change is pending a
-    // device restart (the soft-AP password only takes effect on next boot).
+    // H7: When wifi_password was changed, return 202 Accepted and inject
+    // "reboot_required":true into the response body so the client knows the
+    // change is pending a device restart (soft-AP password takes effect on
+    // next boot only).
     const bool wifiPassChanged =
         (strcmp(oldWifiPass, devCfg_.wifiPassword()) != 0);
 
@@ -89,13 +100,22 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
 
     if (wifiPassChanged)
     {
-        sendJson(client, 202U, resBuf, resLen);
+        // Inject reboot_required flag: strip trailing '}' from the config JSON,
+        // append the extra field, then close.  toPublicJson always returns a
+        // valid NUL-terminated JSON object so resLen >= 2 ("{}").
+        char resp202[ares::API_MAX_RESPONSE_BODY] = {};
+        const uint32_t baseLen = (resLen > 1U) ? resLen - 1U : 0U;
+        const int n = snprintf(resp202, sizeof(resp202),
+                               "%.*s,\"reboot_required\":true}",
+                               static_cast<int>(baseLen), resBuf);
+        const uint32_t resp202Len = (n > 0) ? static_cast<uint32_t>(n) : 0U;
+        sendJson(client, 202U, resp202, resp202Len);
         LOG_I(TAG, "PUT /api/device/config 202: wifi_password changed — reboot required");
     }
     else
     {
         sendJson(client, 200U, resBuf, resLen);
         LOG_I(TAG, "PUT /api/device/config 200 (persisted=%s)",
-              saved ? "yes" : "no — save failed");
+              saved ? "yes" : "no storage");
     }
 }

@@ -59,6 +59,7 @@ void DeviceConfig::setDefaults()
 
 bool DeviceConfig::load(StorageInterface* storage)
 {
+    firstBootProvisioned_ = false;
     setDefaults();
 
     if (storage == nullptr)

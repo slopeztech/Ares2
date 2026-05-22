@@ -33,7 +33,9 @@ void test_topublicjson_normal_size_returns_json(void);
 void test_empty_wifi_password_preserves_current(void);
 void test_put_wifi_password_change_returns_202(void);
 void test_put_no_wifi_password_change_returns_200(void);
-void test_uri_too_long_returns_414(void);
+void test_oversized_path_routerequest_returns_404(void);
+void test_put_wifi_password_202_has_reboot_required(void);
+void test_put_no_wifi_change_200_no_reboot_required(void);
 void test_i2c_scan_blocked_in_flight(void);
 void test_uart_scan_blocked_in_flight(void);
 void test_status_200_reason_phrase_ok(void);
@@ -73,9 +75,12 @@ int main(void)
     // ── H7: PUT /api/device/config → 202 on wifi_password change ─
     RUN_TEST(test_put_wifi_password_change_returns_202);
     RUN_TEST(test_put_no_wifi_password_change_returns_200);
+    RUN_TEST(test_put_wifi_password_202_has_reboot_required);
+    RUN_TEST(test_put_no_wifi_change_200_no_reboot_required);
 
-    // ── M8: 414 URI Too Long ──────────────────────────────────
-    RUN_TEST(test_uri_too_long_returns_414);
+    // ── M8: oversized path handled gracefully at routing layer ───
+    // (414 via parseRequestLine/handleClient verified by SITL)
+    RUN_TEST(test_oversized_path_routerequest_returns_404);
 
     // ── H8: scan endpoints locked in FLIGHT ──────────────────
     RUN_TEST(test_i2c_scan_blocked_in_flight);
