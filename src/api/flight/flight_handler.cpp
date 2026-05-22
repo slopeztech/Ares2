@@ -170,10 +170,24 @@ void ApiServer::handleAbort(WiFiClient& client)
     const auto mode = getMode();
     const uint8_t rawMode = static_cast<uint8_t>(mode);
     ARES_ASSERT(rawMode <= static_cast<uint8_t>(ares::OperatingMode::LAST));
-    if (mode != ares::OperatingMode::FLIGHT)
+
+    // H10: Allow abort in any mode when the AMS engine is actively running.
+    // A race between the mode transition and the abort request (e.g. abort
+    // arrives just after a WDT reboot leaves mode=ERROR but engine=RUNNING)
+    // would otherwise leave the rocket without a kill-switch.
+    bool engineRunning = false;
+    if (mission_ != nullptr)
     {
-        sendError(client, 409, "abort requires flight mode");
-        LOG_W(TAG, "POST /api/abort 409: not in flight");
+        ares::ams::EngineSnapshot snap = {};
+        mission_->getSnapshot(snap);
+        engineRunning = (snap.status == ares::ams::EngineStatus::RUNNING);
+    }
+
+    if (mode != ares::OperatingMode::FLIGHT && !engineRunning)
+    {
+        sendError(client, 409, "abort requires flight mode or running engine");
+        LOG_W(TAG, "POST /api/abort 409: not in flight (mode=%s, engine not running)",
+              modeToString(mode));
         return;
     }
 

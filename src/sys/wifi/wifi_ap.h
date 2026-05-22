@@ -6,8 +6,12 @@
  * configuration and monitoring.  Uses parameters from
  * config.h (SSID derived from MAC, password, channel, etc.).
  *
- * Thread safety: begin()/end() must be called from setup().
- *                isReady() is safe from any task (atomic).
+ * Thread safety: begin()/end() are NOT thread-safe with respect to each
+ *                other.  They must be called from a single serialised
+ *                context: setup() during startup, or the API task during
+ *                runtime WiFi management (ApiServer::setMode()).  Two
+ *                concurrent callers must never overlap.
+ *                isReady() is safe from any task (atomic read).
  *                clientCount() reads ESP-IDF internal state.
  */
 #pragma once
@@ -46,7 +50,10 @@ public:
      *
      * @param[in] cfg  Device security configuration (read-only, must outlive the AP).
      * @return true on success, false if WiFi init failed.
-     * @pre  Called once from setup() after DeviceConfig::load() has been called.
+     * @pre  Must be called from setup() during startup (initial AP bringup)
+     *       or from the API task (single consumer) during runtime WiFi
+     *       management when ApiServer::setMode() re-enables the AP after
+     *       leaving FLIGHT mode.  Concurrent calls are not safe.
      * @post AP is broadcasting and accepting client connections.
      */
     bool begin(const DeviceConfig& cfg);

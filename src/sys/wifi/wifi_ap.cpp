@@ -23,7 +23,14 @@ static constexpr const char* TAG = "WIFI";
 
 bool WifiAp::begin(const DeviceConfig& cfg)
 {
-    ARES_ASSERT(!ready_.load());  // Double-init guard (CERT-18.3)
+    // Double-init guard: calling begin() when the AP is already running is a
+    // logic error, but an assert would reset the device silently in release
+    // builds.  Log a warning and return success instead (CERT-18.3, PO10-5).
+    if (ready_.load())
+    {
+        LOG_W(TAG, "begin() called while AP already running — ignored");
+        return true;
+    }
 
     // Generate SSID from the last 2 bytes of the WiFi MAC
     uint8_t mac[6] = {};

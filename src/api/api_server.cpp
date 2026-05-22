@@ -140,6 +140,27 @@ void ApiServer::setMode(ares::OperatingMode mode)
     {
         statusLed_->setMode(mode);
     }
+
+    // C5: Disable the WiFi AP on entering FLIGHT to reduce RF interference
+    // and close the REST API attack surface during the ascent phase.
+    // Re-enable when returning to any ground-operations mode (IDLE/TEST/ERROR).
+    if constexpr (ares::WIFI_DISABLE_IN_FLIGHT)
+    {
+        if (mode == ares::OperatingMode::FLIGHT)
+        {
+            wifi_.end();
+        }
+        else if (!wifi_.isReady())
+        {
+            // Returning from FLIGHT — restart the AP so the operator regains
+            // REST access.  Failure is non-fatal: the device keeps operating;
+            // the operator must power-cycle to recover WiFi access.
+            if (!wifi_.begin(devCfg_))
+            {
+                LOG_W(TAG, "WiFi AP restart after flight failed");
+            }
+        }
+    }
 }
 
 ares::OperatingMode ApiServer::getMode() const
@@ -239,11 +260,16 @@ void ApiServer::run()
 /**
  * Read and parse the HTTP request line (e.g. "GET /api/status HTTP/1.1").
  * Exits early on empty request or timeout (PO10-2, REST-10.2).
+ * @param[out] pathTruncated  Set to true when the URI was longer than
+ *                            HTTP_PATH_MAX-1 bytes and was silently cut.
+ *                            Caller must send 414 URI Too Long in that case.
  * @return true if a non-empty request line was successfully parsed.
  */
 static bool parseRequestLine(WiFiClient& client,
-                              char* method, char* path)
+                              char* method, char* path,
+                              bool& pathTruncated)
 {
+    pathTruncated = false;
     char line[HTTP_LINE_MAX] = {};
     size_t lineLen = client.readBytesUntil('\n', line, HTTP_LINE_MAX - 1U);
     if (lineLen > 0U && line[lineLen - 1U] == '\r')
@@ -272,7 +298,7 @@ static bool parseRequestLine(WiFiClient& client,
     // Skip space
     if (idx < lineLen) { idx++; }
 
-    // Extract path
+    // Extract path — detect buffer overflow (M8: URI Too Long).
     uint8_t pIdx = 0;
     while (idx < lineLen && line[idx] != ' ' && line[idx] != '?'
            && pIdx < (HTTP_PATH_MAX - 1U))
@@ -282,6 +308,17 @@ static bool parseRequestLine(WiFiClient& client,
         idx++;
     }
     path[pIdx] = '\0';
+
+    // If there are still unread non-terminator bytes after the path buffer
+    // is full, the URI was longer than HTTP_PATH_MAX — signal 414.
+    if (pIdx >= (HTTP_PATH_MAX - 1U)
+        && idx < lineLen
+        && line[idx] != ' '
+        && line[idx] != '?'
+        && line[idx] != '\0')
+    {
+        pathTruncated = true;
+    }
 
     return true;
 }
@@ -383,6 +420,39 @@ static bool allowNonJsonBody(const char* method, const char* path)
             && strncmp(path, "/api/missions/", 14) == 0);
 }
 
+// ── HTTP request helpers ────────────────────────────────────
+
+bool ApiServer::requirePost(WiFiClient& client,
+                            const char* method, const char* path)
+{
+    if (strcmp(method, "POST") == 0) { return true; }
+    sendError(client, 405, "method not allowed");
+    LOG_W(TAG, "%s %s 405", method, path);
+    return false;
+}
+
+bool ApiServer::readBody(WiFiClient& client,
+                         const char* method, const char* path,
+                         uint32_t contentLength, uint32_t bodyLimit,
+                         char* body, uint32_t& bodyLen)
+{
+    // REST-3.1: reject oversized payloads before reading.
+    if (contentLength > bodyLimit)
+    {
+        sendError(client, 413, "payload too large");
+        LOG_W(TAG, "%s %s 413: payload too large", method, path);
+        return false;
+    }
+    if (!readRequestBody(client, body, bodyLimit, contentLength, bodyLen))
+    {
+        sendError(client, 400, "request body incomplete");
+        LOG_W(TAG, "%s %s 400: body incomplete (got %" PRIu32 " of %" PRIu32 " bytes)",
+              method, path, bodyLen, contentLength);
+        return false;
+    }
+    return true;
+}
+
 // ── HTTP request handling ───────────────────────────────────
 
 void ApiServer::handleClient(WiFiClient& client)
@@ -395,10 +465,19 @@ void ApiServer::handleClient(WiFiClient& client)
     // Phase 1: Parse request line (PO10-4.1)
     char method[HTTP_METHOD_MAX] = {};
     char path[HTTP_PATH_MAX]     = {};
+    bool pathTruncated = false;
 
-    if (!parseRequestLine(client, method, path))
+    if (!parseRequestLine(client, method, path, pathTruncated))
     {
         return;  // Empty or timed-out request
+    }
+
+    // M8: URI Too Long — reject before allocating body buffer or routing.
+    if (pathTruncated)
+    {
+        sendError(client, 414, "URI Too Long");
+        LOG_W(TAG, "414: URI Too Long (path buffer exhausted)");
+        return;
     }
 
     // Phase 2: Parse headers (including auth token)
@@ -428,22 +507,11 @@ void ApiServer::handleClient(WiFiClient& client)
         memset(g_missionUploadBuf, 0, sizeof(g_missionUploadBuf));
     }
 
-    if (contentLength > 0)
+    if (contentLength > 0
+        && !readBody(client, method, path,
+                     contentLength, bodyLimit, body, bodyLen))
     {
-        // REST-3.1: check size before reading
-        if (contentLength > bodyLimit)
-        {
-            sendError(client, 413, "payload too large");
-            LOG_W(TAG, "%s %s 413: payload too large", method, path);
-            return;
-        }
-        if (!readRequestBody(client, body, bodyLimit, contentLength, bodyLen))
-        {
-            sendError(client, 400, "request body incomplete");
-            LOG_W(TAG, "%s %s 400: body incomplete (got %" PRIu32 " of %" PRIu32 " bytes)",
-                  method, path, bodyLen, contentLength);
-            return;
-        }
+        return;
     }
 
     // REST-2.4: PUT/POST with body must send Content-Type: application/json
@@ -626,43 +694,30 @@ bool ApiServer::routeFlightRequest(WiFiClient& client,
 {
     if (strcmp(path, "/api/mode") == 0)
     {
-        if (strcmp(method, "POST") != 0)
-        {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s %s 405", method, path);
-            return true;
-        }
+        if (!requirePost(client, method, path)) { return true; }
         handleMode(client, body, bodyLen);
         return true;
     }
     if (strcmp(path, "/api/arm") == 0)
     {
-        if (strcmp(method, "POST") != 0)
-        {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s %s 405", method, path);
-            return true;
-        }
+        if (!requirePost(client, method, path)) { return true; }
         handleArm(client);
         return true;
     }
     if (strcmp(path, "/api/abort") == 0)
     {
-        if (strcmp(method, "POST") != 0)
-        {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s %s 405", method, path);
-            return true;
-        }
+        if (!requirePost(client, method, path)) { return true; }
         handleAbort(client);
         return true;
     }
     if (strcmp(path, "/api/scans/i2c") == 0)
     {
-        if (strcmp(method, "POST") != 0)
+        if (!requirePost(client, method, path)) { return true; }
+        // H8: I2C scan triggers bus activity that must not run during flight.
+        if (isFlightLocked())
         {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s %s 405", method, path);
+            sendError(client, 409, "operation locked during flight");
+            LOG_W(TAG, "POST /api/scans/i2c 409: flight locked");
             return true;
         }
         handleI2cScan(client);
@@ -670,10 +725,12 @@ bool ApiServer::routeFlightRequest(WiFiClient& client,
     }
     if (strcmp(path, "/api/scans/uart") == 0)
     {
-        if (strcmp(method, "POST") != 0)
+        if (!requirePost(client, method, path)) { return true; }
+        // H8: UART scan probes ports also used by GPS/radio during flight.
+        if (isFlightLocked())
         {
-            sendError(client, 405, "method not allowed");
-            LOG_W(TAG, "%s %s 405", method, path);
+            sendError(client, 409, "operation locked during flight");
+            LOG_W(TAG, "POST /api/scans/uart 409: flight locked");
             return true;
         }
         handleUartScan(client);
@@ -862,7 +919,25 @@ void ApiServer::routeMissionRequest(WiFiClient& client,
 void ApiServer::sendJson(WiFiClient& client, uint16_t code,
                           const char* json, uint32_t len)
 {
-    client.printf("HTTP/1.1 %u OK\r\n", code);
+    // H6: map every code to its correct HTTP reason phrase.
+    const char* reason = "OK";
+    switch (code)
+    {
+    case 200: reason = "OK";                  break;
+    case 201: reason = "Created";             break;
+    case 202: reason = "Accepted";            break;
+    case 204: reason = "No Content";          break;
+    case 400: reason = "Bad Request";         break;
+    case 401: reason = "Unauthorized";        break;
+    case 404: reason = "Not Found";           break;
+    case 405: reason = "Method Not Allowed";  break;
+    case 409: reason = "Conflict";            break;
+    case 413: reason = "Payload Too Large";   break;
+    case 414: reason = "URI Too Long";        break;
+    case 500: reason = "Internal Server Error"; break;
+    default:  reason = "Error";               break;  // CERT-6.3
+    }
+    client.printf("HTTP/1.1 %u %s\r\n", code, reason);
     client.print("Content-Type: application/json\r\n");
     client.printf("Content-Length: %" PRIu32 "\r\n", len);
     client.print(getCorsHeaders());
@@ -874,13 +949,23 @@ void ApiServer::sendJson(WiFiClient& client, uint16_t code,
 void ApiServer::sendError(WiFiClient& client, uint16_t code,
                            const char* message)
 {
+    // M11: Truncate message to prevent stack-buffer overflow when
+    // ARES_ASSERT is compiled out in release builds.
+    static constexpr uint8_t MSG_SAFE_MAX = 220U;
+    char safeMsg[MSG_SAFE_MAX + 1U] = {};
+    if (message != nullptr)
+    {
+        (void)strncpy(safeMsg, message, MSG_SAFE_MAX);
+        safeMsg[MSG_SAFE_MAX] = '\0';
+    }
+
     // REST-2.2: error envelope
     JsonDocument doc;
-    doc["error"] = message;
+    doc["error"] = safeMsg;
 
     char buf[256] = {};
-    const size_t len = serializeJson(doc, buf, sizeof(buf));
-    ARES_ASSERT(len < sizeof(buf));
+    const size_t len = serializeJson(doc, buf, sizeof(buf) - 1U);
+    buf[len] = '\0';
 
     const char* reason = "Error";
     switch (code)

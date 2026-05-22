@@ -8,6 +8,8 @@
 output
 ams_examples
 ares_code_lint/
+code_skeleton/
+out
 evidence
 compile_commands.json
 scripts/downloads/

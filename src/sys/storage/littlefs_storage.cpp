@@ -364,8 +364,14 @@ bool LittleFsStorage::validatePath(const char* path)
 
 bool LittleFsStorage::begin()
 {
-    // PO10-5: double-init guard
-    ARES_ASSERT(mutex_ == nullptr);
+    // PO10-5: double-init guard — return cached state instead of panicking
+    // so a hypothetical second call (e.g. from a future task) does not reset
+    // the device in release builds (CERT-18.3).
+    if (mutex_ != nullptr)
+    {
+        LOG_W(TAG, "begin() called twice — returning cached mount state");
+        return mounted_;
+    }
 
     // PO10-3: static allocation — no heap
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);

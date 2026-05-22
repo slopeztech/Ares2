@@ -4,7 +4,7 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
-[![Version](https://img.shields.io/badge/version-2.3.1-blue)](#)
+[![Version](https://img.shields.io/badge/version-2.3.2-blue)](#)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
@@ -455,12 +455,14 @@ The ESP32 runs a WiFi Access Point. The ground station connects directly to conf
 | Parameter | Default value                  |
 |-----------|--------------------------------|
 | SSID      | `ARES-XXXX` (last 2 bytes MAC) |
-| Password  | `ares1234`                     |
+| Password  | Random — generated at first boot |
 | IP        | `192.168.4.1`                  |
 | Port      | `80` (HTTP)                    |
 | Clients   | Max. 4 simultaneous            |
 
-> The values above are **factory defaults**. SSID, password, the REST API authentication token (`X-ARES-Token` header), and CORS settings are all runtime-configurable via `PUT /api/device/config` and persisted to LittleFS. After a successful update the AP restarts with the new credentials — plan your re-connection accordingly.
+> **First-boot credential generation.** On the first power-on (or after a factory reset), ARES generates a unique 12-character alphanumeric WPA2 password and a 32-hex-character (128-bit) API bearer token using the ESP32 hardware TRNG (`esp_random()`). Both are printed to the USB-CDC console and persisted to `/ares_device.json` on LittleFS. **Write them down before disconnecting the USB cable** — they are not shown again. From the second boot onward the API token is mandatory for all protected endpoints.
+>
+> SSID, password, bearer token, and CORS settings are runtime-configurable via `PUT /api/device/config` and persisted to LittleFS. A WiFi password change returns `202 Accepted` (not `200 OK`) to signal that the new password takes effect only after the next reboot — plan your re-connection accordingly.
 
 Complete endpoint documentation (including when to use each route in pre-flight, flight, and post-flight operations) is available in:
 

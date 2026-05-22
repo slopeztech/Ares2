@@ -25,6 +25,10 @@ void StatusLed::setMode(ares::OperatingMode /*mode*/) {}
 
 bool    WifiAp::isReady()     const { return false; }
 uint8_t WifiAp::clientCount() const { return 0U; }
+// Stubs for begin()/end() required by ApiServer::setMode() when
+// WIFI_DISABLE_IN_FLIGHT is enabled (C5 fix).
+bool WifiAp::begin(const DeviceConfig& /*cfg*/) { return false; }
+void WifiAp::end() {}
 
 // ── MissionScriptEngine ──────────────────────────────────────────────────────
 

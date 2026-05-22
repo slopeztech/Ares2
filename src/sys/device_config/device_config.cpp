@@ -59,6 +59,7 @@ void DeviceConfig::setDefaults()
 
 bool DeviceConfig::load(StorageInterface* storage)
 {
+    firstBootProvisioned_ = false;
     setDefaults();
 
     if (storage == nullptr)
@@ -133,6 +134,104 @@ bool DeviceConfig::save(StorageInterface* storage) const
     return true;
 }
 
+// ── First-boot provisioning ────────────────────────────────────
+
+// Platform-independent random-word helper.
+// On ESP32 Arduino builds: uses the hardware TRNG (esp_random()).
+// On native host builds (pio test -e native): falls back to rand() — only
+// used in tests, never in production firmware.
+#ifdef ARDUINO
+#  include <esp_random.h>
+static uint32_t platformRandom32() { return esp_random(); }
+#else
+#  include <cstdlib>
+static uint32_t platformRandom32() { return static_cast<uint32_t>(rand()); }
+#endif
+
+/** Fill @p out with @p count lowercase hex characters, then NUL-terminate. */
+static void fillHexRandom(char* out, size_t count)
+{
+    static constexpr char kHex[] = "0123456789abcdef";
+    size_t pos = 0U;
+    while (pos < count)
+    {
+        const uint32_t word = platformRandom32();
+        for (uint8_t b = 0U; b < 4U && pos < count; b++)
+        {
+            const uint8_t byte = static_cast<uint8_t>((word >> (b * 8U)) & 0xFFU);
+            out[pos++] = kHex[byte >> 4U];
+            if (pos < count) { out[pos++] = kHex[byte & 0x0FU]; }
+        }
+    }
+    out[pos] = '\0';
+}
+
+/** Fill @p out with @p count alphanumeric characters, then NUL-terminate. */
+static void fillAlnumRandom(char* out, size_t count)
+{
+    static constexpr const char kAlnum[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789";
+    static constexpr size_t kAlnumLen = sizeof(kAlnum) - 1U;
+    size_t pos = 0U;
+    while (pos < count)
+    {
+        const uint32_t word = platformRandom32();
+        for (uint8_t b = 0U; b < 4U && pos < count; b++)
+        {
+            const uint8_t byte = static_cast<uint8_t>((word >> (b * 8U)) & 0xFFU);
+            out[pos++] = kAlnum[byte % kAlnumLen];
+        }
+    }
+    out[pos] = '\0';
+}
+
+bool DeviceConfig::provisionIfFirstBoot(StorageInterface* storage)
+{
+    firstBootProvisioned_ = false;
+    if (storage == nullptr) { return false; }
+
+    // Generate a 12-char alphanumeric WPA2-PSK password (≥ 8 chars, well
+    // within 63-char limit) and a 32-char hex API bearer token (128-bit
+    // entropy from the ESP32 hardware TRNG).
+    char newPass [13U] = {};  // 12 chars + NUL
+    char newToken[33U] = {};  // 32 hex chars + NUL
+    fillAlnumRandom(newPass,  12U);
+    fillHexRandom  (newToken, 32U);
+
+    (void)strncpy(wifiPassword_, newPass,  sizeof(wifiPassword_) - 1U);
+    wifiPassword_[sizeof(wifiPassword_) - 1U] = '\0';
+    (void)strncpy(apiToken_,     newToken, sizeof(apiToken_) - 1U);
+    apiToken_    [sizeof(apiToken_) - 1U]     = '\0';
+
+    if (!save(storage))
+    {
+        // Persist failed — roll back to open defaults so the device still
+        // boots normally (missing config → setDefaults() path).
+        setDefaults();
+        LOG_E(TAG, "first-boot: credential save failed — reverting to defaults");
+        return false;
+    }
+
+    // Print bootstrap credentials to USB-CDC.  The operator must read them
+    // at first power-on; they are not shown again after the first reboot.
+    LOG_I(TAG, "═══════════════════════════════════════════════════════");
+    LOG_I(TAG, "FIRST BOOT — ARES security credentials generated");
+    LOG_I(TAG, "  WiFi AP password : %s", wifiPassword_);
+    LOG_I(TAG, "  API bearer token : %s", apiToken_);
+    LOG_I(TAG, "  Record these now. They will NOT be shown again.");
+    LOG_I(TAG, "═══════════════════════════════════════════════════════");
+
+    firstBootProvisioned_ = true;
+    return true;
+}
+
+bool DeviceConfig::wasFirstBootProvisioned() const
+{
+    return firstBootProvisioned_;
+}
+
 // ── Validation helpers ─────────────────────────────────────────
 
 /** Returns true if every byte in [s, s+len) is printable ASCII (0x20-0x7E). */
@@ -178,17 +277,22 @@ static bool validateWifiPass(JsonVariant v,
     if (val == nullptr) { val = ""; }
 
     const size_t vlen = strlen(val);
-    if (vlen != 0U && (vlen < 8U || vlen > 63U))
+    if (vlen == 0U)
+    {
+        // Empty field — preserve the currently stored password instead of
+        // falling back to the compile-time factory default (M10).
+        return true;
+    }
+    if (vlen < 8U || vlen > 63U)
     {
         return setFieldErr(errOut, errLen,
-            "wifi_password must be 8-63 chars or empty (factory default)");
+            "wifi_password must be 8-63 chars or empty (keep current)");
     }
     if (!isPrintableAscii(val, vlen))
     {
         return setFieldErr(errOut, errLen, "wifi_password: non-printable characters");
     }
-    const char* src = (vlen == 0U) ? ares::WIFI_AP_PASSWORD : val;
-    (void)strncpy(out, src, outSize - 1U);
+    (void)strncpy(out, val, outSize - 1U);
     out[outSize - 1U] = '\0';
     changed = true;
     return true;
@@ -300,6 +404,9 @@ bool DeviceConfig::applyJson(const char* json, uint32_t len,
 
 uint32_t DeviceConfig::toPublicJson(char* buf, uint32_t bufSize) const
 {
+    // Guard: reject buffers too small to hold a minimal valid JSON response.
+    // Avoids writing buf[len] = '\0' out-of-bounds when bufSize is 0 (M7).
+    if (bufSize < 16U) { return 0U; }
     JsonDocument doc;
     doc["_schema"]      = SCHEMA_VERSION;
     doc["wifi_password"] = wifiPassword_;
@@ -336,21 +443,25 @@ bool DeviceConfig::checkToken(const char* provided) const
         return false;
     }
 
-    // Constant-time comparison over the full stored-token length.
-    // The loop always runs storedLen iterations regardless of where a
-    // mismatch occurs, preventing timing side-channels (OWASP A07:2021).
+    // Constant-time comparison over the full length of both tokens.
+    // The loop runs max(storedLen, providedLen) iterations so that:
+    //   1. Different lengths always fail (diff already set to 1).
+    //   2. Extra bytes from the attacker beyond storedLen are still XOR'd,
+    //      preventing a timing oracle on the stored-token length (OWASP A07).
     const size_t storedLen   = strlen(apiToken_);
     const size_t providedLen = strlen(provided);
+    const size_t maxLen      = (storedLen > providedLen) ? storedLen : providedLen;
 
     // Different length → guaranteed fail, but we still run the full loop
     // to avoid leaking the stored-token length through timing.
     uint8_t diff = (storedLen == providedLen) ? 0U : 1U;
 
-    for (size_t i = 0U; i < storedLen; i++)
+    for (size_t i = 0U; i < maxLen; i++)
     {
-        const char c = (i < providedLen) ? provided[i] : '\0';
-        diff |= static_cast<uint8_t>(static_cast<uint8_t>(apiToken_[i])
-                                   ^ static_cast<uint8_t>(c));
+        const char stored_c   = (i < storedLen)   ? apiToken_[i] : '\0';
+        const char provided_c = (i < providedLen) ? provided[i]  : '\0';
+        diff |= static_cast<uint8_t>(static_cast<uint8_t>(stored_c)
+                                   ^ static_cast<uint8_t>(provided_c));
     }
 
     return diff == 0U;
