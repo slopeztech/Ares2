@@ -15,6 +15,7 @@
  */
 
 #include "comms/radio_dispatcher.h"
+#include "comms/radio_mac.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
 
@@ -38,6 +39,23 @@ RadioDispatcher::RadioDispatcher(RadioInterface&               radio,
     , rxLen_(0U)
     , txSeq_(0U)
 {
+}
+
+// ── setMacKey ─────────────────────────────────────────────────────────────────
+
+void RadioDispatcher::setMacKey(const uint8_t* key, uint8_t keyLen)
+{
+    if (key == nullptr || keyLen != kMacKeyLen)
+    {
+        LOG_W(TAG, "setMacKey: invalid key (len=%u expected=%u)",
+              static_cast<unsigned>(keyLen),
+              static_cast<unsigned>(kMacKeyLen));
+        return;
+    }
+    (void)memcpy(macKey_, key, kMacKeyLen);
+    macKeySet_ = true;
+    LOG_I(TAG, "radio MAC key configured (%u bytes) — COMMAND auth enabled (APUS-17)",
+          static_cast<unsigned>(kMacKeyLen));
 }
 
 // ── poll ─────────────────────────────────────────────────────────────────────
@@ -261,25 +279,59 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
         return;
     }
 
+    // ── APUS-17: HMAC-SHA256 command authentication ────────────────
+    // If a key is provisioned every non-fragmented COMMAND must carry FLAG_MAC
+    // and pass verification.  Fragmented commands bypass MAC (the reassembled
+    // payload carries its own integrity protection via CRC-32).
+    const bool isFragmented = ((frame.flags & proto::FLAG_FRAGMENT) != 0U);
+    if (macKeySet_ && !isFragmented)
+    {
+        if ((frame.flags & proto::FLAG_MAC) == 0U)
+        {
+            LOG_W(TAG, "COMMAND seq=%u: MAC key set but FLAG_MAC absent — NACK",
+                  static_cast<unsigned>(frame.seq));
+            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+            return;
+        }
+        if (!proto::verifyCommandMac(macKey_, kMacKeyLen, frame))
+        {
+            LOG_W(TAG, "COMMAND seq=%u: HMAC verification failed — NACK",
+                  static_cast<unsigned>(frame.seq));
+            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+            return;
+        }
+        LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-17)", static_cast<unsigned>(frame.seq));
+    }
+
     // ── APUS-15: fragmented transfer ───────────────────────────────────────
-    if ((frame.flags & proto::FLAG_FRAGMENT) != 0U)
+    if (isFragmented)
     {
         handleFragmentedCommand(frame, nowMs);
         return;
+    }
+
+    // Strip MAC tag from payload copy so executeCommand sees only the
+    // real CommandHeader + parameters (no tag bytes at the end).
+    proto::Frame cmdFrame = frame;
+    if ((frame.flags & proto::FLAG_MAC) != 0U &&
+        frame.len >= static_cast<uint8_t>(proto::HMAC_LEN))
+    {
+        cmdFrame.len  = static_cast<uint8_t>(frame.len - proto::HMAC_LEN);
+        cmdFrame.flags = static_cast<uint8_t>(frame.flags & ~proto::FLAG_MAC);
     }
 
     // ── APUS-9.1: acceptance ACK — sent unconditionally ────────────────────
     sendAckNack(frame.seq, frame.node, proto::FailureCode::NONE, 0U);
 
     // ── APUS-2.2: insert into the priority queue; drainCmdQueue() executes ──
-    if (!enqueueCmd(frame))
+    if (!enqueueCmd(cmdFrame))
     {
         // Queue full: send completion NACK immediately (APUS-9.3).
         if ((frame.flags & proto::FLAG_ACK_REQ) != 0U)
         {
             sendAckNack(frame.seq, frame.node,
                         proto::FailureCode::QUEUE_FULL,
-                        frame.payload[1U]);  // CommandHeader.commandId as diagnostic
+                        cmdFrame.payload[1U]);  // CommandHeader.commandId as diagnostic
         }
     }
     // Completion ACK/NACK for queued commands is sent by drainCmdQueue().

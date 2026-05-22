@@ -182,6 +182,18 @@ public:
      */
     void buildCorsHeader(char* out, size_t outSize) const;
 
+    /**
+     * Decode the stored radio MAC key from hex and write it to @p out.
+     *
+     * Returns false (and writes nothing) when no key is provisioned (open mode)
+     * or when @p outLen is less than proto::HMAC_KEY_LEN (16).
+     *
+     * @param[out] out     Buffer to receive the 16-byte binary key.
+     * @param[in]  outLen  Must be >= proto::HMAC_KEY_LEN.
+     * @return true if a key was decoded and written to @p out.
+     */
+    bool radioKey(uint8_t* out, uint8_t outLen) const;
+
 private:
     /** Reset all fields to compile-time defaults. */
     void setDefaults();
@@ -189,6 +201,7 @@ private:
     char wifiPassword_[ares::DEVICE_WIFI_PASS_MAX]  = {};  ///< WPA2-PSK password.
     char apiToken_    [ares::DEVICE_TOKEN_MAX]       = {};  ///< Bearer token (empty = disabled).
     char corsOrigin_  [ares::DEVICE_CORS_ORIGIN_MAX] = {};  ///< CORS origin value.
+    char radioKeyHex_ [ares::DEVICE_RADIO_KEY_HEX_MAX] = {}; ///< Radio MAC key as hex (empty = open mode).
 
     /** Set by provisionIfFirstBoot() when new credentials were generated this session. */
     bool firstBootProvisioned_ = false;

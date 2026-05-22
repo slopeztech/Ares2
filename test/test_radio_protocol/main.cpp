@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_radio_protocol
  *
- * Test count: 63
+ * Test count: 76
  */
 #include <unity.h>
 
@@ -86,6 +86,22 @@ extern void test_seq_bitmap_out_of_order_within_window();
 extern void test_seq_bitmap_wraparound_255_to_0();
 extern void test_seq_bitmap_jump_ahead_resets_window();
 
+// ── test_radio_mac.cpp ─────────────────────────────────────────────────────
+
+extern void test_computeHmac8_rfc4231_tc1();
+extern void test_computeHmac8_rfc4231_tc2();
+extern void test_computeHmac8_deterministic();
+extern void test_computeHmac8_distinct_keys();
+extern void test_computeHmac8_distinct_msgs();
+extern void test_verifyHmac8_accepts_valid();
+extern void test_verifyHmac8_rejects_corrupted();
+extern void test_appendCommandMac_sets_flag_and_len();
+extern void test_appendCommandMac_rejects_non_command();
+extern void test_appendCommandMac_rejects_oversized();
+extern void test_verifyCommandMac_roundtrip();
+extern void test_verifyCommandMac_wrong_key();
+extern void test_verifyCommandMac_no_flag();
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -162,6 +178,21 @@ int main()
     RUN_TEST(test_seq_bitmap_out_of_order_within_window);
     RUN_TEST(test_seq_bitmap_wraparound_255_to_0);
     RUN_TEST(test_seq_bitmap_jump_ahead_resets_window);
+
+    // radio MAC (APUS-17, [C1])
+    RUN_TEST(test_computeHmac8_rfc4231_tc1);
+    RUN_TEST(test_computeHmac8_rfc4231_tc2);
+    RUN_TEST(test_computeHmac8_deterministic);
+    RUN_TEST(test_computeHmac8_distinct_keys);
+    RUN_TEST(test_computeHmac8_distinct_msgs);
+    RUN_TEST(test_verifyHmac8_accepts_valid);
+    RUN_TEST(test_verifyHmac8_rejects_corrupted);
+    RUN_TEST(test_appendCommandMac_sets_flag_and_len);
+    RUN_TEST(test_appendCommandMac_rejects_non_command);
+    RUN_TEST(test_appendCommandMac_rejects_oversized);
+    RUN_TEST(test_verifyCommandMac_roundtrip);
+    RUN_TEST(test_verifyCommandMac_wrong_key);
+    RUN_TEST(test_verifyCommandMac_no_flag);
 
     return UNITY_END();
 }

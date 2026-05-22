@@ -53,6 +53,9 @@ void DeviceConfig::setDefaults()
     // CORS: open by default (legacy behaviour).
     (void)strncpy(corsOrigin_, "*", sizeof(corsOrigin_) - 1U);
     corsOrigin_[sizeof(corsOrigin_) - 1U] = '\0';
+
+    // Radio MAC key: empty → open mode (no MAC required).
+    radioKeyHex_[0] = '\0';
 }
 
 // ── Persistence ───────────────────────────────────────────────
@@ -97,9 +100,10 @@ bool DeviceConfig::load(StorageInterface* storage)
         return false;
     }
 
-    LOG_I(TAG, "loaded (auth=%s cors=%s)",
+    LOG_I(TAG, "loaded (auth=%s cors=%s mac=%s)",
           isAuthEnabled() ? "ON" : "OFF",
-          corsOrigin_);
+          corsOrigin_,
+          radioKeyHex_[0] != '\0' ? "ON" : "OFF");
     return true;
 }
 
@@ -115,6 +119,7 @@ bool DeviceConfig::save(StorageInterface* storage) const
     doc["wifi_password"] = wifiPassword_;
     doc["api_token"]     = apiToken_;
     doc["cors_origin"]   = corsOrigin_;
+    doc["radio_key"]     = radioKeyHex_;
 
     char buf[JSON_READ_MAX] = {};
     const size_t len = serializeJson(doc, buf, sizeof(buf) - 1U);
@@ -193,17 +198,21 @@ bool DeviceConfig::provisionIfFirstBoot(StorageInterface* storage)
     if (storage == nullptr) { return false; }
 
     // Generate a 12-char alphanumeric WPA2-PSK password (≥ 8 chars, well
-    // within 63-char limit) and a 32-char hex API bearer token (128-bit
-    // entropy from the ESP32 hardware TRNG).
+    // within 63-char limit), a 32-char hex API bearer token (128-bit
+    // entropy), and a 32-char hex radio MAC key (128-bit entropy).
     char newPass [13U] = {};  // 12 chars + NUL
     char newToken[33U] = {};  // 32 hex chars + NUL
+    char newKey  [33U] = {};  // 32 hex chars + NUL
     fillAlnumRandom(newPass,  12U);
     fillHexRandom  (newToken, 32U);
+    fillHexRandom  (newKey,   32U);
 
     (void)strncpy(wifiPassword_, newPass,  sizeof(wifiPassword_) - 1U);
     wifiPassword_[sizeof(wifiPassword_) - 1U] = '\0';
     (void)strncpy(apiToken_,     newToken, sizeof(apiToken_) - 1U);
     apiToken_    [sizeof(apiToken_) - 1U]     = '\0';
+    (void)strncpy(radioKeyHex_,  newKey,   sizeof(radioKeyHex_) - 1U);
+    radioKeyHex_ [sizeof(radioKeyHex_) - 1U] = '\0';
 
     if (!save(storage))
     {
@@ -220,6 +229,7 @@ bool DeviceConfig::provisionIfFirstBoot(StorageInterface* storage)
     LOG_I(TAG, "FIRST BOOT — ARES security credentials generated");
     LOG_I(TAG, "  WiFi AP password : %s", wifiPassword_);
     LOG_I(TAG, "  API bearer token : %s", apiToken_);
+    LOG_I(TAG, "  Radio MAC key    : %s", radioKeyHex_);
     LOG_I(TAG, "  Record these now. They will NOT be shown again.");
     LOG_I(TAG, "═══════════════════════════════════════════════════════");
 
@@ -355,6 +365,44 @@ static bool validateCors(JsonVariant v,
     return true;
 }
 
+/**
+ * Validate and copy the radio_key field from a JSON variant.
+ * Must be empty (disables MAC) or exactly 32 lowercase hex characters.
+ */
+static bool validateRadioKey(JsonVariant v,
+                              char* out, size_t outSize, bool& changed,
+                              char* errOut, uint8_t errLen)
+{
+    if (v.isNull())           { return true; }
+    if (!v.is<const char*>()) { return setFieldErr(errOut, errLen, "radio_key must be a string"); }
+
+    const char* val = nullptr;
+    val = v.as<const char*>();
+    if (val == nullptr) { val = ""; }
+
+    const size_t vlen = strlen(val);
+    // Accept empty (disables MAC) or exactly 32 lowercase hex chars.
+    if (vlen != 0U && vlen != 32U)
+    {
+        return setFieldErr(errOut, errLen,
+            "radio_key must be empty (disable MAC) or exactly 32 lowercase hex chars");
+    }
+    for (size_t i = 0U; i < vlen; i++)
+    {
+        const char c = val[i];
+        const bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        if (!isHex)
+        {
+            return setFieldErr(errOut, errLen,
+                "radio_key must contain only lowercase hex digits (0-9, a-f)");
+        }
+    }
+    (void)strncpy(out, val, outSize - 1U);
+    out[outSize - 1U] = '\0';
+    changed = true;
+    return true;
+}
+
 // ── applyJson ─────────────────────────────────────────────────
 
 bool DeviceConfig::applyJson(const char* json, uint32_t len,
@@ -375,12 +423,14 @@ bool DeviceConfig::applyJson(const char* json, uint32_t len,
     }
 
     // ── Phase 1: validate all present fields into local temporaries ──────
-    char newWifiPass[ares::DEVICE_WIFI_PASS_MAX]  = {};
-    char newToken   [ares::DEVICE_TOKEN_MAX]       = {};
-    char newCors    [ares::DEVICE_CORS_ORIGIN_MAX] = {};
-    bool wifiPassChanged = false;
-    bool tokenChanged    = false;
-    bool corsChanged     = false;
+    char newWifiPass[ares::DEVICE_WIFI_PASS_MAX]    = {};
+    char newToken   [ares::DEVICE_TOKEN_MAX]         = {};
+    char newCors    [ares::DEVICE_CORS_ORIGIN_MAX]   = {};
+    char newRadioKey[ares::DEVICE_RADIO_KEY_HEX_MAX] = {};
+    bool wifiPassChanged  = false;
+    bool tokenChanged     = false;
+    bool corsChanged      = false;
+    bool radioKeyChanged  = false;
 
     if (!validateWifiPass(doc["wifi_password"],
                           newWifiPass, sizeof(newWifiPass),
@@ -391,11 +441,15 @@ bool DeviceConfig::applyJson(const char* json, uint32_t len,
     if (!validateCors(doc["cors_origin"],
                       newCors, sizeof(newCors),
                       corsChanged, errOut, errLen))         { return false; }
+    if (!validateRadioKey(doc["radio_key"],
+                          newRadioKey, sizeof(newRadioKey),
+                          radioKeyChanged, errOut, errLen)) { return false; }
 
     // ── Phase 2: commit all validated fields atomically ──────────────────
-    if (wifiPassChanged) { (void)memcpy(wifiPassword_, newWifiPass, sizeof(wifiPassword_)); }
-    if (tokenChanged)    { (void)memcpy(apiToken_,     newToken,    sizeof(apiToken_));     }
-    if (corsChanged)     { (void)memcpy(corsOrigin_,   newCors,     sizeof(corsOrigin_));   }
+    if (wifiPassChanged)  { (void)memcpy(wifiPassword_, newWifiPass,  sizeof(wifiPassword_)); }
+    if (tokenChanged)     { (void)memcpy(apiToken_,     newToken,     sizeof(apiToken_));     }
+    if (corsChanged)      { (void)memcpy(corsOrigin_,   newCors,      sizeof(corsOrigin_));   }
+    if (radioKeyChanged)  { (void)memcpy(radioKeyHex_,  newRadioKey,  sizeof(radioKeyHex_));  }
 
     return true;
 }
@@ -413,6 +467,7 @@ uint32_t DeviceConfig::toPublicJson(char* buf, uint32_t bufSize) const
     // api_token intentionally omitted — write-only through this interface.
     doc["cors_origin"]  = corsOrigin_;
     doc["auth_enabled"] = isAuthEnabled();
+    // radio_key intentionally omitted — secret, write-only (same policy as api_token).
 
     const size_t len = serializeJson(doc, buf, bufSize - 1U);
     buf[len] = '\0';
@@ -476,4 +531,40 @@ void DeviceConfig::buildCorsHeader(char* out, size_t outSize) const
                    "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
                    "Access-Control-Allow-Headers: Content-Type, X-ARES-Token\r\n",
                    corsOrigin_);
+}
+
+// ── Radio MAC key accessor ─────────────────────────────────────
+
+bool DeviceConfig::radioKey(uint8_t* out, uint8_t outLen) const
+{
+    // Key length in binary bytes derived from the hex string constant.
+    // DEVICE_RADIO_KEY_HEX_MAX = 33 (32 hex chars + NUL) → 16 binary bytes.
+    static constexpr uint8_t kKeyBytes =
+        static_cast<uint8_t>((ares::DEVICE_RADIO_KEY_HEX_MAX - 1U) / 2U);
+
+    if (out == nullptr || outLen < kKeyBytes)
+    {
+        return false;
+    }
+    if (radioKeyHex_[0] == '\0')
+    {
+        return false;  // No key provisioned — open mode.
+    }
+
+    // Decode the 32-char hex string into 16 binary bytes.
+    for (uint8_t i = 0U; i < kKeyBytes; i++)
+    {
+        const char hi = radioKeyHex_[static_cast<uint8_t>(i * 2U)];
+        const char lo = radioKeyHex_[static_cast<uint8_t>(i * 2U + 1U)];
+
+        const uint8_t hiNibble = (hi >= '0' && hi <= '9')
+            ? static_cast<uint8_t>(hi - '0')
+            : static_cast<uint8_t>(hi - 'a' + 10U);
+        const uint8_t loNibble = (lo >= '0' && lo <= '9')
+            ? static_cast<uint8_t>(lo - '0')
+            : static_cast<uint8_t>(lo - 'a' + 10U);
+
+        out[i] = static_cast<uint8_t>((hiNibble << 4U) | loNibble);
+    }
+    return true;
 }

@@ -57,7 +57,8 @@ constexpr uint8_t FLAG_ACK_REQ    = 0x01;  ///< Bit 0: ACK required (APUS-9).
 constexpr uint8_t FLAG_RETRANSMIT = 0x02;  ///< Bit 1: retransmission flag.
 constexpr uint8_t FLAG_PRIORITY   = 0x04;  ///< Bit 2: high-priority frame (APUS-2).
 constexpr uint8_t FLAG_FRAGMENT   = 0x08;  ///< Bit 3: fragmented transfer (APUS-15).
-constexpr uint8_t FLAGS_RESERVED  = 0xF0;  ///< Bits 4–7: reserved, must be zero.
+constexpr uint8_t FLAG_MAC        = 0x10;  ///< Bit 4: HMAC-SHA256 tag present (APUS-17, [C1]).
+constexpr uint8_t FLAGS_RESERVED  = 0xE0;  ///< Bits 5–7: reserved, must be zero.
 
 // ── Retransmission constants (APUS-4.5) ────────────────────
 constexpr uint16_t ACK_TIMEOUT_MS = 1000;  ///< Wait for ACK before retry (ms).
@@ -193,7 +194,8 @@ enum class FailureCode : uint8_t
     QUEUE_FULL        = 0x06,
     INVALID_PARAM     = 0x07,
     ROUTING_FAIL      = 0x08,  ///< Packet could not be routed to any handler (APUS-14.3).
-    LAST              = ROUTING_FAIL,
+    HMAC_INVALID      = 0x09,  ///< MAC tag missing, wrong, or key not provisioned (APUS-17).
+    LAST              = HMAC_INVALID,
 };
 
 /**
