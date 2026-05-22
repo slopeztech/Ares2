@@ -286,7 +286,9 @@ void test_encode_accepts_valid_flags()
         FLAG_ACK_REQ,
         FLAG_RETRANSMIT,
         FLAG_PRIORITY,
+        FLAG_MAC,
         static_cast<uint8_t>(FLAG_ACK_REQ | FLAG_RETRANSMIT | FLAG_PRIORITY),
+        static_cast<uint8_t>(FLAG_ACK_REQ | FLAG_MAC),
     };
 
     uint8_t buf[MAX_FRAME_LEN];

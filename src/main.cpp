@@ -197,6 +197,16 @@ void setup()
         (void)deviceConfig.provisionIfFirstBoot(&storageIf);
     }
 
+    // Wire radio MAC key into the dispatcher (APUS-17).
+    // radioKey() returns false if no key has been provisioned (open / dev mode).
+    {
+        uint8_t radioKeyBuf[ares::proto::HMAC_KEY_LEN] = {};
+        if (deviceConfig.radioKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf))))
+        {
+            radioDispatcher.setMacKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf)));
+        }
+    }
+
     // LoRa radio transceiver (UART2)
     (void)radioIf.begin();
 

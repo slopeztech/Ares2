@@ -32,6 +32,7 @@
 #pragma once
 
 #include "comms/ares_radio_protocol.h"
+#include "comms/radio_mac.h"
 #include "ams/mission_script_engine.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/pulse/pulse_interface.h"
@@ -85,6 +86,23 @@ public:
      */
     uint32_t retryDrops() const { return retryDrops_.load(); }
 
+    /**
+     * @brief Configure the HMAC-SHA256 key used to authenticate COMMAND frames.
+     *
+     * When a key is configured all incoming non-fragmented COMMAND frames MUST
+     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-17, [C1]).
+     * Frames that fail verification receive a NACK with FailureCode::HMAC_INVALID.
+     *
+     * When no key is configured (default) FLAG_MAC is optional and not verified
+     * (backwards-compatible open mode).
+     *
+     * Must be called from the same task as poll() — not thread-safe.
+     *
+     * @param[in] key     Key bytes (exactly @c proto::HMAC_KEY_LEN bytes expected).
+     * @param[in] keyLen  Must equal @c proto::HMAC_KEY_LEN (16).
+     */
+    void setMacKey(const uint8_t* key, uint8_t keyLen);
+
 private:
     // Two full frames of buffer space so a partial-frame tail can coexist
     // with a newly arriving complete frame without blocking RX.
@@ -102,6 +120,11 @@ private:
     RadioInterface&               radio_;
     ares::ams::MissionScriptEngine& engine_;
     PulseInterface*               pulse_;   ///< Nullable — guarded before use.
+
+    // ── MAC key (APUS-17) ──────────────────────────────
+    static constexpr uint8_t kMacKeyLen = proto::HMAC_KEY_LEN;
+    uint8_t  macKey_[kMacKeyLen] = {};  ///< Pre-shared HMAC key (all-zero = disabled).
+    bool     macKeySet_ = false;        ///< true after setMacKey() is called.
 
     // ── Receive state ────────────────────────────────────────
     uint8_t  rxBuf_[kRxBufLen];  ///< Byte accumulation buffer (static, PO10-3).
@@ -202,13 +225,15 @@ private:
     void dispatchFrame(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Handle a TYPE == COMMAND frame (APUS-7, APUS-9).
+     * @brief Handle a TYPE == COMMAND frame (APUS-7, APUS-9, APUS-17).
      *
      * Sequence:
      *   1. Duplicate-SEQ check — discard silently if duplicate (APUS-4.7).
-     *   2. Acceptance ACK — sent unconditionally (APUS-9.1).
-     *   3. enqueueCmd() — insert into the priority queue (APUS-2.2).
-     *   4. Completion ACK/NACK deferred to drainCmdQueue().
+     *   2. MAC verification — if a key is configured, verify FLAG_MAC and
+     *      HMAC-SHA256 tag; NACK with HMAC_INVALID on failure (APUS-17, [C1]).
+     *   3. Acceptance ACK — sent unconditionally on MAC pass (APUS-9.1).
+     *   4. enqueueCmd() — insert into the priority queue (APUS-2.2).
+     *   5. Completion ACK/NACK deferred to drainCmdQueue().
      *
      * @param[in] frame  Decoded COMMAND frame.
      * @param[in] nowMs  Current millis() timestamp.
