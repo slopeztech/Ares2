@@ -118,6 +118,46 @@ static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[
                            &radioDispatcher);
 
 // ═══════════════════════════════════════════════════════════
+/// @brief Inspect the reset cause and apply an AMS boot checkpoint if the
+///        mission was running when the board restarted.  Called once from setup().
+static void applyBootCheckpoint(ares::ams::MissionScriptEngine& engine,
+                                 ApiServer& api,
+                                 StatusLed& led)
+{
+    // Classify the reset cause before acting on the restored checkpoint.
+    // Abnormal causes (panic, WDT, brownout) while in-flight trigger TC.RESET_ABNORMAL
+    // so the user's AMS script can decide how to respond (e.g. deploy parachute).
+    const esp_reset_reason_t resetCause = esp_reset_reason();
+    const bool abnormalReset =
+        (resetCause == ESP_RST_PANIC    ||
+         resetCause == ESP_RST_INT_WDT  ||
+         resetCause == ESP_RST_TASK_WDT ||
+         resetCause == ESP_RST_WDT      ||
+         resetCause == ESP_RST_BROWNOUT);
+
+    // If AMS restored an in-flight checkpoint after reboot, reflect it in API mode.
+    ares::ams::EngineSnapshot bootSnap = {};
+    engine.getSnapshot(bootSnap);
+    if (bootSnap.status == ares::ams::EngineStatus::RUNNING)
+    {
+        if (abnormalReset)
+        {
+            // In-flight + abnormal reset: inject TC so the script handles recovery.
+            // The TC is consumed on the first tick — zero latency penalty.
+            LOG_W("BOOT", "Abnormal reset during flight (cause=%d) — injecting TC.RESET_ABNORMAL",
+                  static_cast<int>(resetCause));
+            (void)engine.injectTcCommand("RESET_ABNORMAL");
+        }
+        api.notifyMissionResumed();
+    }
+    else
+    {
+        // All subsystems ready — exit boot blink, go solid green (IDLE)
+        led.setMode(ares::OperatingMode::IDLE);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 void setup()
 {
     // Keep USB serial available for on-demand diagnostics, but do not
@@ -148,8 +188,14 @@ void setup()
 
     // Device security configuration — load before WiFi AP starts so the
     // correct password and token are live from the first connection.
-    // Falls back silently to open-mode defaults if the file is absent.
-    (void)deviceConfig.load(&storageIf);
+    // On first boot (no config file) generate random credentials via TRNG
+    // and persist them before the AP starts.  Bootstrap credentials are
+    // printed to USB-CDC by provisionIfFirstBoot() via LOG_I.
+    if (!deviceConfig.load(&storageIf))
+    {
+        // Config absent (first boot) or corrupted — generate fresh credentials.
+        (void)deviceConfig.provisionIfFirstBoot(&storageIf);
+    }
 
     // LoRa radio transceiver (UART2)
     (void)radioIf.begin();
@@ -164,37 +210,9 @@ void setup()
     // REST API server — start after AMS is ready to avoid init race
     (void)apiServer.begin();
 
-    // Classify the reset cause before acting on the restored checkpoint.
-    // Abnormal causes (panic, WDT, brownout) while in-flight trigger TC.RESET_ABNORMAL
-    // so the user's AMS script can decide how to respond (e.g. deploy parachute).
-    const esp_reset_reason_t resetCause = esp_reset_reason();
-    const bool abnormalReset =
-        (resetCause == ESP_RST_PANIC    ||
-         resetCause == ESP_RST_INT_WDT  ||
-         resetCause == ESP_RST_TASK_WDT ||
-         resetCause == ESP_RST_WDT      ||
-         resetCause == ESP_RST_BROWNOUT);
-
-    // If AMS restored an in-flight checkpoint after reboot, reflect it in API mode.
-    ares::ams::EngineSnapshot bootSnap = {};
-    missionEngine.getSnapshot(bootSnap);
-    if (bootSnap.status == ares::ams::EngineStatus::RUNNING)
-    {
-        if (abnormalReset)
-        {
-            // In-flight + abnormal reset: inject TC so the script handles recovery.
-            // The TC is consumed on the first tick — zero latency penalty.
-            LOG_W("BOOT", "Abnormal reset during flight (cause=%d) — injecting TC.RESET_ABNORMAL",
-                  static_cast<int>(resetCause));
-            (void)missionEngine.injectTcCommand("RESET_ABNORMAL");
-        }
-        apiServer.notifyMissionResumed();
-    }
-    else
-    {
-        // All subsystems ready — exit boot blink, go solid green (IDLE)
-        statusLed.setMode(ares::OperatingMode::IDLE);
-    }
+    // Classify reset cause, restore in-flight checkpoint if needed,
+    // and set the initial LED mode.
+    applyBootCheckpoint(missionEngine, apiServer, statusLed);
 
     // Subscribe loop() to the TWDT — registered last to avoid false trips
     // during the subsystem init sequence above.

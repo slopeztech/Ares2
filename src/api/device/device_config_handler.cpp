@@ -49,6 +49,12 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
         return;
     }
 
+    // ── Snapshot current wifi_password to detect a change after apply ─────
+    char oldWifiPass[ares::DEVICE_WIFI_PASS_MAX] = {};
+    (void)strncpy(oldWifiPass, devCfg_.wifiPassword(),
+                  sizeof(oldWifiPass) - 1U);
+    oldWifiPass[sizeof(oldWifiPass) - 1U] = '\0';
+
     // ── Phase 1: validate + apply ──────────────────────────────
     static char errBuf[96] = {};
     if (!devCfg_.applyJson(body, bodyLen,
@@ -68,21 +74,28 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
     }
 
     // ── Phase 3: refresh runtime state ────────────────────────
-    // CORS headers must be updated so subsequent responses reflect the
-    // new Access-Control-Allow-Origin value immediately.
     refreshCorsHeaders();
 
     // ── Phase 4: respond ──────────────────────────────────────
+    // H7: When wifi_password was changed, return 202 Accepted with a
+    // reboot_required flag so the client knows the change is pending a
+    // device restart (the soft-AP password only takes effect on next boot).
+    const bool wifiPassChanged =
+        (strcmp(oldWifiPass, devCfg_.wifiPassword()) != 0);
+
     char resBuf[ares::API_MAX_RESPONSE_BODY] = {};
     const uint32_t resLen = devCfg_.toPublicJson(resBuf,
                                 static_cast<uint32_t>(sizeof(resBuf)));
-    sendJson(client, 200U, resBuf, resLen);
 
-    LOG_I(TAG, "PUT /api/device/config 200 (persisted=%s)",
-          saved ? "yes" : "no — save failed");
-
-    if (saved)
+    if (wifiPassChanged)
     {
-        LOG_I(TAG, "  note: wifi_password changes require a reboot");
+        sendJson(client, 202U, resBuf, resLen);
+        LOG_I(TAG, "PUT /api/device/config 202: wifi_password changed — reboot required");
+    }
+    else
+    {
+        sendJson(client, 200U, resBuf, resLen);
+        LOG_I(TAG, "PUT /api/device/config 200 (persisted=%s)",
+              saved ? "yes" : "no — save failed");
     }
 }

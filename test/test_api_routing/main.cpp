@@ -2,8 +2,8 @@
  * @file  main.cpp
  * @brief Unity test runner for the api_routing test suite.
  *
- * Registers all ten routing and auth test cases and runs them via the
- * Unity C unit-test framework.
+ * Registers all routing, auth, and device-config test cases and runs them
+ * via the Unity C unit-test framework.
  */
 
 #include <unity.h>
@@ -19,6 +19,25 @@ void test_arm_no_mission_returns_500(void);
 void test_auth_arm_no_token_returns_401(void);
 void test_auth_mode_wrong_token_returns_401(void);
 void test_auth_mission_upload_no_token_returns_401(void);
+
+// Test function declarations (defined in test_device_config.cpp)
+void test_checktoken_correct_accepted(void);
+void test_checktoken_extra_byte_rejected(void);
+void test_checktoken_short_token_rejected(void);
+void test_checktoken_empty_token_rejected(void);
+void test_checktoken_null_rejected(void);
+void test_checktoken_auth_disabled_always_false(void);
+void test_topublicjson_zero_size_returns_zero(void);
+void test_topublicjson_small_size_returns_zero(void);
+void test_topublicjson_normal_size_returns_json(void);
+void test_empty_wifi_password_preserves_current(void);
+void test_put_wifi_password_change_returns_202(void);
+void test_put_no_wifi_password_change_returns_200(void);
+void test_uri_too_long_returns_414(void);
+void test_i2c_scan_blocked_in_flight(void);
+void test_uart_scan_blocked_in_flight(void);
+void test_status_200_reason_phrase_ok(void);
+void test_put_device_config_202_reason_accepted(void);
 
 int main(void)
 {
@@ -38,6 +57,33 @@ int main(void)
     RUN_TEST(test_auth_arm_no_token_returns_401);
     RUN_TEST(test_auth_mode_wrong_token_returns_401);
     RUN_TEST(test_auth_mission_upload_no_token_returns_401);
+
+    // ── DeviceConfig security tests ───────────────────────────
+    RUN_TEST(test_checktoken_correct_accepted);
+    RUN_TEST(test_checktoken_extra_byte_rejected);
+    RUN_TEST(test_checktoken_short_token_rejected);
+    RUN_TEST(test_checktoken_empty_token_rejected);
+    RUN_TEST(test_checktoken_null_rejected);
+    RUN_TEST(test_checktoken_auth_disabled_always_false);
+    RUN_TEST(test_topublicjson_zero_size_returns_zero);
+    RUN_TEST(test_topublicjson_small_size_returns_zero);
+    RUN_TEST(test_topublicjson_normal_size_returns_json);
+    RUN_TEST(test_empty_wifi_password_preserves_current);
+
+    // ── H7: PUT /api/device/config → 202 on wifi_password change ─
+    RUN_TEST(test_put_wifi_password_change_returns_202);
+    RUN_TEST(test_put_no_wifi_password_change_returns_200);
+
+    // ── M8: 414 URI Too Long ──────────────────────────────────
+    RUN_TEST(test_uri_too_long_returns_414);
+
+    // ── H8: scan endpoints locked in FLIGHT ──────────────────
+    RUN_TEST(test_i2c_scan_blocked_in_flight);
+    RUN_TEST(test_uart_scan_blocked_in_flight);
+
+    // ── H6: correct reason phrases in responses ───────────────
+    RUN_TEST(test_status_200_reason_phrase_ok);
+    RUN_TEST(test_put_device_config_202_reason_accepted);
 
     return UNITY_END();
 }

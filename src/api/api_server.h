@@ -270,6 +270,16 @@ private:
                           const char* message);
     static void sendNoContent(class WiFiClient& client, uint16_t code);
 
+    // ── Request helpers ─────────────────────────────────────
+    /// Reject the request with 405 if method is not POST; returns true if OK.
+    static bool requirePost(class WiFiClient& client,
+                            const char* method, const char* path);
+    /// Read and validate the request body; sends 413/400 and returns false on error.
+    static bool readBody(class WiFiClient& client,
+                         const char* method, const char* path,
+                         uint32_t contentLength, uint32_t bodyLimit,
+                         char* body, uint32_t& bodyLen);
+
     /**
      * @brief Send a file from storage as a chunked HTTP 200 response.
      *

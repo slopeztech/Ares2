@@ -75,6 +75,27 @@ public:
     bool load(StorageInterface* storage);
 
     /**
+     * Generate random WiFi password and API token on first boot (no config
+     * file present) and persist them immediately.
+     *
+     * Must be called right after load() returns false and the storage
+     * backend is valid.  On success the generated credentials are logged
+     * to USB-CDC via LOG_I so the operator can read them at first
+     * power-on.  Subsequent boots load the persisted values normally.
+     *
+     * @param[in] storage  Storage backend used to write the config file.
+     *                     Must not be nullptr.
+     * @return true if credentials were generated and persisted successfully.
+     */
+    bool provisionIfFirstBoot(StorageInterface* storage);
+
+    /**
+     * @return true if provisionIfFirstBoot() ran and saved this session.
+     *         Reset to false on the next load() call.
+     */
+    bool wasFirstBootProvisioned() const;
+
+    /**
      * Persist the current configuration (including api_token) to LittleFS.
      *
      * @param[in] storage  Storage backend.  Must not be nullptr.
@@ -168,4 +189,7 @@ private:
     char wifiPassword_[ares::DEVICE_WIFI_PASS_MAX]  = {};  ///< WPA2-PSK password.
     char apiToken_    [ares::DEVICE_TOKEN_MAX]       = {};  ///< Bearer token (empty = disabled).
     char corsOrigin_  [ares::DEVICE_CORS_ORIGIN_MAX] = {};  ///< CORS origin value.
+
+    /** Set by provisionIfFirstBoot() when new credentials were generated this session. */
+    bool firstBootProvisioned_ = false;
 };
