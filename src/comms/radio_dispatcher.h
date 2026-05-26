@@ -90,7 +90,7 @@ public:
      * @brief Configure the HMAC-SHA256 key used to authenticate COMMAND frames.
      *
      * When a key is configured all incoming non-fragmented COMMAND frames MUST
-     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-17, [C1]).
+     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-17).
      * Frames that fail verification receive a NACK with FailureCode::HMAC_INVALID.
      *
      * When no key is configured (default) FLAG_MAC is optional and not verified
@@ -229,8 +229,9 @@ private:
      *
      * Sequence:
      *   1. Duplicate-SEQ check — discard silently if duplicate (APUS-4.7).
-     *   2. MAC verification — if a key is configured, verify FLAG_MAC and
-     *      HMAC-SHA256 tag; NACK with HMAC_INVALID on failure (APUS-17, [C1]).
+     *   2. MAC verification — if a key is configured, verify FLAG_MAC,
+     *      HMAC-SHA256 tag, and rolling timestamp window via
+     *      checkCommandMac(); NACK with HMAC_INVALID on failure (APUS-17).
      *   3. Acceptance ACK — sent unconditionally on MAC pass (APUS-9.1).
      *   4. enqueueCmd() — insert into the priority queue (APUS-2.2).
      *   5. Completion ACK/NACK deferred to drainCmdQueue().
@@ -239,6 +240,19 @@ private:
      * @param[in] nowMs  Current millis() timestamp.
      */
     void handleCommand(const proto::Frame& frame, uint32_t nowMs);
+
+    /**
+     * @brief Authenticate a non-fragmented COMMAND frame (APUS-17).
+     *
+     * Verifies FLAG_MAC presence, the HMAC-SHA256 tag, and the rolling
+     * timestamp window.  Sends a NACK(HMAC_INVALID) and returns @c false on
+     * any failure.  Called only when @c macKeySet_ is true.
+     *
+     * @param[in] frame  Decoded COMMAND frame.
+     * @param[in] nowMs  Current uptime in milliseconds.
+     * @return @c true if the frame passes all authentication checks.
+     */
+    bool checkCommandMac(const proto::Frame& frame, uint32_t nowMs);
 
     /**
      * @brief Handle a TYPE == HEARTBEAT frame — echo back to sender.

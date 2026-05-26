@@ -3,7 +3,7 @@
  * @brief HMAC-SHA256 authentication for APUS radio COMMAND frames (APUS-17).
  *
  * Provides truncated HMAC-SHA256 tag computation and verification for
- * transport-command authentication ([C1] security requirement).
+ * transport-command authentication.
  *
  * Wire format addition:
  *   When FLAG_MAC is set on a COMMAND frame the last @c HMAC_LEN bytes of the
@@ -21,7 +21,7 @@
  *   (backwards-compatible open mode).  Once a key is provisioned all incoming
  *   COMMAND frames MUST carry FLAG_MAC and pass verification.
  *
- * Standards: APUS-17 (radio command authentication, [C1]).
+ * Standards: APUS-17 (radio command authentication).
  * Coding: no heap (PO10-3); pure portable C++17; no Arduino dependency.
  */
 #pragma once
