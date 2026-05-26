@@ -242,7 +242,7 @@ private:
     void handleCommand(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Authenticate a non-fragmented COMMAND frame (APUS-17, [C1]).
+     * @brief Authenticate a non-fragmented COMMAND frame (APUS-17).
      *
      * Verifies FLAG_MAC presence, the HMAC-SHA256 tag, and the rolling
      * timestamp window.  Sends a NACK(HMAC_INVALID) and returns @c false on

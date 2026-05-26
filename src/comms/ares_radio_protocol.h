@@ -255,7 +255,7 @@ static_assert(sizeof(TelemetryPayload) == 78,
  * Wire layout (little-endian, packed):
  *   [0]    priority    — Priority level (Priority enum value).
  *   [1]    commandId   — Command identifier (CommandId enum value).
- *   [2..5] timestampMs — Sender uptime in ms at frame creation (APUS-17.
+ *   [2..5] timestampMs — Sender uptime in ms at frame creation (APUS-17).
  *                        Covered by the HMAC-SHA256 tag; receiver validates
  *                        that |nowMs − timestampMs| ≤ CMD_TIMESTAMP_WINDOW_MS.
  */

@@ -16,13 +16,11 @@
  *   - Buffer with leading garbage followed by valid frame → garbage stripped.
  *   - CRC-corrupted frame → decode failure, SYNC byte skipped.
  *
- * MAC + timestamp tests (APUS-17):
- *   TC-AUTH-1  No MAC key configured → COMMAND accepted without FLAG_MAC (open mode).
- *   TC-AUTH-2  MAC key set, FLAG_MAC absent → HMAC_INVALID NACK.
- *   TC-AUTH-3  MAC key set, FLAG_MAC present, wrong key → HMAC_INVALID NACK.
+ * MAC + timestamp tests (APUS-17) covered in this file:
  *   TC-AUTH-4  MAC key set, valid MAC, timestamp within window → accepted.
  *   TC-AUTH-5  MAC key set, valid MAC, timestamp too old (> 5 s) → HMAC_INVALID NACK.
  *   TC-AUTH-6  MAC key set, valid MAC, timestamp far in future (> 5 s) → HMAC_INVALID NACK.
+ * (TC-AUTH-1/2/3 are covered by the v2.3.3 MAC authentication tests.)
  */
 #include <unity.h>
 
@@ -1696,6 +1694,19 @@ void test_cmd_mac_expired_timestamp_rejected()
     f.dispatcher.poll(kNow);
 
     TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+
+    // Verify the single sent frame is a NACK with HMAC_INVALID failure code.
+    Frame nackFrame5 = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), nackFrame5));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(nackFrame5.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), nackFrame5.len);
+    AckPayload ack5 = {};
+    (void)memcpy(&ack5, nackFrame5.payload, sizeof(ack5));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::HMAC_INVALID), ack5.failureCode);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1723,4 +1734,17 @@ void test_cmd_mac_future_timestamp_rejected()
     f.dispatcher.poll(kNow);
 
     TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+
+    // Verify the single sent frame is a NACK with HMAC_INVALID failure code.
+    Frame nackFrame6 = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                             f.dispatchRadio.lastFrameLen(), nackFrame6));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MsgType::ACK),
+                             static_cast<uint8_t>(nackFrame6.type));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), nackFrame6.len);
+    AckPayload ack6 = {};
+    (void)memcpy(&ack6, nackFrame6.payload, sizeof(ack6));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::HMAC_INVALID), ack6.failureCode);
 }

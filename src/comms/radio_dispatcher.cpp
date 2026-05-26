@@ -295,18 +295,24 @@ bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
     }
     LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-17)", static_cast<unsigned>(frame.seq));
 
-    // Rolling timestamp window — defeats cross-boot replays (APUS-17, [C1]).
+    // Rolling timestamp window — defeats cross-boot replays (APUS-17).
     // timestampMs is at CommandHeader bytes [2..5], protected by the MAC.
     if (frame.len >= static_cast<uint8_t>(sizeof(proto::CommandHeader) + proto::HMAC_LEN))
     {
         uint32_t frameTsMs = 0U;
         (void)memcpy(&frameTsMs, &frame.payload[2U], sizeof(frameTsMs));
-        const uint32_t delta = (nowMs >= frameTsMs)
-                               ? (nowMs  - frameTsMs)
-                               : (frameTsMs - nowMs);
-        if (delta > proto::CMD_TIMESTAMP_WINDOW_MS)
+        // Wrap-safe unsigned subtraction: diff is the "past" distance;
+        // (UINT32_MAX - diff + 1) is the "future" distance.  Both must be
+        // checked to handle the 32-bit millisecond counter wrap-around (~49.7 d).
+        const uint32_t diff        = nowMs - frameTsMs;
+        const bool withinWindow    = (diff <= proto::CMD_TIMESTAMP_WINDOW_MS)
+                                  || (diff >= UINT32_MAX - proto::CMD_TIMESTAMP_WINDOW_MS + 1U);
+        const uint32_t delta       = (diff <= proto::CMD_TIMESTAMP_WINDOW_MS)
+                                     ? diff
+                                     : static_cast<uint32_t>(UINT32_MAX - diff + 1U);
+        if (!withinWindow)
         {
-            LOG_W(TAG, "COMMAND seq=%u: timestamp expired (delta=%" PRIu32 "ms) — NACK",
+            LOG_W(TAG, "COMMAND seq=%u: timestamp outside acceptance window (delta=%" PRIu32 "ms) — NACK",
                   static_cast<unsigned>(frame.seq), delta);
             sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
             return false;
