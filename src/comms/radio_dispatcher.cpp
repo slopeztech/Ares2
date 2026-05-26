@@ -264,14 +264,64 @@ void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs) /
     }
 }
 
+// ── checkCommandMac ───────────────────────────────────────────────────────────
+
+bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
+{
+    // Fragmented frames cannot carry a per-frame MAC (APUS-17).
+    if ((frame.flags & proto::FLAG_FRAGMENT) != 0U)
+    {
+        LOG_W(TAG, "COMMAND seq=%u: fragmented COMMAND rejected — "
+              "MAC key requires non-fragmented frames (APUS-17)",
+              static_cast<unsigned>(frame.seq));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+        return false;
+    }
+    // FLAG_MAC must be set.
+    if ((frame.flags & proto::FLAG_MAC) == 0U)
+    {
+        LOG_W(TAG, "COMMAND seq=%u: MAC key set but FLAG_MAC absent — NACK",
+              static_cast<unsigned>(frame.seq));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+        return false;
+    }
+    // Verify the 8-byte HMAC-SHA256 tag (constant-time compare, OWASP A07).
+    if (!proto::verifyCommandMac(macKey_, kMacKeyLen, frame))
+    {
+        LOG_W(TAG, "COMMAND seq=%u: HMAC verification failed — NACK",
+              static_cast<unsigned>(frame.seq));
+        sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+        return false;
+    }
+    LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-17)", static_cast<unsigned>(frame.seq));
+
+    // Rolling timestamp window — defeats cross-boot replays (APUS-17, [C1]).
+    // timestampMs is at CommandHeader bytes [2..5], protected by the MAC.
+    if (frame.len >= static_cast<uint8_t>(sizeof(proto::CommandHeader) + proto::HMAC_LEN))
+    {
+        uint32_t frameTsMs = 0U;
+        (void)memcpy(&frameTsMs, &frame.payload[2U], sizeof(frameTsMs));
+        const uint32_t delta = (nowMs >= frameTsMs)
+                               ? (nowMs  - frameTsMs)
+                               : (frameTsMs - nowMs);
+        if (delta > proto::CMD_TIMESTAMP_WINDOW_MS)
+        {
+            LOG_W(TAG, "COMMAND seq=%u: timestamp expired (delta=%" PRIu32 "ms) — NACK",
+                  static_cast<unsigned>(frame.seq), delta);
+            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
+            return false;
+        }
+        LOG_D(TAG, "COMMAND seq=%u: timestamp OK (delta=%" PRIu32 "ms)",
+              static_cast<unsigned>(frame.seq), delta);
+    }
+    return true;
+}
+
 // ── handleCommand ─────────────────────────────────────────────────────────────
 
 void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
 {
     // ── APUS-4.7: sliding-window anti-replay guard ([H5]) ─────────────────
-    // SeqBitmap tracks the last 64 accepted SEQ values.  A frame is rejected
-    // if its SEQ was already seen (exact repeat, out-of-order replay, or any
-    // SEQ more than 63 positions behind the highest accepted).
     if (rxSeqBitmap_.checkAndMark(frame.seq))
     {
         LOG_D(TAG, "COMMAND seq=%u duplicate/replay — discarded",
@@ -279,41 +329,14 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
         return;
     }
 
-    // ── APUS-17: HMAC-SHA256 command authentication ────────────────
-    // When a MAC key is provisioned, every COMMAND frame — including
-    // fragmented ones — must pass authentication.  Fragmented frames are
-    // rejected outright: per-fragment MAC is not supported, and CRC-32
-    // provides integrity only (it is attacker-computable, not a MAC).
-    const bool isFragmented = ((frame.flags & proto::FLAG_FRAGMENT) != 0U);
-    if (macKeySet_)
+    // ── APUS-17: HMAC-SHA256 + timestamp window authentication ────────────
+    if (macKeySet_ && !checkCommandMac(frame, nowMs))
     {
-        if (isFragmented)
-        {
-            LOG_W(TAG, "COMMAND seq=%u: fragmented COMMAND rejected — "
-                  "MAC key requires non-fragmented frames (APUS-17)",
-                  static_cast<unsigned>(frame.seq));
-            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
-            return;
-        }
-        if ((frame.flags & proto::FLAG_MAC) == 0U)
-        {
-            LOG_W(TAG, "COMMAND seq=%u: MAC key set but FLAG_MAC absent — NACK",
-                  static_cast<unsigned>(frame.seq));
-            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
-            return;
-        }
-        if (!proto::verifyCommandMac(macKey_, kMacKeyLen, frame))
-        {
-            LOG_W(TAG, "COMMAND seq=%u: HMAC verification failed — NACK",
-                  static_cast<unsigned>(frame.seq));
-            sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
-            return;
-        }
-        LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-17)", static_cast<unsigned>(frame.seq));
+        return;  // checkCommandMac already sent the NACK.
     }
 
     // ── APUS-15: fragmented transfer ───────────────────────────────────────
-    if (isFragmented)
+    if ((frame.flags & proto::FLAG_FRAGMENT) != 0U)
     {
         handleFragmentedCommand(frame, nowMs);
         return;
@@ -325,7 +348,7 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
     if ((frame.flags & proto::FLAG_MAC) != 0U &&
         frame.len >= static_cast<uint8_t>(proto::HMAC_LEN))
     {
-        cmdFrame.len  = static_cast<uint8_t>(frame.len - proto::HMAC_LEN);
+        cmdFrame.len   = static_cast<uint8_t>(frame.len - proto::HMAC_LEN);
         cmdFrame.flags = static_cast<uint8_t>(frame.flags & ~proto::FLAG_MAC);
     }
 
@@ -340,7 +363,7 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
         {
             sendAckNack(frame.seq, frame.node,
                         proto::FailureCode::QUEUE_FULL,
-                        cmdFrame.payload[1U]);  // CommandHeader.commandId as diagnostic
+                        cmdFrame.payload[1U]);
         }
     }
     // Completion ACK/NACK for queued commands is sent by drainCmdQueue().
@@ -536,15 +559,16 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     case proto::CommandId::SET_MODE:
     {
-        // Payload layout: CommandHeader(2) + mode(1).
+        // Payload layout: CommandHeader(6) + mode(1) = 7 bytes minimum.
+        // CommandHeader[2..5] = timestampMs (APUS-17); mode at byte [6].
         // mode 0x00 = pause execution, 0x01 = resume execution.
-        if (frame.len < 3U)
+        if (frame.len < 7U)
         {
             LOG_W(TAG, "SET_MODE: payload too short (%u bytes)",
                   static_cast<unsigned>(frame.len));
             return proto::FailureCode::INVALID_PARAM;
         }
-        const uint8_t mode = frame.payload[2U];
+        const uint8_t mode = frame.payload[6U];
         if (mode > 1U)
         {
             LOG_W(TAG, "SET_MODE: unknown mode 0x%02X", static_cast<unsigned>(mode));
@@ -558,15 +582,15 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     case proto::CommandId::SET_FCS_ACTIVE:
     {
-        // Payload layout: CommandHeader(2) + enabled(1).
-        // In the current model, FCS active == execution enabled.
-        if (frame.len < 3U)
+        // Payload layout: CommandHeader(6) + enabled(1) = 7 bytes minimum.
+        // enabled at byte [6]. In the current model, FCS active == execution enabled.
+        if (frame.len < 7U)
         {
             LOG_W(TAG, "SET_FCS_ACTIVE: payload too short (%u bytes)",
                   static_cast<unsigned>(frame.len));
             return proto::FailureCode::INVALID_PARAM;
         }
-        const uint8_t enabled = frame.payload[2U];
+        const uint8_t enabled = frame.payload[6U];
         if (enabled > 1U)
         {
             LOG_W(TAG, "SET_FCS_ACTIVE: invalid value 0x%02X",
@@ -592,8 +616,9 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     case proto::CommandId::SET_TELEM_INTERVAL:
     {
-        // Payload layout: CommandHeader(2) + intervalMs_LE(4) = 6 bytes.
-        if (frame.len < 6U)
+        // Payload layout: CommandHeader(6) + intervalMs_LE(4) = 10 bytes minimum.
+        // intervalMs at bytes [6..9].
+        if (frame.len < 10U)
         {
             LOG_W(TAG, "SET_TELEM_INTERVAL: payload too short (%u bytes)",
                   static_cast<unsigned>(frame.len));
@@ -601,7 +626,7 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
         }
         // MISRA 10.3: use memcpy to avoid unaligned read on ESP32.
         uint32_t intervalMs = 0U;
-        (void)memcpy(&intervalMs, &frame.payload[2U], sizeof(intervalMs));
+        (void)memcpy(&intervalMs, &frame.payload[6U], sizeof(intervalMs));
         // Sanity bounds: [TELEMETRY_INTERVAL_MIN, TELEMETRY_INTERVAL_MAX] (config.h).
         if (intervalMs < ares::TELEMETRY_INTERVAL_MIN ||
             intervalMs > ares::TELEMETRY_INTERVAL_MAX)
@@ -718,16 +743,17 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
 
     case proto::CommandId::SET_CONFIG_PARAM:
     {
-        // Payload layout: CommandHeader(2) + paramId(1) + value_le32(4) = 7 bytes.
-        if (frame.len < 7U)
+        // Payload layout: CommandHeader(6) + paramId(1) + value_le32(4) = 11 bytes minimum.
+        // paramId at byte [6], value at bytes [7..10].
+        if (frame.len < 11U)
         {
             LOG_W(TAG, "SET_CONFIG_PARAM: payload too short (%u bytes)",
                   static_cast<unsigned>(frame.len));
             return proto::FailureCode::INVALID_PARAM;
         }
-        const auto paramId = static_cast<proto::ConfigParamId>(frame.payload[2U]);
+        const auto paramId = static_cast<proto::ConfigParamId>(frame.payload[6U]);
         uint32_t rawVal = 0U;
-        (void)memcpy(&rawVal, &frame.payload[3U], sizeof(rawVal));
+        (void)memcpy(&rawVal, &frame.payload[7U], sizeof(rawVal));
         float value = 0.0f;
         (void)memcpy(&value, &rawVal, sizeof(value));
         return applyConfigParam(paramId, value, nowMs);

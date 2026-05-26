@@ -308,7 +308,8 @@ void test_verifyCommandMac_wrong_key()
         0xba, 0xd0, 0xba, 0xd0, 0xba, 0xd0, 0xba, 0xd0,
     };
 
-    Frame f = makeCommandFrame(4U);
+    // Use sizeof(CommandHeader)=6 bytes so the frame meets kMinLen after append.
+    Frame f = makeCommandFrame(6U);
 
     TEST_ASSERT_TRUE(appendCommandMac(keyA, HMAC_KEY_LEN, f));
     TEST_ASSERT_FALSE(verifyCommandMac(keyB, HMAC_KEY_LEN, f));

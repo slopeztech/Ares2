@@ -15,10 +15,19 @@
  *   - Buffer with no SYNC_0 byte → all bytes discarded.
  *   - Buffer with leading garbage followed by valid frame → garbage stripped.
  *   - CRC-corrupted frame → decode failure, SYNC byte skipped.
+ *
+ * MAC + timestamp tests (APUS-17):
+ *   TC-AUTH-1  No MAC key configured → COMMAND accepted without FLAG_MAC (open mode).
+ *   TC-AUTH-2  MAC key set, FLAG_MAC absent → HMAC_INVALID NACK.
+ *   TC-AUTH-3  MAC key set, FLAG_MAC present, wrong key → HMAC_INVALID NACK.
+ *   TC-AUTH-4  MAC key set, valid MAC, timestamp within window → accepted.
+ *   TC-AUTH-5  MAC key set, valid MAC, timestamp too old (> 5 s) → HMAC_INVALID NACK.
+ *   TC-AUTH-6  MAC key set, valid MAC, timestamp far in future (> 5 s) → HMAC_INVALID NACK.
  */
 #include <unity.h>
 
 #include "comms/radio_dispatcher.h"
+#include "comms/radio_mac.h"
 #include "ams/mission_script_engine.h"
 #include "ams/ams_driver_registry.h"
 
@@ -93,7 +102,9 @@ struct CmdDispatchFixture
 /**
  * Build a minimal non-fragmented COMMAND wire frame.
  *
- * Payload layout: CommandHeader(2) = { priority, commandId } + extra bytes.
+ * Payload layout: CommandHeader(6) = { priority, commandId, timestampMs_LE } +
+ *                 extra bytes.  The @p nowMs value is embedded as the
+ *                 little-endian timestampMs field (bytes [2..5]).
  *
  * @param[out] buf      Buffer of at least MAX_FRAME_LEN bytes.
  * @param[in]  seq      Frame sequence number.
@@ -101,6 +112,7 @@ struct CmdDispatchFixture
  * @param[in]  id       Command identifier.
  * @param[in]  extra    Additional payload bytes after CommandHeader (optional).
  * @param[in]  extraLen Length of @p extra.
+ * @param[in]  nowMs    Sender uptime used as frame timestamp (APUS-17).
  * @return Wire frame length (0 on error).
  */
 static uint16_t make_cmd(uint8_t*       buf,
@@ -108,7 +120,8 @@ static uint16_t make_cmd(uint8_t*       buf,
                           uint8_t        flags,
                           CommandId      id,
                           const uint8_t* extra    = nullptr,
-                          uint8_t        extraLen = 0U)
+                          uint8_t        extraLen = 0U,
+                          uint32_t       nowMs    = 1000U)
 {
     Frame tx = {};
     tx.ver        = PROTOCOL_VERSION;
@@ -118,12 +131,17 @@ static uint16_t make_cmd(uint8_t*       buf,
     tx.flags      = flags;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = static_cast<uint8_t>(id);
-    tx.len        = 2U;
+    // CommandHeader timestampMs at bytes [2..5] little-endian (APUS-17).
+    tx.payload[2] = static_cast<uint8_t>( nowMs        & 0xFFU);
+    tx.payload[3] = static_cast<uint8_t>((nowMs >>  8U) & 0xFFU);
+    tx.payload[4] = static_cast<uint8_t>((nowMs >> 16U) & 0xFFU);
+    tx.payload[5] = static_cast<uint8_t>((nowMs >> 24U) & 0xFFU);
+    tx.len        = 6U;  // sizeof(CommandHeader)
 
     if (extra != nullptr && extraLen > 0U)
     {
-        (void)memcpy(&tx.payload[2U], extra, extraLen);
-        tx.len = static_cast<uint8_t>(2U + extraLen);
+        (void)memcpy(&tx.payload[6U], extra, extraLen);
+        tx.len = static_cast<uint8_t>(6U + extraLen);
     }
 
     return encode(tx, buf, MAX_FRAME_LEN);
@@ -731,7 +749,9 @@ void test_cmd_wrong_node_sends_routing_nack()
     tx.flags      = 0U;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = static_cast<uint8_t>(CommandId::REQUEST_STATUS);
-    tx.len        = 2U;
+    // timestampMs = 0 (bytes [2..5]) — routing rejection occurs before MAC check.
+    tx.payload[2] = 0U;  tx.payload[3] = 0U;  tx.payload[4] = 0U;  tx.payload[5] = 0U;
+    tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
     const uint16_t len = encode(tx, wire, sizeof(wire));
@@ -851,7 +871,9 @@ void test_cmd_nonfrag_unknown_commandid()
     tx.flags      = FLAG_ACK_REQ;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = 0x25U;  // One past CommandId::LAST (0x24).
-    tx.len        = 2U;
+    // timestampMs = 0 (bytes [2..5]).
+    tx.payload[2] = 0U;  tx.payload[3] = 0U;  tx.payload[4] = 0U;  tx.payload[5] = 0U;
+    tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
     const uint16_t len = encode(tx, wire, sizeof(wire));
@@ -885,7 +907,7 @@ void test_cmd_nonfrag_unknown_commandid()
 void test_cmd_nonfrag_set_mode_short_payload()
 {
     CmdDispatchFixture f;
-    // No extra bytes → frame.len == 2 < 3 required by SET_MODE.
+    // No extra bytes → frame.len == 6 (sizeof CommandHeader) < 7 required by SET_MODE.
     uint8_t wire[MAX_FRAME_LEN];
     const uint16_t len = make_cmd(wire, 54U, 0U, CommandId::SET_MODE);
 
@@ -896,7 +918,7 @@ void test_cmd_nonfrag_set_mode_short_payload()
 }
 
 /**
- * SET_FCS_ACTIVE with only the CommandHeader (frame.len == 2 < 3 required):
+ * SET_FCS_ACTIVE with only the CommandHeader (frame.len == 6 < 7 required):
  * executeCommand returns INVALID_PARAM.
  * Expected sendCount == 1.
  */
@@ -957,15 +979,15 @@ void test_cmd_nonfrag_set_telem_interval_out_of_range()
 }
 
 /**
- * SET_CONFIG_PARAM with payload shorter than the required 7 bytes
- * (CommandHeader(2) + paramId(1) + value_le32(4)): INVALID_PARAM.
+ * SET_CONFIG_PARAM with payload shorter than the required 11 bytes
+ * (CommandHeader(6) + paramId(1) + value_le32(4)): INVALID_PARAM.
  * Acceptance ACK only.
  * Expected sendCount == 1.
  */
 void test_cmd_nonfrag_set_config_param_short_payload()
 {
     CmdDispatchFixture f;
-    // Provide only paramId (1 byte extra) → total payload = 3 < 7.
+    // Provide only paramId (1 byte extra) → total payload = 7 < 11.
     const uint8_t extra[1U] = {
         static_cast<uint8_t>(ConfigParamId::TELEM_INTERVAL_MS)
     };
@@ -1084,7 +1106,7 @@ void test_cmd_queue_full_sends_nack()
 }
 
 /**
- * SET_TELEM_INTERVAL with only 1 extra byte (frame.len == 3 < 6 required):
+ * SET_TELEM_INTERVAL with only 1 extra byte (frame.len == 7 < 10 required):
  * executeCommand hits the short-payload guard and returns INVALID_PARAM.
  * Acceptance ACK sent; no FLAG_ACK_REQ.
  * Expected sendCount == 1.
@@ -1092,7 +1114,7 @@ void test_cmd_queue_full_sends_nack()
 void test_cmd_nonfrag_set_telem_interval_short_payload()
 {
     CmdDispatchFixture f;
-    // 1 extra byte → frame.len = 3 (CommandHeader=2 + 1), below the 6-byte minimum.
+    // 1 extra byte → frame.len = 7 (CommandHeader=6 + 1), below the 10-byte minimum.
     const uint8_t extra[1U] = { 0x01U };
     uint8_t wire[MAX_FRAME_LEN];
     const uint16_t len = make_cmd(wire, 80U, 0U,
@@ -1124,7 +1146,9 @@ void test_cmd_nonfrag_gap_commandid_default_case()
     tx.flags      = FLAG_ACK_REQ;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = 0x09U;  // In range [0x01..0x24] but has no case in switch.
-    tx.len        = 2U;
+    // timestampMs = 0 (bytes [2..5]).
+    tx.payload[2] = 0U;  tx.payload[3] = 0U;  tx.payload[4] = 0U;  tx.payload[5] = 0U;
+    tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
     const uint16_t len = encode(tx, wire, sizeof(wire));
@@ -1572,4 +1596,131 @@ void test_retry_drops_not_incremented_after_ack_frees_slot()
     }
 
     TEST_ASSERT_EQUAL_UINT32(0U, f.dispatcher.retryDrops());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MAC + TIMESTAMP TESTS  (APUS-17)
+//  These tests exercise the rolling timestamp window that defends against
+//  cross-boot replay attacks (SeqBitmap is not persistent across reboots).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shared 16-byte test key.
+static const uint8_t kTestMacKey[HMAC_KEY_LEN] = {
+    0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+};
+
+/**
+ * @brief Helper: build a MAC-protected COMMAND frame.
+ *
+ * Embeds the given @p nowMs timestamp in CommandHeader bytes [2..5] and
+ * appends an 8-byte HMAC tag using @p kTestMacKey.
+ *
+ * @param[out] wire   Output buffer (at least MAX_FRAME_LEN bytes).
+ * @param[in]  seq    Frame sequence number.
+ * @param[in]  cmdId  Command identifier.
+ * @param[in]  nowMs  Timestamp to embed in the frame.
+ * @return Wire length (0 on encoding error).
+ */
+static uint16_t make_mac_cmd(uint8_t*  wire,
+                              uint8_t   seq,
+                              CommandId cmdId,
+                              uint32_t  nowMs)
+{
+    Frame tx = {};
+    tx.ver        = PROTOCOL_VERSION;
+    tx.node       = NODE_ROCKET;
+    tx.type       = MsgType::COMMAND;
+    tx.seq        = seq;
+    tx.flags      = 0U;
+    tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
+    tx.payload[1] = static_cast<uint8_t>(cmdId);
+    tx.payload[2] = static_cast<uint8_t>( nowMs        & 0xFFU);
+    tx.payload[3] = static_cast<uint8_t>((nowMs >>  8U) & 0xFFU);
+    tx.payload[4] = static_cast<uint8_t>((nowMs >> 16U) & 0xFFU);
+    tx.payload[5] = static_cast<uint8_t>((nowMs >> 24U) & 0xFFU);
+    tx.len        = 6U;  // sizeof(CommandHeader)
+
+    TEST_ASSERT_TRUE(appendCommandMac(kTestMacKey, HMAC_KEY_LEN, tx));
+    return encode(tx, wire, MAX_FRAME_LEN);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TC-AUTH-4: valid MAC + timestamp within window → command accepted
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @test TC-AUTH-4
+ * MAC key set, FLAG_MAC present and valid, timestamp equals nowMs (delta = 0):
+ * command is accepted and a response for REQUEST_STATUS is emitted.
+ * Expected: sendCount ≥ 1 (acceptance ACK + telemetry response).
+ */
+void test_cmd_mac_valid_timestamp_accepted()
+{
+    CmdDispatchFixture f;
+    f.dispatcher.setMacKey(kTestMacKey, HMAC_KEY_LEN);
+
+    constexpr uint32_t kNow = 5000U;
+
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t wlen = make_mac_cmd(wire, 90U, CommandId::REQUEST_STATUS, kNow);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, wlen);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wlen));
+    f.dispatcher.poll(kNow);
+
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, f.dispatchRadio.sendCount());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TC-AUTH-5: valid MAC + expired timestamp → HMAC_INVALID NACK
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @test TC-AUTH-5
+ * MAC key set, FLAG_MAC valid, frame timestamp is 10 000 ms in the past.
+ * Dispatcher clock = 15 000 ms; delta = 10 000 > CMD_TIMESTAMP_WINDOW_MS (5 000 ms).
+ * Expected: exactly one NACK frame sent; no telemetry response.
+ */
+void test_cmd_mac_expired_timestamp_rejected()
+{
+    CmdDispatchFixture f;
+    f.dispatcher.setMacKey(kTestMacKey, HMAC_KEY_LEN);
+
+    constexpr uint32_t kNow     = 15000U;
+    constexpr uint32_t kFrameTs =  5000U;  // 10 000 ms in the past.
+
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t wlen = make_mac_cmd(wire, 91U, CommandId::REQUEST_STATUS, kFrameTs);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, wlen);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wlen));
+    f.dispatcher.poll(kNow);
+
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TC-AUTH-6: valid MAC + future timestamp beyond window → HMAC_INVALID NACK
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @test TC-AUTH-6
+ * MAC key set, FLAG_MAC valid, frame timestamp is 10 000 ms in the future.
+ * Dispatcher clock = 1 000 ms; delta = 9 000 > CMD_TIMESTAMP_WINDOW_MS (5 000 ms).
+ * Expected: exactly one NACK frame sent; no telemetry response.
+ */
+void test_cmd_mac_future_timestamp_rejected()
+{
+    CmdDispatchFixture f;
+    f.dispatcher.setMacKey(kTestMacKey, HMAC_KEY_LEN);
+
+    constexpr uint32_t kNow     =  1000U;
+    constexpr uint32_t kFrameTs = 10000U;  // 9 000 ms in the future.
+
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t wlen = make_mac_cmd(wire, 92U, CommandId::REQUEST_STATUS, kFrameTs);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, wlen);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wlen));
+    f.dispatcher.poll(kNow);
+
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
 }

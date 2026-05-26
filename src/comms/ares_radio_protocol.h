@@ -57,7 +57,7 @@ constexpr uint8_t FLAG_ACK_REQ    = 0x01;  ///< Bit 0: ACK required (APUS-9).
 constexpr uint8_t FLAG_RETRANSMIT = 0x02;  ///< Bit 1: retransmission flag.
 constexpr uint8_t FLAG_PRIORITY   = 0x04;  ///< Bit 2: high-priority frame (APUS-2).
 constexpr uint8_t FLAG_FRAGMENT   = 0x08;  ///< Bit 3: fragmented transfer (APUS-15).
-constexpr uint8_t FLAG_MAC        = 0x10;  ///< Bit 4: HMAC-SHA256 tag present (APUS-17, [C1]).
+constexpr uint8_t FLAG_MAC        = 0x10;  ///< Bit 4: HMAC-SHA256 tag present (APUS-17).
 constexpr uint8_t FLAGS_RESERVED  = 0xE0;  ///< Bits 5–7: reserved, must be zero.
 
 // ── Retransmission constants (APUS-4.5) ────────────────────
@@ -251,14 +251,27 @@ static_assert(sizeof(TelemetryPayload) == 78,
 
 /**
  * Command payload header for ST[8] function management (APUS-7).
+ *
+ * Wire layout (little-endian, packed):
+ *   [0]    priority    — Priority level (Priority enum value).
+ *   [1]    commandId   — Command identifier (CommandId enum value).
+ *   [2..5] timestampMs — Sender uptime in ms at frame creation (APUS-17.
+ *                        Covered by the HMAC-SHA256 tag; receiver validates
+ *                        that |nowMs − timestampMs| ≤ CMD_TIMESTAMP_WINDOW_MS.
  */
 struct CommandHeader
 {
-    uint8_t priority;       ///< Priority level (Priority enum value).
-    uint8_t commandId;      ///< Command identifier (CommandId enum value).
+    uint8_t  priority;       ///< Priority level (Priority enum value).
+    uint8_t  commandId;      ///< Command identifier (CommandId enum value).
+    uint32_t timestampMs;    ///< Frame creation uptime ms for replay-window validation (APUS-17).
 } __attribute__((packed));
-static_assert(sizeof(CommandHeader) == 2,
-              "APUS-3.6: CommandHeader must be 2 bytes");
+static_assert(sizeof(CommandHeader) == 6,
+              "APUS-3.6: CommandHeader must be 6 bytes");
+
+/// Rolling timestamp acceptance window for COMMAND frames (APUS-17).
+/// COMMAND frames authenticated with a MAC key are rejected when
+/// |receiver_nowMs − frame.timestampMs| exceeds this value.
+constexpr uint32_t CMD_TIMESTAMP_WINDOW_MS = 5000U;
 
 /**
  * Event payload header for ST[5] event reporting (APUS-8).

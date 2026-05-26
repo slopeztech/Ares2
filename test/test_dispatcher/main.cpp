@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 59
+ * Test count: 62
  */
 #include <unity.h>
 
@@ -92,6 +92,10 @@ extern void test_retry_drops_initial_zero();
 extern void test_retry_drops_increments_on_buffer_full();
 extern void test_retry_drops_accumulates();
 extern void test_retry_drops_not_incremented_after_ack_frees_slot();
+// Rolling timestamp window (APUS-17)
+extern void test_cmd_mac_valid_timestamp_accepted();
+extern void test_cmd_mac_expired_timestamp_rejected();
+extern void test_cmd_mac_future_timestamp_rejected();
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -177,6 +181,11 @@ int main()
     RUN_TEST(test_retry_drops_increments_on_buffer_full);
     RUN_TEST(test_retry_drops_accumulates);
     RUN_TEST(test_retry_drops_not_incremented_after_ack_frees_slot);
+
+    // Rolling timestamp window (APUS-17)
+    RUN_TEST(test_cmd_mac_valid_timestamp_accepted);
+    RUN_TEST(test_cmd_mac_expired_timestamp_rejected);
+    RUN_TEST(test_cmd_mac_future_timestamp_rejected);
 
     return UNITY_END();
 }
