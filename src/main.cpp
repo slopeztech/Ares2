@@ -296,5 +296,8 @@ void loop()
         sleepMs64 > static_cast<uint64_t>(ares::LOOP_SLEEP_MAX_MS)
         ? ares::LOOP_SLEEP_MAX_MS
         : sleepMs64);
+    // pdMS_TO_TICKS truncates to tick resolution (1000/configTICK_RATE_HZ ms/tick); TickType_t
+    // (uint32_t) saturates at (0xFFFFFFFF/configTICK_RATE_HZ)*1000 ms — ~49.7 days at 1000 Hz,
+    // well above LOOP_SLEEP_MAX_MS, so no overflow occurs at the default tick rate.
     vTaskDelay(pdMS_TO_TICKS(sleepMs));
 }
