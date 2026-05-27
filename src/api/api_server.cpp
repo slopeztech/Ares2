@@ -81,7 +81,10 @@ struct MissionUploadBuf
      * @brief  Return the upload buffer after asserting task ownership.
      * @param  expected  The only TaskHandle allowed to access this buffer.
      * @return Pointer to the static buffer (SIZE bytes, never null).
-     * @pre    xTaskGetCurrentTaskHandle() == expected; aborts otherwise.
+     * @pre    xTaskGetCurrentTaskHandle() == expected.  Violation is caught
+     *         by ARES_ASSERT in debug builds; in release builds
+     *         (-DARES_NDEBUG) the check is elided and the caller is
+     *         responsible for guaranteeing task identity.
      */
     static char* get(TaskHandle_t expected)
     {
