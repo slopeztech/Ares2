@@ -50,12 +50,49 @@ const char* getCorsHeaders() noexcept
     return s_corsHeadersBuf;
 }
 
-// Mission file uploads exceed API_MAX_REQUEST_BODY; keep in static storage
-// so the body does not live on the API-task stack.  The API server is
-// single-threaded (one request at a time), so no mutex is needed here.
-// handleClient() asserts xTaskGetCurrentTaskHandle() == taskHandle_ to
-// enforce this invariant at runtime (see ARES_ASSERT below).
-static char g_missionUploadBuf[ares::AMS_MAX_SCRIPT_BYTES + 1U] = {};
+// ── Mission upload buffer ──────────────────────────
+/**
+ * @brief  Mission-file upload scratchpad.
+ *
+ * OWNERSHIP INVARIANT: the API task is the sole accessor of this buffer.
+ * Any concurrent access is a data race -- this buffer has no mutex.
+ *
+ * Rationale: AMS script uploads exceed API_MAX_REQUEST_BODY (~512 B).
+ * Placing the ~4 KB buffer in BSS avoids stack exhaustion (PO10-3) while
+ * keeping heap usage at zero.
+ *
+ * Enforcement: get() asserts xTaskGetCurrentTaskHandle() == expected at
+ * every call site.  If the assertion fires, a refactor has routed the
+ * mission-upload handler through a different task -- add a mutex or
+ * redesign the ownership model before removing this assert.
+ */
+struct MissionUploadBuf
+{
+    MissionUploadBuf()                                   = delete;
+    ~MissionUploadBuf()                                  = delete;
+    MissionUploadBuf(const MissionUploadBuf&)            = delete;
+    MissionUploadBuf& operator=(const MissionUploadBuf&) = delete;
+    MissionUploadBuf(MissionUploadBuf&&)                 = delete;
+    MissionUploadBuf& operator=(MissionUploadBuf&&)      = delete;
+
+    static constexpr size_t SIZE = ares::AMS_MAX_SCRIPT_BYTES + 1U;
+
+    /**
+     * @brief  Return the upload buffer after asserting task ownership.
+     * @param  expected  The only TaskHandle allowed to access this buffer.
+     * @return Pointer to the static buffer (SIZE bytes, never null).
+     * @pre    xTaskGetCurrentTaskHandle() == expected; aborts otherwise.
+     */
+    static char* get(TaskHandle_t expected)
+    {
+        ARES_ASSERT(xTaskGetCurrentTaskHandle() == expected);
+        return buf_;
+    }
+
+private:
+    static char buf_[SIZE];
+};
+char MissionUploadBuf::buf_[MissionUploadBuf::SIZE] = {};
 
 static ares::OperatingMode decodeOperatingMode(uint8_t rawMode)
 {
@@ -457,11 +494,6 @@ bool ApiServer::readBody(WiFiClient& client,
 
 void ApiServer::handleClient(WiFiClient& client)
 {
-    // Guard: g_missionUploadBuf is unprotected; enforce the single-task
-    // invariant so a future refactor that spawns a second handler task is
-    // caught immediately rather than causing a data race.
-    ARES_ASSERT(xTaskGetCurrentTaskHandle() == taskHandle_);
-
     // Phase 1: Parse request line (PO10-4.1)
     char method[HTTP_METHOD_MAX] = {};
     char path[HTTP_PATH_MAX]     = {};
@@ -499,12 +531,13 @@ void ApiServer::handleClient(WiFiClient& client)
                                : static_cast<uint32_t>(ares::API_MAX_REQUEST_BODY);
 
     char  smallBody[ares::API_MAX_REQUEST_BODY + 1U] = {};
-    char* body = isMissionUpload ? g_missionUploadBuf : smallBody;
+    char* body = smallBody;
     uint32_t bodyLen = 0;
 
     if (isMissionUpload)
     {
-        memset(g_missionUploadBuf, 0, sizeof(g_missionUploadBuf));
+        body = MissionUploadBuf::get(taskHandle_);
+        memset(body, 0, MissionUploadBuf::SIZE);
     }
 
     if (contentLength > 0
