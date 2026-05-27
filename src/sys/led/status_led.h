@@ -73,6 +73,14 @@ public:
      */
     void setMode(ares::OperatingMode mode);
 
+    /**
+     * Return the current operating mode.
+     * Thread-safe — reads the same atomic written by setMode().
+     * Invalid raw values (range check against OperatingMode::LAST) are
+     * normalised to ERROR, matching the task's own decodeOperatingMode().
+     */
+    ares::OperatingMode getMode() const;
+
 private:
     /// RTOS task entry point (static, forwards to run()).
     static void taskFn(void* param);

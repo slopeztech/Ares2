@@ -181,7 +181,7 @@ void setup()
     // Status LED — NeoPixel on GPIO 21
     (void)ledIf.begin();
     ledIf.setBrightness(ares::DEFAULT_LED_BRIGHTNESS);
-    statusLed.begin();  // starts RTOS task — solid green (IDLE)
+    statusLed.begin();  // starts RTOS task — fast green blink (BOOT)
 
     // On-board flash storage (LittleFS)
     (void)storageIf.begin();
@@ -223,6 +223,16 @@ void setup()
     // Classify reset cause, restore in-flight checkpoint if needed,
     // and set the initial LED mode.
     applyBootCheckpoint(missionEngine, apiServer, statusLed);
+
+    // Safety net — applyBootCheckpoint() above is the sole point
+    // that transitions the LED out of BOOT.  If it is ever bypassed by an
+    // early-return path added above (e.g. a critical sensor-init failure),
+    // the LED would remain stuck on the BOOT blink indefinitely.  Force
+    // ERROR here so any such failure is immediately visible on the LED.
+    if (statusLed.getMode() == ares::OperatingMode::BOOT)
+    {
+        statusLed.setMode(ares::OperatingMode::ERROR);
+    }
 
     // Subscribe loop() to the TWDT — registered last to avoid false trips
     // during the subsystem init sequence above.

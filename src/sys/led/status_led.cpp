@@ -76,6 +76,16 @@ void StatusLed::setMode(OperatingMode mode)
     mode_.store(static_cast<uint8_t>(mode));
 }
 
+OperatingMode StatusLed::getMode() const
+{
+    const uint8_t raw = mode_.load();
+    if (raw <= static_cast<uint8_t>(OperatingMode::LAST))
+    {
+        return static_cast<OperatingMode>(raw);
+    }
+    return OperatingMode::ERROR;
+}
+
 // ── RTOS task ───────────────────────────────────────────────
 
 void StatusLed::taskFn(void* param)
