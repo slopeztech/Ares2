@@ -158,6 +158,31 @@ static void applyBootCheckpoint(ares::ams::MissionScriptEngine& engine,
 }
 
 // ═══════════════════════════════════════════════════════════
+/**
+ * @brief RAII guard: ensures the status LED transitions out of BOOT on every
+ *        exit path from setup() — normal completion or early return.
+ *        Destructor forces ERROR when the mode is still BOOT at scope exit,
+ *        making any bypassed applyBootCheckpoint() immediately visible (BUG-18).
+ */
+struct LedBootGuard
+{
+    explicit LedBootGuard(StatusLed& l) : led_(l) {}
+    ~LedBootGuard()
+    {
+        if (led_.getMode() == ares::OperatingMode::BOOT)
+        {
+            led_.setMode(ares::OperatingMode::ERROR);
+        }
+    }
+    LedBootGuard(const LedBootGuard&)            = delete;  // CERT-18.3
+    LedBootGuard& operator=(const LedBootGuard&) = delete;
+    LedBootGuard(LedBootGuard&&)                 = delete;
+    LedBootGuard& operator=(LedBootGuard&&)      = delete;
+private:
+    StatusLed& led_;
+};
+
+// ═════════════════════════════════════════════════════════
 void setup()
 {
     // Keep USB serial available for on-demand diagnostics, but do not
@@ -181,7 +206,8 @@ void setup()
     // Status LED — NeoPixel on GPIO 21
     (void)ledIf.begin();
     ledIf.setBrightness(ares::DEFAULT_LED_BRIGHTNESS);
-    statusLed.begin();  // starts RTOS task — solid green (IDLE)
+    statusLed.begin();  // starts RTOS task — fast green blink (BOOT)
+    LedBootGuard bootGuard{statusLed};  // BUG-18: force ERROR on any early exit
 
     // On-board flash storage (LittleFS)
     (void)storageIf.begin();

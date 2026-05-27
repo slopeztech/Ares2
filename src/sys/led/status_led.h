@@ -37,6 +37,7 @@
  *
  * Concurrency model:
  *   - setMode() writes an atomic — lock-free, any task, any core.
+ *   - getMode() reads the same atomic — lock-free, any task, any core.
  *   - The internal task reads the atomic each iteration and
  *     selects the corresponding LED pattern.
  *   - The LED driver is accessed exclusively from the internal
@@ -72,6 +73,14 @@ public:
      * @param[in] mode  New operating mode to display.
      */
     void setMode(ares::OperatingMode mode);
+
+    /**
+     * Return the current operating mode.
+     * Thread-safe — reads the same atomic written by setMode().
+     * Invalid raw values (range check against OperatingMode::LAST) are
+     * normalised to ERROR, matching the task's own decodeOperatingMode().
+     */
+    ares::OperatingMode getMode() const;
 
 private:
     /// RTOS task entry point (static, forwards to run()).
