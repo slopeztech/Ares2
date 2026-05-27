@@ -158,6 +158,31 @@ static void applyBootCheckpoint(ares::ams::MissionScriptEngine& engine,
 }
 
 // ═══════════════════════════════════════════════════════════
+/**
+ * @brief RAII guard: ensures the status LED transitions out of BOOT on every
+ *        exit path from setup() — normal completion or early return.
+ *        Destructor forces ERROR when the mode is still BOOT at scope exit,
+ *        making any bypassed applyBootCheckpoint() immediately visible (BUG-18).
+ */
+struct LedBootGuard
+{
+    explicit LedBootGuard(StatusLed& l) : led_(l) {}
+    ~LedBootGuard()
+    {
+        if (led_.getMode() == ares::OperatingMode::BOOT)
+        {
+            led_.setMode(ares::OperatingMode::ERROR);
+        }
+    }
+    LedBootGuard(const LedBootGuard&)            = delete;  // CERT-18.3
+    LedBootGuard& operator=(const LedBootGuard&) = delete;
+    LedBootGuard(LedBootGuard&&)                 = delete;
+    LedBootGuard& operator=(LedBootGuard&&)      = delete;
+private:
+    StatusLed& led_;
+};
+
+// ═════════════════════════════════════════════════════════
 void setup()
 {
     // Keep USB serial available for on-demand diagnostics, but do not
@@ -182,6 +207,7 @@ void setup()
     (void)ledIf.begin();
     ledIf.setBrightness(ares::DEFAULT_LED_BRIGHTNESS);
     statusLed.begin();  // starts RTOS task — fast green blink (BOOT)
+    LedBootGuard bootGuard{statusLed};  // BUG-18: force ERROR on any early exit
 
     // On-board flash storage (LittleFS)
     (void)storageIf.begin();
@@ -223,16 +249,6 @@ void setup()
     // Classify reset cause, restore in-flight checkpoint if needed,
     // and set the initial LED mode.
     applyBootCheckpoint(missionEngine, apiServer, statusLed);
-
-    // Safety net — applyBootCheckpoint() above is the sole point
-    // that transitions the LED out of BOOT.  If it is ever bypassed by an
-    // early-return path added above (e.g. a critical sensor-init failure),
-    // the LED would remain stuck on the BOOT blink indefinitely.  Force
-    // ERROR here so any such failure is immediately visible on the LED.
-    if (statusLed.getMode() == ares::OperatingMode::BOOT)
-    {
-        statusLed.setMode(ares::OperatingMode::ERROR);
-    }
 
     // Subscribe loop() to the TWDT — registered last to avoid false trips
     // during the subsystem init sequence above.

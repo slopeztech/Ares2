@@ -37,6 +37,7 @@
  *
  * Concurrency model:
  *   - setMode() writes an atomic — lock-free, any task, any core.
+ *   - getMode() reads the same atomic — lock-free, any task, any core.
  *   - The internal task reads the atomic each iteration and
  *     selects the corresponding LED pattern.
  *   - The LED driver is accessed exclusively from the internal
