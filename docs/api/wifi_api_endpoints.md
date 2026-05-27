@@ -93,7 +93,7 @@ Scan endpoints (`POST /api/scans/i2c`, `POST /api/scans/uart`) are blocked in fl
 ```json
 {
   "board": "ESP32-S3 Zero Mini",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "uptimeMs": 5340,
   "freeHeap": 245760,
   "mode": "IDLE",

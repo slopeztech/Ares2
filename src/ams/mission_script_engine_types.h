@@ -46,6 +46,12 @@ enum class EngineStatus : uint8_t
     FIRST = IDLE,     // CERT-6.1 — range validation sentinels
     LAST  = LOADED,
 };
+// Sentinel consistency guards — fail at compile time if a new enumerator is
+// inserted before IDLE or after LOADED without updating FIRST / LAST.
+static_assert(static_cast<uint8_t>(EngineStatus::FIRST) == 0U,
+              "EngineStatus::FIRST must alias the lowest enumerator (IDLE = 0)");
+static_assert(static_cast<uint8_t>(EngineStatus::LAST)  == 4U,
+              "EngineStatus::LAST must alias the highest enumerator (LOADED = 4)");
 
 /**
  * Telecommand tokens that can be injected via injectTcCommand().
@@ -355,6 +361,8 @@ struct TaskDef
 struct HkField
 {
     char        label[20] = {};  ///< User-provided key (CSV column name).
+                                 ///< Must not contain ',' or '"'; any such characters
+                                 ///< are replaced with '_' when the CSV header is written.
     char        alias[16] = {};  ///< Peripheral alias (e.g. "GPS") or variable name
                                  ///< when @c field == SensorField::VAR (AMS-4.8).
     SensorField field     = SensorField::ALT;

@@ -382,6 +382,26 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(  // NOLINT(readability-fu
     }
 }
 
+// ── CSV helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * @brief Copy @p src into @p dst, replacing CSV-reserved characters (',' and '"')
+ *        with '_' so that the label is safe to embed in an unquoted CSV header.
+ *
+ * @param[in]  src      Null-terminated source label (e.g. HkField::label).
+ * @param[out] dst      Caller-supplied buffer, at least @p dstSize bytes.
+ * @param[in]  dstSize  Size of @p dst in bytes; output is always NUL-terminated.
+ */
+static void sanitiseCsvLabel(const char* src, char* dst, size_t dstSize)
+{
+    size_t i = 0U;
+    for (; i < dstSize - 1U && src[i] != '\0'; i++)
+    {
+        dst[i] = (src[i] == ',' || src[i] == '"') ? '_' : src[i];
+    }
+    dst[i] = '\0';
+}
+
 // ── appendLogReportLocked ────────────────────────────────────────────────────
 
 /**
@@ -455,8 +475,10 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
             uint32_t hPos = static_cast<uint32_t>(hLen);
             for (uint8_t i = 0; i < slot.fieldCount && hPos < sizeof(hLine) - 2U; i++)
             {
+                char safeLabel[sizeof(HkField::label)] = {};
+                sanitiseCsvLabel(slot.fields[i].label, safeLabel, sizeof(safeLabel));
                 const int32_t n = static_cast<int32_t>(snprintf(&hLine[hPos], sizeof(hLine) - hPos,
-                                       ",%s", slot.fields[i].label));
+                                       ",%s", safeLabel));
                 if (n <= 0) { break; }
                 hPos += static_cast<uint32_t>(n);
             }
@@ -530,7 +552,9 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
     uint32_t hPos = static_cast<uint32_t>(hLen);
     for (uint8_t i = 0; i < st.logFieldCount; i++)
     {
-        const int32_t n = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, ",%s", st.logFields[i].label));
+        char safeLabel[sizeof(HkField::label)] = {};
+        sanitiseCsvLabel(st.logFields[i].label, safeLabel, sizeof(safeLabel));
+        const int32_t n = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, ",%s", safeLabel));
         if (n <= 0) { break; }
         hPos += static_cast<uint32_t>(n);
         if (hPos >= sizeof(line) - 2U) { break; }
