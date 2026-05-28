@@ -57,6 +57,12 @@ docs/changelog/
     v2.3.0.md   ← Minor: radio_retry_drops health counter + TWDT sleep cap
     v2.3.1.md   ← Fix: RFC 7230 OWS compliance in parseHeaders() [M3, M14]
     v2.3.2.md   ← Security: first-boot credentials, constant-time token, WiFi-in-flight, HTTP fixes
+    v2.3.3.md   ← Security: radio link HMAC-SHA256 authentication ([C1])
+    v2.3.4.md   ← Security: rolling timestamp anti-replay window for COMMAND frames ([C1])
+    v2.3.5.md   ← Fix: documentation clarity (BUG-13), CSV robustness (BUG-15), compile-time sentinel guard (BUG-16)
+    v2.3.6.md   ← Robustness: LED BOOT state guaranteed to exit on every setup() path (BUG-18)
+    v2.3.7.md   ← Security: global mission-upload buffer ownership invariant enforced (BUG-3)
+    v2.3.8.md   ← Hardening: ARES_REQUIRE macro; release-invisible safety checks replaced (P0-1, P0-5, P1-1); CI fix
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -84,3 +90,9 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.0](../changelog/v2.3.0.md) | 2026-05-20 | Minor   | New: `radio_retry_drops` health counter in `GET /api/status` (APUS-4.5); Fix: TWDT sleep cap `LOOP_SLEEP_MAX_MS = 2000U`; 4 new unit tests |
 | [2.3.1](../changelog/v2.3.1.md) | 2026-05-20 | Patch   | Fix: RFC 7230 §3.2.3 OWS compliance in `parseHeaders()` — unbounded leading OWS + trailing OWS on token ([M3], [M14]); 13 new unit tests |
 | [2.3.2](../changelog/v2.3.2.md) | 2026-05-22 | Patch   | Security: first-boot TRNG credentials ([C2], [C3]); WiFi off in flight ([C5]); correct HTTP reason phrases ([H6]); 202 on wifi_password change ([H7]); scan endpoints locked in flight ([H8]); abort allows RUNNING engine ([H10]); defensive double-init guards ([H14]); constant-time token compare ([M4]); `toPublicJson` bufSize guard ([M7]); 414 on oversized URI ([M8]); empty password preserves stored ([M10]); `sendError` message truncation ([M11]); 17 new unit tests |
+| [2.3.3](../changelog/v2.3.3.md) | 2026-05-22 | Patch   | Security: radio link HMAC-SHA256 authentication for COMMAND frames ([C1]) |
+| [2.3.4](../changelog/v2.3.4.md) | 2026-05-26 | Patch   | Security: rolling timestamp anti-replay window for COMMAND frames ([C1]) |
+| [2.3.5](../changelog/v2.3.5.md) | 2026-05-27 | Patch   | Fix: documentation clarity (BUG-13); CSV robustness (BUG-15); compile-time sentinel guard (BUG-16) |
+| [2.3.6](../changelog/v2.3.6.md) | 2026-05-27 | Patch   | Robustness: LED BOOT state guaranteed to exit on every `setup()` path (BUG-18) |
+| [2.3.7](../changelog/v2.3.7.md) | 2026-05-28 | Patch   | Security: global mission-upload buffer ownership invariant enforced at access point (BUG-3) |
+| [2.3.8](../changelog/v2.3.8.md) | 2026-05-29 | Patch   | Hardening: `ARES_REQUIRE` macro; release-invisible safety checks replaced; engine destructor lifetime fix; CI parser fix |

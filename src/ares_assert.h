@@ -41,3 +41,21 @@
 #define ARES_ASSERT(cond) ((void)0)
 
 #endif
+
+/**
+ * @def ARES_REQUIRE(cond)
+ * Abort with a log message if @p cond is false — active in BOTH debug
+ * and release builds.
+ *
+ * Use for invariants that must hold in production: task ownership checks,
+ * structural preconditions that indicate a programming error if violated.
+ * Unlike ARES_ASSERT, this macro is never elided by -DARES_NDEBUG.
+ */
+#define ARES_REQUIRE(cond)                                              \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            LOG_E("REQUIRE", "%s:%d %s", __FILE__, __LINE__, #cond);   \
+            Serial.flush();                                             \
+            ::abort();                                                  \
+        }                                                               \
+    } while (0)
