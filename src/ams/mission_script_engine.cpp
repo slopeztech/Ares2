@@ -69,21 +69,23 @@ bool MissionScriptEngine::begin()
     // at most one engine may have begin() outstanding at any time.
     ARES_REQUIRE(sBeginCount == 0U);
     sBeginCount++;
-    begun_ = true;
 
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);
     if (mutex_ == nullptr)
     {
+        sBeginCount--;
         return false;
     }
 
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired())
     {
+        sBeginCount--;
         return false;
     }
 
     (void)tryRestoreResumePointLocked(millis64());
+    begun_ = true;
     return true;
 }
 

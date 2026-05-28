@@ -210,7 +210,11 @@ void setup()
     LedBootGuard bootGuard{statusLed};  // BUG-18: force ERROR on any early exit
 
     // On-board flash storage (LittleFS)
-    (void)storageIf.begin();
+    if (!storageIf.begin())
+    {
+        LOG_E("BOOT", "storage init failed");
+        return;
+    }
 
     // Device security configuration — load before WiFi AP starts so the
     // correct password and token are live from the first connection.
@@ -241,10 +245,18 @@ void setup()
     (void)wifiAp.begin(deviceConfig);
 
     // AMS runtime (IDLE by default, waits for API activation)
-    (void)missionEngine.begin();
+    if (!missionEngine.begin())
+    {
+        LOG_E("BOOT", "AMS engine init failed");
+        return;
+    }
 
     // REST API server — start after AMS is ready to avoid init race
-    (void)apiServer.begin();
+    if (!apiServer.begin())
+    {
+        LOG_E("BOOT", "API server init failed");
+        return;
+    }
 
     // Classify reset cause, restore in-flight checkpoint if needed,
     // and set the initial LED mode.
