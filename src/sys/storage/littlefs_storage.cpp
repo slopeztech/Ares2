@@ -375,7 +375,11 @@ bool LittleFsStorage::begin()
 
     // PO10-3: static allocation — no heap
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);
-    ARES_ASSERT(mutex_ != nullptr);
+    if (mutex_ == nullptr)
+    {
+        LOG_E(TAG, "mutex create failed");
+        return false;
+    }
 
     // Mount — formatOnFail=false prevents silent data loss: a transient
     // single-sector corruption on power-loss must not silently erase the

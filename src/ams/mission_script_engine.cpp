@@ -50,31 +50,42 @@ MissionScriptEngine::MissionScriptEngine(StorageInterface&  storage,
 {
 }
 
+static uint8_t sBeginCount = 0U;
+
+MissionScriptEngine::~MissionScriptEngine()
+{
+    if (begun_)
+    {
+        sBeginCount--;
+    }
+}
+
 bool MissionScriptEngine::begin()
 {
     // Single-instance invariant: tryRestoreResumePointLocked uses a function-
     // local static buffer (static char buf[512]) that is shared across all
     // calls because it lives in .bss.  Two concurrent MissionScriptEngine
     // instances would race over that buffer during restore.  Enforce that
-    // only one engine ever calls begin().
-    static uint8_t sBeginCount = 0U;
-    ARES_ASSERT(sBeginCount == 0U);  // "only one MissionScriptEngine instance may call begin()"
+    // at most one engine may have begin() outstanding at any time.
+    ARES_REQUIRE(sBeginCount == 0U);
     sBeginCount++;
 
     mutex_ = xSemaphoreCreateMutexStatic(&mutexBuf_);
-    ARES_ASSERT(mutex_ != nullptr);
     if (mutex_ == nullptr)
     {
+        sBeginCount--;
         return false;
     }
 
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
     if (!guard.acquired())
     {
+        sBeginCount--;
         return false;
     }
 
     (void)tryRestoreResumePointLocked(millis64());
+    begun_ = true;
     return true;
 }
 

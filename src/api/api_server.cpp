@@ -61,10 +61,9 @@ const char* getCorsHeaders() noexcept
  * Placing the ~4 KB buffer in BSS avoids stack exhaustion (PO10-3) while
  * keeping heap usage at zero.
  *
- * Enforcement: get() asserts xTaskGetCurrentTaskHandle() == expected at
- * every call site.  If the assertion fires, a refactor has routed the
- * mission-upload handler through a different task -- add a mutex or
- * redesign the ownership model before removing this assert.
+ * Enforcement: get() uses ARES_REQUIRE (never elided) to verify
+ * xTaskGetCurrentTaskHandle() == expected on every access.  A violation
+ * aborts the firmware in both debug and release builds.
  */
 struct MissionUploadBuf
 {
@@ -78,17 +77,15 @@ struct MissionUploadBuf
     static constexpr size_t SIZE = ares::AMS_MAX_SCRIPT_BYTES + 1U;
 
     /**
-     * @brief  Return the upload buffer after asserting task ownership.
-     * @param  expected  The only TaskHandle allowed to access this buffer.
+     * @brief  Return the upload buffer after enforcing task ownership.
+     * @param  expected  The only TaskHandle_t allowed to access this buffer.
      * @return Pointer to the static buffer (SIZE bytes, never null).
-     * @pre    xTaskGetCurrentTaskHandle() == expected.  Violation is caught
-     *         by ARES_ASSERT in debug builds; in release builds
-     *         (-DARES_NDEBUG) the check is elided and the caller is
-     *         responsible for guaranteeing task identity.
+     * @pre    xTaskGetCurrentTaskHandle() == expected.  Violation aborts
+     *         the firmware in both debug and release builds (ARES_REQUIRE).
      */
     static char* get(TaskHandle_t expected)
     {
-        ARES_ASSERT(xTaskGetCurrentTaskHandle() == expected);
+        ARES_REQUIRE(xTaskGetCurrentTaskHandle() == expected);
         return buf_;
     }
 
@@ -148,7 +145,11 @@ bool ApiServer::begin()
 
     // Create config mutex with priority inheritance (RTOS-4.1)
     cfgMtx_ = xSemaphoreCreateMutexStatic(&cfgMtxBuf_);
-    ARES_ASSERT(cfgMtx_ != nullptr);
+    if (cfgMtx_ == nullptr)
+    {
+        LOG_E(TAG, "mutex create failed");
+        return false;
+    }
 
     httpServer.begin();
     httpServer.setNoDelay(true);

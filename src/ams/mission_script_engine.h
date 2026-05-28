@@ -82,6 +82,7 @@ public:
     MissionScriptEngine& operator=(const MissionScriptEngine&) = delete;
     MissionScriptEngine(MissionScriptEngine&&)                 = delete;
     MissionScriptEngine& operator=(MissionScriptEngine&&)      = delete;
+    ~MissionScriptEngine();
 
     /**
      * Initialise the engine and create the internal mutex.
@@ -820,6 +821,7 @@ private:
     // directive (include, var, const, pus.*, radio.config) seen after this
     // point is a parse error.
     bool     parseSeenState_      = false;
+    bool     begun_               = false;
 };
 
 } // namespace ams
