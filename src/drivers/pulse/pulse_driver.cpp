@@ -79,6 +79,17 @@ bool PulseDriver::begin()
         if (timers_[ch] == nullptr)
         {
             LOG_E(TAG, "timer creation failed for channel %u", static_cast<uint32_t>(ch));
+            // Rollback: remove from the timer service all timers already
+            // created during this begin() call so the driver is left in a
+            // fully defined invalid state (no orphaned timer handles).
+            for (uint8_t i = 0U; i < ch; i++)
+            {
+                if (timers_[i] != nullptr)
+                {
+                    (void)xTimerDelete(timers_[i], pdMS_TO_TICKS(100U));
+                    timers_[i] = nullptr;
+                }
+            }
             return false;
         }
     }

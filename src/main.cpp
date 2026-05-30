@@ -182,6 +182,18 @@ private:
     StatusLed& led_;
 };
 
+// ═══════════════════════════════════════════════════════════
+/// @brief Load the provisioned radio MAC key into the dispatcher (APUS-17).
+///        No-op when no key has been provisioned yet (open / dev mode).
+static void applyRadioMacKey(DeviceConfig& cfg, ares::RadioDispatcher& dispatcher)
+{
+    uint8_t radioKeyBuf[ares::proto::HMAC_KEY_LEN] = {};
+    if (cfg.radioKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf))))
+    {
+        dispatcher.setMacKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf)));
+    }
+}
+
 // ═════════════════════════════════════════════════════════
 void setup()
 {
@@ -228,14 +240,7 @@ void setup()
     }
 
     // Wire radio MAC key into the dispatcher (APUS-17).
-    // radioKey() returns false if no key has been provisioned (open / dev mode).
-    {
-        uint8_t radioKeyBuf[ares::proto::HMAC_KEY_LEN] = {};
-        if (deviceConfig.radioKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf))))
-        {
-            radioDispatcher.setMacKey(radioKeyBuf, static_cast<uint8_t>(sizeof(radioKeyBuf)));
-        }
-    }
+    applyRadioMacKey(deviceConfig, radioDispatcher);
 
     // LoRa radio transceiver (UART2)
     (void)radioIf.begin();
