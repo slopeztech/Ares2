@@ -82,12 +82,20 @@ bool PulseDriver::begin()
             // Rollback: remove from the timer service all timers already
             // created during this begin() call so the driver is left in a
             // fully defined invalid state (no orphaned timer handles).
+            // Only clear the handle if xTimerDelete succeeds; if it fails
+            // the handle remains reachable so it is not permanently orphaned.
             for (uint8_t i = 0U; i < ch; i++)
             {
                 if (timers_[i] != nullptr)
                 {
-                    (void)xTimerDelete(timers_[i], pdMS_TO_TICKS(100U));
-                    timers_[i] = nullptr;
+                    if (xTimerDelete(timers_[i], pdMS_TO_TICKS(100U)) == pdPASS)
+                    {
+                        timers_[i] = nullptr;
+                    }
+                    else
+                    {
+                        LOG_E(TAG, "timer delete failed for channel %u", static_cast<uint32_t>(i));
+                    }
                 }
             }
             return false;
