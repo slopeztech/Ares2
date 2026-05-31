@@ -38,8 +38,9 @@ static WiFiServer httpServer(ares::WIFI_API_PORT);
 // ── CORS header buffer (updated from DeviceConfig) ───────────
 // Initialised with the open-mode default; refreshed by ApiServer::refreshCorsHeaders()
 // at begin() and after every successful PUT /api/device/config.
-// Written exclusively from setup() (before tasks start) and the API task
-// (single-threaded) — no mutex required.
+// Writes are serialised by cfgMtx_ (when it exists). The initial write in
+// begin() happens before cfgMtx_ is created and before any task runs, so
+// no lock is required for that single call.
 static char s_corsHeadersBuf[256] =
     "Access-Control-Allow-Origin: *\r\n"
     "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
@@ -134,6 +135,21 @@ ApiServer::ApiServer(WifiAp& wifi, BarometerInterface& baro,
 
 void ApiServer::refreshCorsHeaders()
 {
+    // cfgMtx_ is null during the initial call from begin() (setup phase,
+    // no concurrent tasks yet). Once the mutex is live, delegate to
+    // ScopedLock which handles acquire/release and its own suppressions.
+    if (cfgMtx_ == nullptr)
+    {
+        devCfg_.buildCorsHeader(s_corsHeadersBuf, sizeof(s_corsHeadersBuf));
+        return;
+    }
+
+    ScopedLock lk(cfgMtx_, pdMS_TO_TICKS(ares::API_CFG_MUTEX_TIMEOUT_MS));
+    if (!lk.acquired())
+    {
+        LOG_E(TAG, "refreshCorsHeaders: mutex timeout");
+        return;
+    }
     devCfg_.buildCorsHeader(s_corsHeadersBuf, sizeof(s_corsHeadersBuf));
 }
 
@@ -164,14 +180,22 @@ bool ApiServer::begin()
         &tcb_,
         tskNO_AFFINITY);                   // RTOS-13
 
-    ARES_ASSERT(taskHandle_ != nullptr);
+    if (taskHandle_ == nullptr)
+    {
+        LOG_E(TAG, "API task creation failed — degrading to no-WiFi mode");
+        if (statusLed_ != nullptr)
+        {
+            statusLed_->setMode(ares::OperatingMode::ERROR);
+        }
+        return false;
+    }
 
     LOG_I(TAG, "task started (stack=%u pri=%u port=%u)",
           static_cast<uint32_t>(sizeof(stack_)),
           static_cast<uint32_t>(ares::TASK_PRIORITY_API),
           static_cast<uint32_t>(ares::WIFI_API_PORT));
 
-    return taskHandle_ != nullptr;
+    return true;
 }
 
 void ApiServer::setMode(ares::OperatingMode mode)
@@ -260,6 +284,16 @@ void ApiServer::run()
 
     while (true)  // RTOS task loop — blocks on vTaskDelay (RTOS-1.3)
     {
+        // Feed watchdog unconditionally at the top of every iteration so
+        // handleClient() has a full WDT window and the reset is not
+        // gated on vTaskDelay returning (P1-6).
+        const esp_err_t wdtResetErr = esp_task_wdt_reset();
+        if (wdtResetErr != ESP_OK)
+        {
+            LOG_E(TAG, "esp_task_wdt_reset failed: err=%d",
+                  static_cast<int>(wdtResetErr));
+        }
+
         WiFiClient client = httpServer.accept();
         if (client.connected())
         {
@@ -271,7 +305,11 @@ void ApiServer::run()
         const uint32_t nowMs = millis();
         if ((nowMs - lastStackLogMs) >= API_STACK_MONITOR_INTERVAL_MS)
         {
-            const UBaseType_t minFreeWords = uxTaskGetStackHighWaterMark(nullptr);
+            // Use the explicit task handle so FreeRTOS returns valid data
+            // even during the first iterations before the HWM is populated.
+            // nullptr would return 0 at startup causing a spurious warning (P1-5).
+            const UBaseType_t minFreeWords =
+                uxTaskGetStackHighWaterMark(taskHandle_);
             const uint32_t minFreeBytes = static_cast<uint32_t>(minFreeWords)
                                        * static_cast<uint32_t>(sizeof(StackType_t));
             if (minFreeBytes < API_STACK_WARN_BYTES)
@@ -283,13 +321,6 @@ void ApiServer::run()
                 LOG_D(TAG, "stack low-water: free=%u B", minFreeBytes);
             }
             lastStackLogMs = nowMs;
-        }
-
-        const esp_err_t wdtResetErr = esp_task_wdt_reset();
-        if (wdtResetErr != ESP_OK)
-        {
-            LOG_E(TAG, "esp_task_wdt_reset failed: err=%d",
-                  static_cast<int>(wdtResetErr));
         }
 
         vTaskDelay(pdMS_TO_TICKS(ares::API_RATE_MS));

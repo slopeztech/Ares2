@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.3.9"
+#define ARES_VERSION_STRING "2.3.10"
 ```
 
 ---
@@ -64,6 +64,7 @@ docs/changelog/
     v2.3.7.md   ← Security: global mission-upload buffer ownership invariant enforced (BUG-3)
     v2.3.8.md   ← Hardening: ARES_REQUIRE macro; release-invisible safety checks replaced (P0-1, P0-5, P1-1); CI fix
     v2.3.9.md   ← Fix: P0-4 pulse timer rollback on begin() failure; applyRadioMacKey helper; clang-tidy clean
+    v2.3.10.md  ← Hardening: P0-2/P0-3/P1-5/P1-6 API server fixes; P3-4 HTTP parser fuzz tests; clang-tidy clean
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -97,4 +98,5 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.6](../changelog/v2.3.6.md) | 2026-05-27 | Patch   | Robustness: LED BOOT state guaranteed to exit on every `setup()` path (BUG-18) |
 | [2.3.7](../changelog/v2.3.7.md) | 2026-05-28 | Patch   | Security: global mission-upload buffer ownership invariant enforced at access point (BUG-3) |
 | [2.3.8](../changelog/v2.3.8.md) | 2026-05-29 | Patch   | Hardening: `ARES_REQUIRE` macro; release-invisible safety checks replaced; engine destructor lifetime fix; CI parser fix |
-| [2.3.9](../changelog/v2.3.9.md) | 2026-05-30 | Patch   | Fix: P0-4 pulse timer rollback on `begin()` failure; `applyRadioMacKey` helper; clang-tidy clean |
+| [2.3.9](../changelog/v2.3.9.md)   | 2026-05-30 | Patch   | Fix: P0-4 pulse timer rollback on `begin()` failure; `applyRadioMacKey` helper; clang-tidy clean |
+| [2.3.10](../changelog/v2.3.10.md) | 2026-05-31 | Patch   | Hardening: P0-2/P0-3/P1-5/P1-6 API server fixes; P3-4 HTTP parser fuzz tests (10 new); clang-tidy clean |

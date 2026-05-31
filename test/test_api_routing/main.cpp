@@ -41,6 +41,18 @@ void test_uart_scan_blocked_in_flight(void);
 void test_status_200_reason_phrase_ok(void);
 void test_put_device_config_202_reason_accepted(void);
 
+// Test function declarations (defined in test_http_parser.cpp)
+void test_hc_empty_request_no_response(void);
+void test_hc_bare_crlf_no_response(void);
+void test_hc_lf_only_line_endings_returns_200(void);
+void test_hc_negative_content_length_returns_413(void);
+void test_hc_oversized_content_length_returns_413(void);
+void test_hc_truncated_body_returns_400(void);
+void test_hc_body_without_content_type_returns_400(void);
+void test_hc_uri_too_long_returns_414(void);
+void test_hc_header_flood_returns_200(void);
+void test_hc_malformed_header_no_colon_returns_200(void);
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -89,6 +101,18 @@ int main(void)
     // ── H6: correct reason phrases in responses ───────────────
     RUN_TEST(test_status_200_reason_phrase_ok);
     RUN_TEST(test_put_device_config_202_reason_accepted);
+
+    // ── P3-4: HTTP parser robustness (handleClient fuzz layer) ───
+    RUN_TEST(test_hc_empty_request_no_response);
+    RUN_TEST(test_hc_bare_crlf_no_response);
+    RUN_TEST(test_hc_lf_only_line_endings_returns_200);
+    RUN_TEST(test_hc_negative_content_length_returns_413);
+    RUN_TEST(test_hc_oversized_content_length_returns_413);
+    RUN_TEST(test_hc_truncated_body_returns_400);
+    RUN_TEST(test_hc_body_without_content_type_returns_400);
+    RUN_TEST(test_hc_uri_too_long_returns_414);
+    RUN_TEST(test_hc_header_flood_returns_200);
+    RUN_TEST(test_hc_malformed_header_no_colon_returns_200);
 
     return UNITY_END();
 }
