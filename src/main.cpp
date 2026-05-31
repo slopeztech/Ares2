@@ -36,6 +36,7 @@
 #include <Arduino.h>
 #include <freertos/task.h>
 #include <Wire.h>
+#include <new>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 
@@ -48,7 +49,11 @@
 static HardwareSerial gpsSerial(ares::GPS_UART_PORT);
 static HardwareSerial loraSerial(ares::LORA_UART_PORT);
 static TwoWire        imuWire(1);
-static Bmp280Driver   baro(Wire, ares::BMP280_I2C_ADDR);
+// baro: deferred to setup() — constructor references Wire (another TU).
+// Placement new in setup() eliminates the cross-TU static-init-order
+// dependency (SIOF, P1-3).  Static storage keeps PO10-3 (no heap).
+alignas(Bmp280Driver) static uint8_t  s_baroBuf[sizeof(Bmp280Driver)];
+static Bmp280Driver*                  pBaro = nullptr;
 static Bn220Driver    gps(gpsSerial, ares::PIN_GPS_RX,
                           ares::PIN_GPS_TX, ares::GPS_BAUD);
 static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
@@ -86,10 +91,12 @@ static StorageInterface&   storageIf = storage;
 static RadioInterface&     radioIf   = radio;
 // Driver registries — enumerate every physical peripheral available to AMS scripts.
 // Scripts select which driver to use via: include MODEL as ALIAS
-static BarometerInterface* const  kBaroIfaces[]   = { &baro };
+// kBaroIfaces[0] and kBaroDrivers[0].iface are nullptr until setup() patches
+// them after pBaro is placement-new-constructed (P1-3).
+static BarometerInterface*        kBaroIfaces[]   = { nullptr };
 static GpsInterface* const        kGpsIfaces[]    = { &gps  };
 static const ares::ams::GpsEntry  kGpsDrivers[]   = { { "BN220",  kGpsIfaces[0]  } };
-static const ares::ams::BaroEntry kBaroDrivers[]  = { { "BMP280", kBaroIfaces[0] } };
+static ares::ams::BaroEntry       kBaroDrivers[]  = { { "BMP280", nullptr } };
 static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03", &radioIf } };
 static ImuInterface* const        kImuIfaces[]    = { &imu, &imu2 };
 static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", kImuIfaces[0] },
@@ -107,15 +114,10 @@ static ares::ams::MissionScriptEngine missionEngine(
 // frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
 static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
 
-static ApiServer apiServer(wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
-                           deviceConfig,
-                           &storageIf, &missionEngine,
-                           &statusLed,
-                           &Wire, &imuWire,
-                           &gpsSerial, &loraSerial,
-                           &radioIf,
-                           &pulse,
-                           &radioDispatcher);
+// apiServer: deferred to setup() — takes *kBaroIfaces[0] which requires baro
+// to be live first, and baro is deferred (P1-3).  Static storage (PO10-3).
+alignas(ApiServer) static uint8_t  s_apiBuf[sizeof(ApiServer)];
+static ApiServer*                  pApiServer = nullptr;
 
 // ═══════════════════════════════════════════════════════════
 /// @brief Inspect the reset cause and apply an AMS boot checkpoint if the
@@ -195,6 +197,26 @@ static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dis
 }
 
 // ═════════════════════════════════════════════════════════
+/// Placement-new-constructs ApiServer into its static aligned storage and
+/// calls begin().  Extracted from setup() to keep it within the
+/// readability-function-size threshold (clang-tidy).
+/// Pre-condition: kBaroIfaces[0] and missionEngine must be live.
+static bool startApiServer()
+{
+    pApiServer = new (s_apiBuf) ApiServer(
+        wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
+        deviceConfig,
+        &storageIf, &missionEngine,
+        &statusLed,
+        &Wire, &imuWire,
+        &gpsSerial, &loraSerial,
+        &radioIf,
+        &pulse,
+        &radioDispatcher);
+    return pApiServer->begin();
+}
+
+// ═════════════════════════════════════════════════════════
 void setup()
 {
     // Keep USB serial available for on-demand diagnostics, but do not
@@ -205,6 +227,10 @@ void setup()
     // I2C0 (Wire): shared board sensors (BMP280 on GPIO 1/2).
     Wire.begin(ares::PIN_I2C_SDA, ares::PIN_I2C_SCL, ares::I2C_FREQ);
     Wire.setTimeOut(ares::I2C_TIMEOUT_MS);
+    // [P1-3] Construct baro here — Wire is now initialised (SIOF fix).
+    pBaro               = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
+    kBaroIfaces[0]      = pBaro;
+    kBaroDrivers[0].iface = pBaro;
     // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
     // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
@@ -228,11 +254,8 @@ void setup()
         return;
     }
 
-    // Device security configuration — load before WiFi AP starts so the
-    // correct password and token are live from the first connection.
-    // On first boot (no config file) generate random credentials via TRNG
-    // and persist them before the AP starts.  Bootstrap credentials are
-    // printed to USB-CDC by provisionIfFirstBoot() via LOG_I.
+    // Device security config — load before WiFi AP; generate fresh random
+    // credentials on first boot via TRNG (provisionIfFirstBoot prints them).
     if (!deviceConfig.load(&storageIf))
     {
         // Config absent (first boot) or corrupted — generate fresh credentials.
@@ -256,8 +279,8 @@ void setup()
         return;
     }
 
-    // REST API server — start after AMS is ready to avoid init race
-    if (!apiServer.begin())
+    // REST API server — construct + start after AMS is ready to avoid init race
+    if (!startApiServer())
     {
         LOG_E("BOOT", "API server init failed");
         return;
@@ -265,7 +288,7 @@ void setup()
 
     // Classify reset cause, restore in-flight checkpoint if needed,
     // and set the initial LED mode.
-    applyBootCheckpoint(missionEngine, apiServer, statusLed);
+    applyBootCheckpoint(missionEngine, *pApiServer, statusLed);
 
     // Subscribe loop() to the TWDT — registered last to avoid false trips
     // during the subsystem init sequence above.
@@ -275,6 +298,15 @@ void setup()
 // ═══════════════════════════════════════════════════════════
 void loop()
 {
+    // [P1-3] Guard: if setup() failed before apiServer was constructed (e.g.
+    // storage or AMS init error), idle safely.  No TWDT registration occurred
+    // in that path, so skipping esp_task_wdt_reset() here is safe.
+    if (pApiServer == nullptr)
+    {
+        vTaskDelay(pdMS_TO_TICKS(ares::LOOP_SLEEP_MAX_MS));
+        return;
+    }
+
     // [P1] Explicitly reset the TWDT for the loop task each iteration.
     // Prevents a false WDT trip when nextWakeupMs() returns 0 and sleepMs
     // collapses to 1 ms, which would otherwise near-busy-loop without
@@ -302,7 +334,7 @@ void loop()
     // Cache the last-notified status so notifyMissionComplete() is only
     // invoked once per status transition (COMPLETE/ERROR), not every tick.
     static ares::ams::EngineStatus lastNotifiedStatus_ = ares::ams::EngineStatus::IDLE;
-    if (apiServer.getMode() == ares::OperatingMode::FLIGHT)
+    if (pApiServer->getMode() == ares::OperatingMode::FLIGHT)
     {
         ares::ams::EngineSnapshot snap = {};
         missionEngine.getSnapshot(snap);
@@ -310,7 +342,7 @@ void loop()
              || snap.status == ares::ams::EngineStatus::ERROR)
             && snap.status != lastNotifiedStatus_)
         {
-            apiServer.notifyMissionComplete();
+            pApiServer->notifyMissionComplete();
             lastNotifiedStatus_ = snap.status;
         }
     }
