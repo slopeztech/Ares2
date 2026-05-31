@@ -145,6 +145,11 @@ void ApiServer::refreshCorsHeaders()
     }
 
     ScopedLock lk(cfgMtx_, pdMS_TO_TICKS(ares::API_CFG_MUTEX_TIMEOUT_MS));
+    if (!lk.acquired())
+    {
+        LOG_E(TAG, "refreshCorsHeaders: mutex timeout");
+        return;
+    }
     devCfg_.buildCorsHeader(s_corsHeadersBuf, sizeof(s_corsHeadersBuf));
 }
 
