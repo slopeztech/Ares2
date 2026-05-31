@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 159
+ * Test count: 183
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -30,6 +30,13 @@ extern void test_assert_no_silent_terminals_pass();
 extern void test_assert_no_silent_terminals_pass_with_hk();
 extern void test_assert_no_silent_terminals_fail();
 extern void test_assert_reachable_large_graph();
+
+// ── test_ams_checkpoint_flush.cpp ──────────────────────────────────────────────
+
+extern void test_checkpoint_written_on_tc_transition();
+extern void test_checkpoint_written_on_fallback_transition();
+extern void test_checkpoint_written_on_timeout();
+extern void test_abort_row_flushed_on_unhandled_abort();
 
 // ── test_ams_engine_control.cpp ──────────────────────────────────────────────
 
@@ -237,6 +244,7 @@ extern void test_bad_gps_field_rejected();
 extern void test_bad_baro_field_rejected();
 extern void test_bad_imu_field_rejected();
 
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -259,6 +267,12 @@ int main()
     RUN_TEST(test_assert_no_silent_terminals_pass_with_hk);
     RUN_TEST(test_assert_no_silent_terminals_fail);
     RUN_TEST(test_assert_reachable_large_graph);
+
+    // ams_checkpoint_flush
+    RUN_TEST(test_checkpoint_written_on_tc_transition);
+    RUN_TEST(test_checkpoint_written_on_fallback_transition);
+    RUN_TEST(test_checkpoint_written_on_timeout);
+    RUN_TEST(test_abort_row_flushed_on_unhandled_abort);
 
     // ams_engine_control
     RUN_TEST(test_abort_tc_deactivates_engine);

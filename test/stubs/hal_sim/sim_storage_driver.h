@@ -120,13 +120,27 @@ public:
         return StorageStatus::OK;
     }
 
-    // Write operations are accepted and silently discarded (log/resume stubs).
+    // Write operations — accepted and also captured for test inspection.
 
-    StorageStatus writeFile(const char* /*path*/,
-                            const uint8_t* /*data*/,
-                            uint32_t /*len*/) override
+    StorageStatus writeFile(const char* path,
+                            const uint8_t* data,
+                            uint32_t len) override
     {
-        return mounted_ ? StorageStatus::OK : StorageStatus::NOT_READY;
+        if (!mounted_) { return StorageStatus::NOT_READY; }
+        writeCallCount_++;
+        // Capture the most recent write (truncate silently when buffer is full).
+        if (path != nullptr)
+        {
+            (void)snprintf(lastWrittenPath_, sizeof(lastWrittenPath_), "%s", path);
+        }
+        const uint32_t copyLen = (len < kWriteBufSize - 1U) ? len : kWriteBufSize - 1U;
+        if (data != nullptr && copyLen > 0U)
+        {
+            (void)memcpy(lastWrittenBuf_, data, copyLen);
+        }
+        lastWrittenBuf_[copyLen] = '\0';
+        lastWrittenLen_          = copyLen;
+        return StorageStatus::OK;
     }
 
     StorageStatus appendFile(const char* /*path*/,
@@ -165,6 +179,24 @@ public:
         appendBufLen_  = 0U;
         appendBuf_[0]  = '\0';
         failAppendCount_ = 0U;
+    }
+
+    /** Number of writeFile() calls since construction / last resetWriteCapture(). */
+    uint32_t writeCallCount() const { return writeCallCount_; }
+
+    /** Last data written via writeFile(), as a NUL-terminated string. */
+    const char* lastWrittenContent() const { return lastWrittenBuf_; }
+
+    /** Path of the last writeFile() call. */
+    const char* lastWrittenPath() const { return lastWrittenPath_; }
+
+    /** Reset the writeFile capture state. */
+    void resetWriteCapture()
+    {
+        writeCallCount_      = 0U;
+        lastWrittenLen_      = 0U;
+        lastWrittenBuf_[0]   = '\0';
+        lastWrittenPath_[0]  = '\0';
     }
 
     StorageStatus removeFile(const char* /*path*/) override
@@ -298,6 +330,13 @@ private:
     static constexpr uint32_t kAppendBufSize = 2048U;
     char     appendBuf_[kAppendBufSize]  = {};
     uint32_t appendBufLen_               = 0U;
+
+    // ── writeFile capture (test helpers) ─────────────────────────────────────
+    uint32_t writeCallCount_  = 0U;
+    static constexpr uint32_t kWriteBufSize = 512U;
+    char     lastWrittenBuf_[kWriteBufSize]  = {};
+    uint32_t lastWrittenLen_                 = 0U;
+    char     lastWrittenPath_[64]            = {};
 };
 
 } // namespace sim
