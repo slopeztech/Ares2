@@ -62,6 +62,13 @@ void RadioDispatcher::setMacKey(const uint8_t* key, uint8_t keyLen)
 
 void RadioDispatcher::poll(uint32_t nowMs)
 {
+    // Enforce the single-task contract (CERT-13, RTOS-4):
+    // latch the calling task on first invocation and ARES_REQUIRE it matches
+    // on every subsequent call.  ARES_REQUIRE is never elided (unlike ARES_ASSERT)
+    // so this check is active in release builds.
+    if (pollTask_ == nullptr) { pollTask_ = xTaskGetCurrentTaskHandle(); }
+    ARES_REQUIRE(xTaskGetCurrentTaskHandle() == pollTask_);
+
     // Append newly available bytes to rxBuf_ only when there is space.
     // Space check prevents overflow even if the radio driver returns more
     // bytes than expected (CERT-1: validate before use).
@@ -391,8 +398,8 @@ void RadioDispatcher::handleHeartbeat(const proto::Frame& frame, uint32_t nowMs)
     response.len   = 0U;
 
     uint8_t wire[proto::MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = proto::encode(response, wire, sizeof(wire));
-    if (wireLen > 0U)
+    uint16_t wireLen = 0U;
+    if (proto::encode(response, wire, sizeof(wire), wireLen))
     {
         (void)radio_.send(wire, wireLen);
         LOG_D(TAG, "TX HEARTBEAT seq=%u", static_cast<unsigned>(response.seq));
@@ -422,8 +429,8 @@ void RadioDispatcher::sendAckNack(uint8_t            originalSeq,
     (void)memcpy(frame.payload, &ack, sizeof(ack));
 
     uint8_t wire[proto::MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = proto::encode(frame, wire, sizeof(wire));
-    if (wireLen > 0U)
+    uint16_t wireLen = 0U;
+    if (proto::encode(frame, wire, sizeof(wire), wireLen))
     {
         (void)radio_.send(wire, wireLen);
         LOG_D(TAG, "TX %s seq=%u origSeq=%u code=0x%02X",
@@ -678,8 +685,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
         (void)memcpy(resp.payload, &tm, sizeof(tm));
 
         uint8_t wire[proto::MAX_FRAME_LEN] = {};
-        const uint16_t wireLen = proto::encode(resp, wire, sizeof(wire));
-        if (wireLen > 0U)
+        uint16_t wireLen = 0U;
+        if (proto::encode(resp, wire, sizeof(wire), wireLen))
         {
             (void)radio_.send(wire, wireLen);
             LOG_D(TAG, "REQUEST_STATUS: status frame sent seq=%u engineStatus=%u",
@@ -718,8 +725,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
         cfg.len   = offset;
         (void)memcpy(cfg.payload, payload, offset);
         uint8_t wire[proto::MAX_FRAME_LEN] = {};
-        const uint16_t wLen = proto::encode(cfg, wire, sizeof(wire));
-        if (wLen > 0U)
+        uint16_t wLen = 0U;
+        if (proto::encode(cfg, wire, sizeof(wire), wLen))
         {
             (void)radio_.send(wire, wLen);
             LOG_D(TAG, "REQUEST_CONFIG: config report sent (%u params)", kConfigParamCount);
@@ -901,8 +908,8 @@ void RadioDispatcher::processRetries(uint32_t nowMs)
         slot.frame.flags = static_cast<uint8_t>(slot.frame.flags | proto::FLAG_RETRANSMIT);
 
         uint8_t wire[proto::MAX_FRAME_LEN] = {};
-        const uint16_t wireLen = proto::encode(slot.frame, wire, sizeof(wire));
-        if (wireLen > 0U)
+        uint16_t wireLen = 0U;
+        if (proto::encode(slot.frame, wire, sizeof(wire), wireLen))
         {
             (void)radio_.send(wire, wireLen);
             slot.retries++;
@@ -956,8 +963,8 @@ bool RadioDispatcher::sendReliable(const proto::Frame& frame, uint32_t nowMs)
     f.flags = static_cast<uint8_t>(f.flags | proto::FLAG_ACK_REQ);
 
     uint8_t wire[proto::MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = proto::encode(f, wire, sizeof(wire));
-    if (wireLen == 0U) { return false; }
+    uint16_t wireLen = 0U;
+    if (!proto::encode(f, wire, sizeof(wire), wireLen)) { return false; }
 
     const bool ok = (radio_.send(wire, wireLen) == RadioStatus::OK);
     if (ok)
@@ -1435,8 +1442,8 @@ void RadioDispatcher::pumpFragSend(uint32_t nowMs) // NOLINT(readability-functio
     {
         // Fire-and-forget intermediate segments (no per-fragment ACK overhead).
         static uint8_t wireBuf[proto::MAX_FRAME_LEN];
-        const uint16_t wireLen = proto::encode(frame, wireBuf, sizeof(wireBuf));
-        if (wireLen == 0U)
+        uint16_t wireLen = 0U;
+        if (!proto::encode(frame, wireBuf, sizeof(wireBuf), wireLen))
         {
             LOG_E(TAG, "FRAG TX: encode failed seg=%u id=0x%04X — aborting",
                   static_cast<unsigned>(seg),

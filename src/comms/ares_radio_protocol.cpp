@@ -44,17 +44,18 @@ uint32_t crc32(const uint8_t* data, uint16_t len)
 }
 
 // ── Encode ────────────────────────────────────────────────
-uint16_t encode(const Frame& frame, uint8_t* buf, uint16_t bufLen)
+bool encode(const Frame& frame, uint8_t* buf, uint16_t bufLen, uint16_t& outLen)
 {
+    outLen = 0U;
     // Validate inputs before computing derived values (CERT-1)
-    if (buf == nullptr)                        { return 0; }
-    if (frame.len > MAX_PAYLOAD_LEN)           { return 0; }
-    if ((frame.flags & FLAGS_RESERVED) != 0U)  { return 0; } // APUS-4.2
+    if (buf == nullptr)                        { return false; }
+    if (frame.len > MAX_PAYLOAD_LEN)           { return false; }
+    if ((frame.flags & FLAGS_RESERVED) != 0U)  { return false; } // APUS-4.2
 
     const uint16_t totalLen =
         static_cast<uint16_t>(HEADER_LEN) + frame.len + CRC_LEN;
 
-    if (bufLen < totalLen)                     { return 0; }
+    if (bufLen < totalLen)                     { return false; }
 
     // Sync marker (APUS-4.3)
     buf[0] = SYNC_0;
@@ -88,7 +89,8 @@ uint16_t encode(const Frame& frame, uint8_t* buf, uint16_t bufLen)
     buf[crcOffset + 2] = static_cast<uint8_t>((checksum >> 16U) & 0xFFU);
     buf[crcOffset + 3] = static_cast<uint8_t>((checksum >> 24U) & 0xFFU);
 
-    return totalLen;
+    outLen = totalLen;
+    return true;
 }
 
 static bool hasValidSync(const uint8_t* buf)

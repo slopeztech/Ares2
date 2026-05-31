@@ -62,7 +62,9 @@ static uint16_t make_frag_frame(uint8_t*  buf,
     tx.payload[4] = static_cast<uint8_t>(totalSegments     & 0xFFU);
     tx.payload[5] = static_cast<uint8_t>(totalSegments >> 8U);
 
-    return encode(tx, buf, bufLen);
+    uint16_t len = 0U;
+    (void)encode(tx, buf, bufLen, len);
+    return len;
 }
 
 // ── isDuplicate tests ───────────────────────────────────────
@@ -296,7 +298,8 @@ void test_encode_frag_single_segment()
 
     // Wire-encode and then wire-decode to verify the full pipeline.
     uint8_t wireBuf[MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = encode(frame, wireBuf, sizeof(wireBuf));
+    uint16_t wireLen = 0U;
+    (void)encode(frame, wireBuf, sizeof(wireBuf), wireLen);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, wireLen);
 
     Frame decoded = {};
@@ -326,7 +329,8 @@ void test_encode_frag_max_payload_segment()
 
     // The full frame must still fit within MAX_FRAME_LEN.
     uint8_t wireBuf[MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = encode(frame, wireBuf, sizeof(wireBuf));
+    uint16_t wireLen = 0U;
+    (void)encode(frame, wireBuf, sizeof(wireBuf), wireLen);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, wireLen);
     TEST_ASSERT_LESS_OR_EQUAL_UINT16(MAX_FRAME_LEN, wireLen);
 

@@ -118,4 +118,7 @@ private:
 
     /// AUX wait timeout when starting a transmission (ms).
     static constexpr uint32_t AUX_TIMEOUT_MS = ares::LORA_AUX_TIMEOUT_MS;
+
+    /// UART RX FIFO flush bound (mirrors LORA_UART_RX_BUF_BYTES from config.h).
+    static constexpr uint16_t UART_RX_BUF_BYTES = ares::LORA_UART_RX_BUF_BYTES;
 };

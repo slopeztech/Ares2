@@ -123,7 +123,9 @@ static uint16_t make_cmd_frag(uint8_t*       buf,
     {
         return 0U;
     }
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

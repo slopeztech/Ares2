@@ -1000,8 +1000,8 @@ bool MissionScriptEngine::sendFrameLocked(const Frame& frame)
     if (primaryCom_ == nullptr) { return false; }
 
     uint8_t wire[MAX_FRAME_LEN] = {};
-    const uint16_t wireLen = ares::proto::encode(frame, wire, sizeof(wire));
-    if (wireLen == 0U) { return false; }
+    uint16_t wireLen = 0U;
+    if (!ares::proto::encode(frame, wire, sizeof(wire), wireLen)) { return false; }
 
     const RadioStatus rs = primaryCom_->send(wire, wireLen);
     return rs == RadioStatus::OK;

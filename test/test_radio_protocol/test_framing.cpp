@@ -49,7 +49,9 @@ static uint16_t make_heartbeat(uint8_t*  buf,
     tx.type  = MsgType::HEARTBEAT;
     tx.seq   = seq;
     tx.len   = 0U;
-    return encode(tx, buf, bufLen);
+    uint16_t len = 0U;
+    (void)encode(tx, buf, bufLen, len);
+    return len;
 }
 
 // ── Encode tests ────────────────────────────────────────────
@@ -87,7 +89,8 @@ void test_encode_rejects_reserved_flags()
     tx.len   = 0U;
 
     uint8_t buf[MAX_FRAME_LEN];
-    TEST_ASSERT_EQUAL_UINT16(0U, encode(tx, buf, sizeof(buf)));
+    uint16_t outLen = 0U;
+    TEST_ASSERT_FALSE(encode(tx, buf, sizeof(buf), outLen));
 }
 
 /// encode() must return 0 when payload length exceeds MAX_PAYLOAD_LEN.
@@ -100,7 +103,8 @@ void test_encode_rejects_oversized_payload()
     tx.len  = static_cast<uint8_t>(MAX_PAYLOAD_LEN + 1U);
 
     uint8_t buf[MAX_FRAME_LEN + 16U];
-    TEST_ASSERT_EQUAL_UINT16(0U, encode(tx, buf, sizeof(buf)));
+    uint16_t outLen = 0U;
+    TEST_ASSERT_FALSE(encode(tx, buf, sizeof(buf), outLen));
 }
 
 /// encode() must return 0 when the output buffer pointer is null.
@@ -112,7 +116,8 @@ void test_encode_rejects_null_buffer()
     tx.type = MsgType::HEARTBEAT;
     tx.len  = 0U;
 
-    TEST_ASSERT_EQUAL_UINT16(0U, encode(tx, nullptr, MAX_FRAME_LEN));
+    uint16_t outLen = 0U;
+    TEST_ASSERT_FALSE(encode(tx, nullptr, MAX_FRAME_LEN, outLen));
 }
 
 /// encode() must return 0 when the output buffer is too small for the frame.
@@ -125,7 +130,8 @@ void test_encode_rejects_undersized_buffer()
     tx.len  = 0U;
 
     uint8_t buf[MIN_FRAME_LEN - 1U];
-    TEST_ASSERT_EQUAL_UINT16(0U, encode(tx, buf, sizeof(buf)));
+    uint16_t outLen = 0U;
+    TEST_ASSERT_FALSE(encode(tx, buf, sizeof(buf), outLen));
 }
 
 // ── Decode tests ────────────────────────────────────────────
@@ -253,7 +259,8 @@ void test_encode_decode_preserves_payload()
     tx.payload[3] = 0xEFU;
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
     Frame rx = {};
@@ -301,7 +308,8 @@ void test_encode_accepts_valid_flags()
         tx.type  = MsgType::HEARTBEAT;
         tx.len   = 0U;
 
-        const uint16_t len = encode(tx, buf, sizeof(buf));
+        uint16_t len = 0U;
+        TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
         TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
         Frame rx = {};
@@ -325,7 +333,8 @@ void test_encode_decode_max_payload()
     }
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
     TEST_ASSERT_EQUAL_UINT16(MAX_FRAME_LEN, len);
 
     Frame rx = {};
@@ -360,8 +369,8 @@ void test_decode_rejects_payload_too_short_for_type()
     tx.len  = 0U;  // deliberately below the 38-byte minimum
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
-    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);  // encode succeeds
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));  // encode succeeds
 
     Frame rx = {};
     TEST_ASSERT_FALSE(decode(buf, len, rx));   // decode correctly rejects
@@ -408,7 +417,8 @@ void test_decode_rejects_declared_len_exceeds_actual_buffer()
     tx.payload[0] = 0xAAU;  // arbitrary content
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t wireLen = encode(tx, buf, sizeof(buf));
+    uint16_t wireLen = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), wireLen));
     TEST_ASSERT_EQUAL_UINT16(
         static_cast<uint16_t>(HEADER_LEN + 1U + CRC_LEN), wireLen);
 
@@ -439,8 +449,8 @@ void test_encode_decode_roundtrip_telemetry()
     memcpy(tx.payload, &telem, sizeof(telem));
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
-    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
 
     Frame rx = {};
     TEST_ASSERT_TRUE(decode(buf, len, rx));
@@ -468,8 +478,8 @@ void test_encode_decode_roundtrip_event()
     memcpy(tx.payload, &evt, sizeof(evt));
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
-    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
 
     Frame rx = {};
     TEST_ASSERT_TRUE(decode(buf, len, rx));
@@ -494,8 +504,8 @@ void test_encode_decode_roundtrip_command()
     memcpy(tx.payload, &cmd, sizeof(cmd));
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
-    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
 
     Frame rx = {};
     TEST_ASSERT_TRUE(decode(buf, len, rx));
@@ -522,8 +532,8 @@ void test_encode_decode_roundtrip_ack()
     memcpy(tx.payload, &ack, sizeof(ack));
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
-    TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
 
     Frame rx = {};
     TEST_ASSERT_TRUE(decode(buf, len, rx));
@@ -549,7 +559,8 @@ void test_encode_decode_combined_flags_roundtrip()
     tx.len   = 0U;
 
     uint8_t buf[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, buf, sizeof(buf));
+    uint16_t len = 0U;
+    TEST_ASSERT_TRUE(encode(tx, buf, sizeof(buf), len));
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
     Frame rx = {};

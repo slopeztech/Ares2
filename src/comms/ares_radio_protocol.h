@@ -308,12 +308,14 @@ uint32_t crc32(const uint8_t* data, uint16_t len);
 
 /**
  * Encode a Frame into a wire buffer.
- * @param[in]  frame   Populated frame (ver, flags, node, type, seq, len, payload).
- * @param[out] buf     Destination wire buffer.
- * @param[in]  bufLen  Size of @p buf in bytes.
- * @return Total bytes written (HEADER + payload + CRC), or 0 on error.
+ * @param[in]  frame    Populated frame (ver, flags, node, type, seq, len, payload).
+ * @param[out] buf      Destination wire buffer.
+ * @param[in]  bufLen   Size of @p buf in bytes.
+ * @param[out] outLen   Total bytes written (HEADER + payload + CRC) on success; 0 on error.
+ * @return true on success; false when buf is nullptr, payload too large,
+ *         flags are reserved, or buf is too small.
  */
-uint16_t encode(const Frame& frame, uint8_t* buf, uint16_t bufLen);
+bool encode(const Frame& frame, uint8_t* buf, uint16_t bufLen, uint16_t& outLen);
 
 /**
  * Decode a wire buffer into a Frame.
