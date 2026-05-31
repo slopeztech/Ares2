@@ -172,9 +172,6 @@ private:
     /// Main task loop.
     void run();
 
-    /// Parse one HTTP request from a connected client.
-    void handleClient(class WiFiClient& client);
-
     // ── Route handlers (implemented in subdirectories) ─────
     // status/
     void handleStatus(class WiFiClient& client);
@@ -225,6 +222,14 @@ private:
     void handlePulseStatus(class WiFiClient& client);  ///< GET /api/pulse/status (AMS-4.17)
 
 public:
+    // ── Full HTTP parse + route (exposed for parser-layer tests) ──
+    //
+    // handleClient is public so that test_http_parser can inject canned raw
+    // HTTP byte streams and verify parseRequestLine / parseHeaders /
+    // readRequestBody without a live TCP stack or RTOS task.
+    // Do NOT call from outside the API task in production code.
+    void handleClient(class WiFiClient& client);
+
     // ── Request routing (PO10-4.1: decomposed from handleClient) ─
     //
     // routeRequest is public so that integration tests in test_api_routing

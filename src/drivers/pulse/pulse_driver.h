@@ -137,6 +137,15 @@ private:
      */
     static void timerCallback(TimerHandle_t xTimer);
 
+    /** Configure GPIO direction for all wired channels. */
+    void initGpioPins();
+
+    /**
+     * Delete FreeRTOS timers for channels [0, upToExclusive).
+     * Used for rollback when timer creation fails mid-loop.
+     */
+    void deleteTimers(uint8_t upToExclusive);
+
     ChannelData   channels_[PulseChannel::COUNT]  = {};  ///< Per-channel state.
     StaticTimer_t timerBufs_[PulseChannel::COUNT] = {};  ///< Static timer memory.
     TimerHandle_t timers_[PulseChannel::COUNT]    = {nullptr, nullptr, nullptr, nullptr};  ///< Timer handles.

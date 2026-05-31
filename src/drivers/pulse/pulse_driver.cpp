@@ -29,17 +29,10 @@ PulseDriver::PulseDriver(const ChannelConfig (&cfg)[PulseChannel::COUNT])
     }
 }
 
-// ── begin ────────────────────────────────────────────────────────────────────
+// ── begin helpers ────────────────────────────────────────────────────────────
 
-bool PulseDriver::begin()
+void PulseDriver::initGpioPins()
 {
-    // Timer name prefix — indexed below per channel.
-    static const char* const kTimerNames[PulseChannel::COUNT] = {
-        "pulse_ch_a", "pulse_ch_b", "pulse_ch_c", "pulse_ch_d"
-    };
-
-    // Configure fire GPIOs as OUTPUT LOW (safe / unarmed state).
-    // Skip channels whose firePin is kNoPinAssigned (not wired).
     for (uint8_t ch = 0U; ch < PulseChannel::COUNT; ch++)
     {
         if (channels_[ch].firePin == kNoPinAssigned) { continue; }
@@ -57,6 +50,41 @@ bool PulseDriver::begin()
             pinMode(channels_[ch].contPin, INPUT_PULLUP);
         }
     }
+}
+
+void PulseDriver::deleteTimers(uint8_t upToExclusive)
+{
+    // Rollback: remove from the timer service all timers created so far so
+    // the driver is left in a fully defined invalid state (no orphaned handles).
+    // Only clear the handle if xTimerDelete succeeds; if it fails the handle
+    // remains reachable so it is not permanently orphaned.
+    for (uint8_t i = 0U; i < upToExclusive; i++)
+    {
+        if (timers_[i] == nullptr) { continue; }
+
+        if (xTimerDelete(timers_[i], pdMS_TO_TICKS(100U)) == pdPASS)
+        {
+            timers_[i] = nullptr;
+        }
+        else
+        {
+            LOG_E(TAG, "timer delete failed for channel %u", static_cast<uint32_t>(i));
+        }
+    }
+}
+
+// ── begin ────────────────────────────────────────────────────────────────────
+
+bool PulseDriver::begin()
+{
+    // Timer name prefix — indexed below per channel.
+    static const char* const kTimerNames[PulseChannel::COUNT] = {
+        "pulse_ch_a", "pulse_ch_b", "pulse_ch_c", "pulse_ch_d"
+    };
+
+    // Configure fire GPIOs as OUTPUT LOW (safe / unarmed state).
+    // Skip channels whose firePin is kNoPinAssigned (not wired).
+    initGpioPins();
 
     // Create one-shot FreeRTOS timers (static memory — PO10-3).
     // Period is a placeholder (1 tick); xTimerChangePeriod() sets the
@@ -79,25 +107,7 @@ bool PulseDriver::begin()
         if (timers_[ch] == nullptr)
         {
             LOG_E(TAG, "timer creation failed for channel %u", static_cast<uint32_t>(ch));
-            // Rollback: remove from the timer service all timers already
-            // created during this begin() call so the driver is left in a
-            // fully defined invalid state (no orphaned timer handles).
-            // Only clear the handle if xTimerDelete succeeds; if it fails
-            // the handle remains reachable so it is not permanently orphaned.
-            for (uint8_t i = 0U; i < ch; i++)
-            {
-                if (timers_[i] != nullptr)
-                {
-                    if (xTimerDelete(timers_[i], pdMS_TO_TICKS(100U)) == pdPASS)
-                    {
-                        timers_[i] = nullptr;
-                    }
-                    else
-                    {
-                        LOG_E(TAG, "timer delete failed for channel %u", static_cast<uint32_t>(i));
-                    }
-                }
-            }
+            deleteTimers(ch);
             return false;
         }
     }
