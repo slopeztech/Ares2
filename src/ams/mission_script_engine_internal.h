@@ -40,9 +40,10 @@ constexpr uint8_t kMaxPendingAppends =
 /** @brief Staged checkpoint record awaiting flush to LittleFS (AMS-8.3). */
 struct PendingCheckpoint
 {
-    char    buf[512];  ///< Serialised v4 checkpoint record (static-size member).
-    int32_t len;       ///< Valid bytes in buf[]; 0 = nothing staged.
-    bool    pending;   ///< True iff buf[] holds an unflushed record.
+    char     buf[512];  ///< Serialised v4 checkpoint record (static-size member).
+    int32_t  len;       ///< Valid bytes in buf[]; 0 = nothing staged.
+    bool     pending;   ///< True iff buf[] holds an unflushed record.
+    uint64_t nowMs;     ///< Timestamp when staged; committed to lastCheckpointMs_ only on successful flush.
 };
 
 /** @brief Staged CSV log-row awaiting flush to LittleFS (AMS-8.3). */

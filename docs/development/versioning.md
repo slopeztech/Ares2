@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.3.13"
+#define ARES_VERSION_STRING "2.3.14"
 ```
 
 ---
@@ -68,6 +68,7 @@ docs/changelog/
     v2.3.11.md  ← Patch: P1-2 radio dispatcher single-task enforcement; P1-4 encode() unambiguous bool return; P3-1 dxlr03 magic-number cleanup
     v2.3.12.md  ← Patch: P1-3 SIOF main.cpp (placement new + startApiServer); P2-1/P2-4 truncation guards; P2-5 fill_n; P3-2 kCrcSuffix; P2-2 single-task contract
     v2.3.13.md  ← Patch: tick() flush — single-exit restructure guarantees flushPendingIoUnlocked() on every exit path; 4 new SITL tests
+    v2.3.14.md  ← Patch: checkpoint timing markers committed only after confirmed writeFile(); 1 new SITL retry test
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -106,3 +107,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.11](../changelog/v2.3.11.md) | 2026-05-31 | Patch   | Patch: P1-2 radio dispatcher single-task enforcement (`ARES_REQUIRE`); P1-4 `encode()` bool + out-param; P3-1 `dxlr03` magic-number cleanup |
 | [2.3.12](../changelog/v2.3.12.md) | 2026-05-31 | Patch   | Patch: P1-3 SIOF `main.cpp` (placement new, `startApiServer`); P2-1/P2-4 truncation guards; P2-5 `std::fill_n`; P3-2 `kCrcSuffix`; P2-2 single-task contract |
 | [2.3.13](../changelog/v2.3.13.md) | 2026-05-31 | Patch   | Patch:  `tick()` flush — single-exit restructure; P3-1 `uint64_t` elapsed; 4 new SITL flush tests |
+| [2.3.14](../changelog/v2.3.14.md) | 2026-05-31 | Patch   | Patch: checkpoint timing markers deferred to confirmed `writeFile()`; re-arm dirty on failure; 1 new SITL retry test |

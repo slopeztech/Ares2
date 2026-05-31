@@ -37,6 +37,7 @@ extern void test_checkpoint_written_on_tc_transition();
 extern void test_checkpoint_written_on_fallback_transition();
 extern void test_checkpoint_written_on_timeout();
 extern void test_abort_row_flushed_on_unhandled_abort();
+extern void test_checkpoint_retried_after_write_failure();
 
 // ── test_ams_engine_control.cpp ──────────────────────────────────────────────
 
@@ -273,6 +274,7 @@ int main()
     RUN_TEST(test_checkpoint_written_on_fallback_transition);
     RUN_TEST(test_checkpoint_written_on_timeout);
     RUN_TEST(test_abort_row_flushed_on_unhandled_abort);
+    RUN_TEST(test_checkpoint_retried_after_write_failure);
 
     // ams_engine_control
     RUN_TEST(test_abort_tc_deactivates_engine);
