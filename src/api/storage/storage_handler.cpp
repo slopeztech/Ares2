@@ -27,8 +27,13 @@
 
 static constexpr const char* TAG = "API.LOG";
 
-// API server processes one request at a time in a single task.
-// Keep large scratch buffers off task stack to avoid canary trips.
+// SINGLE-TASK CONTRACT (REST-13, RTOS-2):
+// All handle* methods in this file are invoked exclusively from the ApiServer
+// FreeRTOS task (ApiServer::taskFn).  That task dispatches one request at a
+// time — no two handlers run concurrently — so these file-static buffers are
+// safe without a mutex.  If a second task ever calls any handle* method
+// directly, access MUST be serialized (e.g. with the ApiServer config mutex).
+// Buffers are file-static (not stack) to avoid canary trips on the API task.
 static FileEntry g_logEntries[ares::MAX_LOG_FILES] = {};
 static char g_jsonBuf[ares::API_MAX_RESPONSE_BODY] = {};
 

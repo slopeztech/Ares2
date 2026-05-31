@@ -326,12 +326,14 @@ void MissionScriptEngine::writeAbortMarkerLocked(const char* stateName, uint64_t
     if (logPath_[0] == '\0') { return; }
 
     // Build row body without newline so CRC8 covers only the data content.
+    // kCrcSuffix: "," + 2 hex digits + "\n" + NUL = 5 bytes (",xx\n\0").
+    static constexpr size_t kCrcSuffix = 5U;
     static char line[100] = {};
     const int32_t bodyLen = static_cast<int32_t>(
-        snprintf(line, sizeof(line) - 5U,  // reserve room for ",xx\n\0"
+        snprintf(line, sizeof(line) - kCrcSuffix,
                  "%" PRIu64 ",ABORT,aborted_in_state=%s",
                  nowMs, stateName));
-    if (bodyLen > 0 && static_cast<uint32_t>(bodyLen) < sizeof(line) - 5U)
+    if (bodyLen > 0 && static_cast<uint32_t>(bodyLen) < sizeof(line) - kCrcSuffix)
     {
         const uint32_t pos = static_cast<uint32_t>(bodyLen);
         const uint8_t  crc = detail::crc8Smbus(line, pos);
@@ -704,6 +706,18 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint64_t nowMs) // NOLINT(
         return false;
     }
     buf[bytesRead] = '\0';
+
+    // Truncation guard: if readFile filled the entire usable buffer the file is
+    // longer than expected (corruption or format change).  A truncated record
+    // must not be parsed — the CRC check below only covers v4 records, so v1–v3
+    // records would silently reach the parser with incomplete data otherwise.
+    if (bytesRead >= sizeof(buf) - 1U)
+    {
+        LOG_W(TAG, "checkpoint: file exceeds buffer (%u B) — discarding",
+              static_cast<unsigned>(sizeof(buf) - 1U));
+        clearResumePointLocked();
+        return false;
+    }
 
     // ── v4: CRC32 integrity check ─────────────────────────────────────────────
     // Quick-parse the version field before trusting any field value.
