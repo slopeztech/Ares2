@@ -61,7 +61,7 @@ bool DxLr03Driver::begin()
     }
 
     // Flush any stale data in RX buffer (PO10-2: bounded)
-    constexpr uint16_t MAX_FLUSH_BYTES = 512;
+    constexpr uint16_t MAX_FLUSH_BYTES = UART_RX_BUF_BYTES;
     for (uint16_t i = 0; i < MAX_FLUSH_BYTES && serial_.available() > 0; ++i)
     {
         (void)serial_.read();
@@ -146,7 +146,8 @@ uint16_t DxLr03Driver::mtu() const
 bool DxLr03Driver::waitReady(uint32_t timeoutMs) const
 {
     static constexpr uint32_t POLL_PERIOD_MS = 1U;
-    static constexpr uint16_t MAX_AUX_POLLS = 2000U;
+    static constexpr uint16_t MAX_AUX_POLLS  =
+        static_cast<uint16_t>(AUX_TIMEOUT_MS / POLL_PERIOD_MS);
 
     // POLL_PERIOD_MS is fixed to 1 ms for AUX polling.
     const uint32_t requestedPolls = timeoutMs;

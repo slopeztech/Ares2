@@ -27,7 +27,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.3.10"
+#define ARES_VERSION_STRING "2.3.11"
 
 namespace ares
 {
@@ -130,6 +130,7 @@ constexpr float    LORA_FREQ_MHZ          = 433.125f; ///< CH=23: 410.125+23.
 constexpr int8_t   LORA_TX_POWER          = 20;       ///< Transmit power in dBm.
 constexpr uint32_t LORA_UART_BAUD         = 9600;     ///< Module serial baud rate.
 constexpr uint32_t LORA_AUX_TIMEOUT_MS    = 50;       ///< Max AUX wait before TX proceeds in degraded mode.
+constexpr uint16_t LORA_UART_RX_BUF_BYTES = 512U;     ///< UART RX FIFO flush bound — matches ESP32 serial buffer size.
 constexpr uint32_t TELEMETRY_INTERVAL_MS  = 500;      ///< Downlink interval.
 
 // ── Device security configuration (persisted in LittleFS) ──

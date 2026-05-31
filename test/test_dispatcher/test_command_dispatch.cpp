@@ -142,7 +142,9 @@ static uint16_t make_cmd(uint8_t*       buf,
         tx.len = static_cast<uint8_t>(6U + extraLen);
     }
 
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 /** Build a HEARTBEAT wire frame addressed to NODE_ROCKET. */
@@ -155,7 +157,9 @@ static uint16_t make_heartbeat(uint8_t* buf, uint8_t seq)
     tx.seq   = seq;
     tx.flags = 0U;
     tx.len   = 0U;
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 /**
@@ -175,7 +179,9 @@ static uint16_t make_telemetry_frame(uint8_t* buf, uint8_t seq)
     // Zero-fill to satisfy meetsMinPayloadLen() == sizeof(TelemetryPayload).
     tx.len   = static_cast<uint8_t>(sizeof(TelemetryPayload));
     (void)memset(tx.payload, 0, sizeof(TelemetryPayload));
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 /**
@@ -194,7 +200,9 @@ static uint16_t make_event_frame(uint8_t* buf, uint8_t seq)
     // Zero-fill to satisfy meetsMinPayloadLen() == sizeof(EventHeader).
     tx.len   = static_cast<uint8_t>(sizeof(EventHeader));
     (void)memset(tx.payload, 0, sizeof(EventHeader));
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 /**
@@ -210,7 +218,9 @@ static uint16_t make_ack_short_frame(uint8_t* buf, uint8_t seq)
     tx.seq   = seq;
     tx.flags = 0U;
     tx.len   = 0U;  // Below sizeof(AckPayload) == 4.
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 /** Build an ACK wire frame carrying a full AckPayload for @p originalSeq. */
@@ -230,7 +240,9 @@ static uint16_t make_ack_frame(uint8_t* buf, uint8_t seq, uint8_t originalSeq)
     tx.flags = 0U;
     tx.len   = static_cast<uint8_t>(sizeof(ap));
     (void)memcpy(tx.payload, &ap, sizeof(ap));
-    return encode(tx, buf, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 // ── Non-fragmented COMMAND tests ──────────────────────────────────────────────
@@ -752,7 +764,8 @@ void test_cmd_wrong_node_sends_routing_nack()
     tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, wire, sizeof(wire));
+    uint16_t len = 0U;
+    (void)encode(tx, wire, sizeof(wire), len);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
@@ -874,7 +887,8 @@ void test_cmd_nonfrag_unknown_commandid()
     tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, wire, sizeof(wire));
+    uint16_t len = 0U;
+    (void)encode(tx, wire, sizeof(wire), len);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
@@ -1149,7 +1163,8 @@ void test_cmd_nonfrag_gap_commandid_default_case()
     tx.len        = 6U;  // sizeof(CommandHeader)
 
     uint8_t wire[MAX_FRAME_LEN];
-    const uint16_t len = encode(tx, wire, sizeof(wire));
+    uint16_t len = 0U;
+    (void)encode(tx, wire, sizeof(wire), len);
     TEST_ASSERT_GREATER_THAN_UINT16(0U, len);
 
     TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, len));
@@ -1574,7 +1589,8 @@ void test_retry_drops_not_incremented_after_ack_frees_slot()
         ackTx.len = static_cast<uint8_t>(sizeof(ap));
 
         uint8_t wire[MAX_FRAME_LEN];
-        const uint16_t wlen = encode(ackTx, wire, sizeof(wire));
+        uint16_t wlen = 0U;
+        (void)encode(ackTx, wire, sizeof(wire), wlen);
         TEST_ASSERT_GREATER_THAN_UINT16(0U, wlen);
         TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wlen));
         f.dispatcher.poll(1000U);
@@ -1640,7 +1656,9 @@ static uint16_t make_mac_cmd(uint8_t*  wire,
     tx.len        = 6U;  // sizeof(CommandHeader)
 
     TEST_ASSERT_TRUE(appendCommandMac(kTestMacKey, HMAC_KEY_LEN, tx));
-    return encode(tx, wire, MAX_FRAME_LEN);
+    uint16_t outLen = 0U;
+    (void)encode(tx, wire, MAX_FRAME_LEN, outLen);
+    return outLen;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

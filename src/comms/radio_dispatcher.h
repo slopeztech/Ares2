@@ -39,6 +39,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <freertos/task.h>
 
 namespace ares
 {
@@ -131,6 +132,9 @@ private:
     uint16_t rxLen_          = 0U;   ///< Number of valid bytes currently in rxBuf_.
     uint8_t  txSeq_          = 0U;   ///< TX sequence counter for outgoing ACK/NACK/HBEAT frames.
     proto::SeqBitmap rxSeqBitmap_;   ///< Sliding-window anti-replay bitmap (APUS-4.7, [H5]).
+    /// Task handle latched on the first poll() call; enforces the single-task contract
+    /// (CERT-13, RTOS-4). ARES_REQUIRE aborts in release if violated.
+    TaskHandle_t pollTask_ = nullptr;
 
     // ── TX retry buffer (APUS-4.5, APUS-4.6, APUS-2.3) ─────────────────────
     /**
