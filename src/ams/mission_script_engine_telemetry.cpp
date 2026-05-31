@@ -473,15 +473,18 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
         if (hLen > 0)
         {
             uint32_t hPos = static_cast<uint32_t>(hLen);
-            for (uint8_t i = 0; i < slot.fieldCount && hPos < sizeof(hLine) - 2U; i++)
+            uint8_t  hi   = 0U;
+            for (; hi < slot.fieldCount && hPos < sizeof(hLine) - 2U; hi++)
             {
                 char safeLabel[sizeof(HkField::label)] = {};
-                sanitiseCsvLabel(slot.fields[i].label, safeLabel, sizeof(safeLabel));
+                sanitiseCsvLabel(slot.fields[hi].label, safeLabel, sizeof(safeLabel));
                 const int32_t n = static_cast<int32_t>(snprintf(&hLine[hPos], sizeof(hLine) - hPos,
                                        ",%s", safeLabel));
                 if (n <= 0) { break; }
                 hPos += static_cast<uint32_t>(n);
             }
+            // All field labels must fit in hLine; fires in debug if header is truncated.
+            ARES_ASSERT(hi == slot.fieldCount);
             // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
             if (hPos < sizeof(hLine) - 7U)  // need room for ",crc8\n\0" = 7 bytes
             {
@@ -508,15 +511,18 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
     if (head <= 0) { return; }
 
     uint32_t pos = static_cast<uint32_t>(head);
-    for (uint8_t i = 0; i < slot.fieldCount && pos < sizeof(line) - 2U; i++)
+    uint8_t  di  = 0U;
+    for (; di < slot.fieldCount && pos < sizeof(line) - 2U; di++)
     {
         char value[32] = {};
-        formatHkFieldValueLocked(slot.fields[i], value, sizeof(value));
+        formatHkFieldValueLocked(slot.fields[di], value, sizeof(value));
         // value is always populated: real reading or "nan" error sentinel.
         const int32_t n = snprintf(&line[pos], sizeof(line) - pos, ",%s", value);
         if (n <= 0) { break; }
         pos += static_cast<uint32_t>(n);
     }
+    // All field values must fit in line; fires in debug if the data row is truncated.
+    ARES_ASSERT(di == slot.fieldCount);
 
     // CRC8/SMBUS of all row bytes detects rows truncated by short-write or
     // power failure; the ground-station parser validates this field (AMS-4.3.2).
@@ -549,7 +555,8 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
         return false;
     }
 
-    uint32_t hPos = static_cast<uint32_t>(hLen);
+    uint32_t hPos     = static_cast<uint32_t>(hLen);
+    bool     hdrTrunc  = false;
     for (uint8_t i = 0; i < st.logFieldCount; i++)
     {
         char safeLabel[sizeof(HkField::label)] = {};
@@ -557,8 +564,10 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
         const int32_t n = static_cast<int32_t>(snprintf(&line[hPos], sizeof(line) - hPos, ",%s", safeLabel));
         if (n <= 0) { break; }
         hPos += static_cast<uint32_t>(n);
-        if (hPos >= sizeof(line) - 2U) { break; }
+        if (hPos >= sizeof(line) - 2U) { hdrTrunc = true; break; }
     }
+    // All column labels must fit in line; fires in debug if the header is truncated.
+    ARES_ASSERT(!hdrTrunc);
 
     // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
     if (hPos >= sizeof(line) - 7U)  // need room for ",crc8\n\0" = 7 bytes
