@@ -267,8 +267,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint64_t nowMs, bool force)
 
     pendingCheckpoint_.len     = written;
     pendingCheckpoint_.pending = true;
-    lastCheckpointMs_          = nowMs;
-    checkpointDirty_           = false;
+    pendingCheckpoint_.nowMs   = nowMs;   // committed to lastCheckpointMs_ only on successful flush
     return true;
 }
 
@@ -433,10 +432,36 @@ void MissionScriptEngine::flushPendingIoUnlocked()
             ares::AMS_RESUME_PATH,
             reinterpret_cast<const uint8_t*>(pendingCheckpoint_.buf),
             static_cast<uint32_t>(pendingCheckpoint_.len));
-        if (st != StorageStatus::OK)
+        if (st == StorageStatus::OK)
         {
-            LOG_W(TAG, "deferred checkpoint write failed: %u",
+            // Advance timing markers only after a confirmed write.  Pre-marking
+            // them in saveResumePointLocked() would cause a failed flush to be
+            // treated as successful, deferring the next retry by a full
+            // AMS_CHECKPOINT_INTERVAL_MS even though no data reached disk.
+            ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+            if (guard.acquired())
+            {
+                lastCheckpointMs_ = pendingCheckpoint_.nowMs;
+                checkpointDirty_  = false;
+            }
+            else
+            {
+                LOG_W(TAG, "checkpoint commit: mutex timeout — markers not advanced, will retry");
+            }
+        }
+        else
+        {
+            LOG_W(TAG, "deferred checkpoint write failed: %u — re-arming for retry",
                   static_cast<uint32_t>(st));
+            // Re-arm the dirty flag so that the next tick retries after
+            // AMS_CHECKPOINT_INTERVAL_MS rather than the longer stable cadence.
+            // lastCheckpointMs_ is intentionally left unchanged so the retry
+            // window is measured from the last *successful* write.
+            ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+            if (guard.acquired())
+            {
+                checkpointDirty_ = true;
+            }
         }
         pendingCheckpoint_.pending = false;
     }

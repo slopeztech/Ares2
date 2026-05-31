@@ -1,18 +1,24 @@
 /**
  * @file  test_ams_checkpoint_flush.cpp
  * @brief SITL integration tests — flushPendingIoUnlocked() must be
- *        reached on every tick() exit path.
+ *        reached on every tick() exit path, and checkpoint timing markers
+ *        must only advance after a confirmed write.
  *
- * Before the fix, tick() returned early on TC-transition, fallback, on_timeout,
- * and unhandled-ABORT paths, leaving staged checkpoint/abort-row data in
- * memory and never writing it to storage.
+ * tick() was restructured to a single-exit pattern so that checkpoints staged
+ * by enterStateLocked() on TC-transition, fallback, and on_timeout paths are
+ * always flushed to storage, as are abort-row appends from unhandled ABORT TCs.
  *
- * These tests verify that after the single-exit restructure:
+ * Additionally, lastCheckpointMs_ / checkpointDirty_ are committed only after
+ * writeFile() succeeds.  A storage failure re-arms the dirty flag so that the
+ * next tick retries immediately rather than waiting a full checkpoint interval.
+ *
+ * These tests verify:
  *   1. A TC-driven WAIT→FLIGHT transition writes a checkpoint for the new state.
  *   2. A fallback transition (FLIGHT→SAFE) writes a checkpoint for the new state.
  *   3. An on_timeout transition (HOLD→TIMEOUT_WIN) writes a checkpoint for the
  *      new state.
  *   4. An unhandled ABORT TC stages the abort row and flushes it via appendFile.
+ *   5. A failed writeFile() re-arms the dirty flag so the next tick retries.
  */
 
 #include <unity.h>
@@ -97,9 +103,10 @@ struct FlushFixture
 // ─────────────────────────────────────────────────────────────────────────────
 // TC-driven transition (WAIT → FLIGHT via LAUNCH).
 //
-// Before the fix, evaluateTransitionAndMaybeEnterLocked() returning true
-// caused tick() to return without calling flushPendingIoUnlocked(), so the
-// FLIGHT checkpoint was staged but never written.
+// evaluateTransitionAndMaybeEnterLocked() returning true used to cause tick()
+// to return without calling flushPendingIoUnlocked(), so the FLIGHT checkpoint
+// was staged but never written.  The single-exit restructure ensures the flush
+// always runs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void test_checkpoint_written_on_tc_transition()
@@ -124,7 +131,8 @@ void test_checkpoint_written_on_tc_transition()
 // ─────────────────────────────────────────────────────────────────────────────
 // Fallback transition (FLIGHT → SAFE after 2000 ms).
 //
-// Before the fix, the didFallback=true branch returned without flushing.
+// The didFallback=true branch used to return without flushing.  Now the
+// flush is unconditional at the end of tick().
 // ─────────────────────────────────────────────────────────────────────────────
 
 void test_checkpoint_written_on_fallback_transition()
@@ -153,8 +161,8 @@ void test_checkpoint_written_on_fallback_transition()
 // ─────────────────────────────────────────────────────────────────────────────
 // on_timeout transition (HOLD → TIMEOUT_WIN at 3000 ms).
 //
-// Before the fix, checkOnTimeoutLocked() returning true caused tick() to
-// return without flushing the staged checkpoint.
+// checkOnTimeoutLocked() returning true used to cause tick() to return without
+// flushing the staged checkpoint.  Now the flush is unconditional.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void test_checkpoint_written_on_timeout()
@@ -183,7 +191,7 @@ void test_checkpoint_written_on_timeout()
 // ─────────────────────────────────────────────────────────────────────────────
 // Unhandled ABORT TC (force-deactivation).
 //
-// Before the fix, the ABORT branch deactivated the engine and returned before
+// The ABORT branch used to deactivate the engine and return before
 // flushPendingIoUnlocked(), so the abort audit row staged by
 // writeAbortMarkerLocked() was never appended to the mission log.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,4 +218,51 @@ void test_abort_row_flushed_on_unhandled_abort()
     f.engine.tick(ares::sim::clock::nowMs());
 
     TEST_ASSERT_NOT_NULL(strstr(f.storage.appendedContent(), "ABORT"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkpoint retry after writeFile() NO_SPACE failure.
+//
+// lastCheckpointMs_ and checkpointDirty_ are now committed only after a
+// confirmed writeFile() success.  When the write fails, checkpointDirty_ is
+// re-armed and lastCheckpointMs_ is left at the last successful value, so the
+// engine re-stages and retries on the very next tick once enough time has
+// elapsed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_checkpoint_retried_after_write_failure()
+{
+    FlushFixture f;
+    f.init("/missions/flight.ams", ares::sim::kScriptFlight);
+
+    (void)f.engine.activate("flight.ams");
+    (void)f.engine.arm(); // queues LAUNCH; writes arm() checkpoint for WAIT
+
+    // Discard arm() write; only the upcoming ticks matter.
+    f.storage.resetWriteCapture();
+
+    // Inject one NO_SPACE failure so the first checkpoint write after the
+    // WAIT→FLIGHT transition is rejected by the storage layer.
+    f.storage.failNextWrites(1U);
+
+    // t=0: LAUNCH TC fires WAIT → FLIGHT.  flushPendingIoUnlocked() attempts
+    // the write but gets NO_SPACE → checkpointDirty_ re-armed, lastCheckpointMs_
+    // left at its previous value.
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    // The failed attempt must have been tried exactly once.
+    TEST_ASSERT_EQUAL_UINT32(1U, f.storage.writeCallCount());
+
+    // Reset capture so we can detect the retry independently.
+    f.storage.resetWriteCapture();
+
+    // t=1001 ms: more than AMS_CHECKPOINT_INTERVAL_MS has elapsed since the
+    // last *successful* write (which didn't happen), so the engine re-stages
+    // the checkpoint and flushPendingIoUnlocked() must succeed this time.
+    ares::sim::clock::advanceMs(1001U);
+    f.engine.tick(ares::sim::clock::nowMs());
+
+    TEST_ASSERT_GREATER_OR_EQUAL(1U, f.storage.writeCallCount());
+    // The retried record must reflect the FLIGHT state (stateIdx=1).
+    TEST_ASSERT_NOT_NULL(strstr(f.storage.lastWrittenContent(), "flight.ams|1|"));
 }

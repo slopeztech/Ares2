@@ -128,6 +128,11 @@ public:
     {
         if (!mounted_) { return StorageStatus::NOT_READY; }
         writeCallCount_++;
+        if (failWriteCount_ > 0U)
+        {
+            failWriteCount_--;
+            return StorageStatus::NO_SPACE;
+        }
         // Capture the most recent write (truncate silently when buffer is full).
         if (path != nullptr)
         {
@@ -169,6 +174,9 @@ public:
 
     /** Inject @p count consecutive NO_SPACE failures into appendFile. */
     void failNextAppends(uint8_t count) { failAppendCount_ = count; }
+
+    /** Inject @p count consecutive NO_SPACE failures into writeFile. */
+    void failNextWrites(uint8_t count) { failWriteCount_ = count; }
 
     /** Return all successfully appended bytes as a NUL-terminated string. */
     const char* appendedContent() const { return appendBuf_; }
@@ -331,7 +339,8 @@ private:
     char     appendBuf_[kAppendBufSize]  = {};
     uint32_t appendBufLen_               = 0U;
 
-    // ── writeFile capture (test helpers) ─────────────────────────────────────
+    // ── writeFile failure injection & capture (test helpers) ─────────────────
+    uint8_t  failWriteCount_  = 0U;
     uint32_t writeCallCount_  = 0U;
     static constexpr uint32_t kWriteBufSize = 512U;
     char     lastWrittenBuf_[kWriteBufSize]  = {};
