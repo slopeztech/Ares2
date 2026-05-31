@@ -91,12 +91,12 @@ static StorageInterface&   storageIf = storage;
 static RadioInterface&     radioIf   = radio;
 // Driver registries — enumerate every physical peripheral available to AMS scripts.
 // Scripts select which driver to use via: include MODEL as ALIAS
-// kBaroIfaces[0] and kBaroDrivers[0].iface are nullptr until setup() patches
+// s_baroIfaces[0] and s_baroDrivers[0].iface are nullptr until setup() patches
 // them after pBaro is placement-new-constructed (P1-3).
-static BarometerInterface*        kBaroIfaces[]   = { nullptr };
+static BarometerInterface*        s_baroIfaces[]   = { nullptr };
 static GpsInterface* const        kGpsIfaces[]    = { &gps  };
 static const ares::ams::GpsEntry  kGpsDrivers[]   = { { "BN220",  kGpsIfaces[0]  } };
-static ares::ams::BaroEntry       kBaroDrivers[]  = { { "BMP280", nullptr } };
+static ares::ams::BaroEntry       s_baroDrivers[]  = { { "BMP280", nullptr } };
 static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03", &radioIf } };
 static ImuInterface* const        kImuIfaces[]    = { &imu, &imu2 };
 static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", kImuIfaces[0] },
@@ -106,7 +106,7 @@ static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", kImuIfaces[0]
 static ares::ams::MissionScriptEngine missionEngine(
     storageIf,
     kGpsDrivers,  static_cast<uint8_t>(1),
-    kBaroDrivers, static_cast<uint8_t>(1),
+    s_baroDrivers, static_cast<uint8_t>(1),
     kComDrivers,  static_cast<uint8_t>(1),
     kImuDrivers,  static_cast<uint8_t>(2),
     &pulse);
@@ -114,7 +114,7 @@ static ares::ams::MissionScriptEngine missionEngine(
 // frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
 static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
 
-// apiServer: deferred to setup() — takes *kBaroIfaces[0] which requires baro
+// apiServer: deferred to setup() — takes *s_baroIfaces[0] which requires baro
 // to be live first, and baro is deferred (P1-3).  Static storage (PO10-3).
 alignas(ApiServer) static uint8_t  s_apiBuf[sizeof(ApiServer)];
 static ApiServer*                  pApiServer = nullptr;
@@ -200,11 +200,13 @@ static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dis
 /// Placement-new-constructs ApiServer into its static aligned storage and
 /// calls begin().  Extracted from setup() to keep it within the
 /// readability-function-size threshold (clang-tidy).
-/// Pre-condition: kBaroIfaces[0] and missionEngine must be live.
+/// Pre-condition: s_baroIfaces[0] and missionEngine must be live.
+/// pApiServer is only published on success so that the loop() null-guard
+/// reliably detects a failed init (TWDT is never registered on failure paths).
 static bool startApiServer()
 {
-    pApiServer = new (s_apiBuf) ApiServer(
-        wifiAp, *kBaroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
+    ApiServer* const p = new (s_apiBuf) ApiServer(
+        wifiAp, *s_baroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
         deviceConfig,
         &storageIf, &missionEngine,
         &statusLed,
@@ -213,7 +215,9 @@ static bool startApiServer()
         &radioIf,
         &pulse,
         &radioDispatcher);
-    return pApiServer->begin();
+    if (!p->begin()) { return false; }
+    pApiServer = p;
+    return true;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -229,14 +233,14 @@ void setup()
     Wire.setTimeOut(ares::I2C_TIMEOUT_MS);
     // [P1-3] Construct baro here — Wire is now initialised (SIOF fix).
     pBaro               = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
-    kBaroIfaces[0]      = pBaro;
-    kBaroDrivers[0].iface = pBaro;
+    s_baroIfaces[0]      = pBaro;
+    s_baroDrivers[0].iface = pBaro;
     // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
     // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
     imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
 
-    for (BarometerInterface* iface : kBaroIfaces) { (void)iface->begin(); }
+    for (BarometerInterface* iface : s_baroIfaces) { (void)iface->begin(); }
     for (ImuInterface*        iface : kImuIfaces)  { (void)iface->begin(); }
     for (GpsInterface*        iface : kGpsIfaces)  { (void)iface->begin(); }
     (void)pulse.begin();
