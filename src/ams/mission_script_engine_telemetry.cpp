@@ -483,8 +483,15 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
                 if (n <= 0) { break; }
                 hPos += static_cast<uint32_t>(n);
             }
-            // All field labels must fit in hLine; fires in debug if header is truncated.
-            ARES_ASSERT(hi == slot.fieldCount);
+            // Detect slot header truncation in all builds (P2-4): if not all
+            // field labels fit, discard the header write so the flag is never
+            // raised and the row will be skipped without a corrupt CSV column.
+            if (hi != slot.fieldCount)
+            {
+                LOG_W(TAG, "slot %u header truncated at field %u — skipping header",
+                      static_cast<unsigned>(slotIdx), static_cast<unsigned>(hi));
+                return;
+            }
             // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
             if (hPos < sizeof(hLine) - 7U)  // need room for ",crc8\n\0" = 7 bytes
             {
@@ -521,8 +528,14 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
         if (n <= 0) { break; }
         pos += static_cast<uint32_t>(n);
     }
-    // All field values must fit in line; fires in debug if the data row is truncated.
-    ARES_ASSERT(di == slot.fieldCount);
+    // Detect data row truncation in all builds (P2-4): drop the row so the
+    // ground-station parser never sees a row with missing fields and a bad CRC.
+    if (di != slot.fieldCount)
+    {
+        LOG_W(TAG, "slot %u data row truncated at field %u — row dropped",
+              static_cast<unsigned>(slotIdx), static_cast<unsigned>(di));
+        return;
+    }
 
     // CRC8/SMBUS of all row bytes detects rows truncated by short-write or
     // power failure; the ground-station parser validates this field (AMS-4.3.2).
@@ -566,8 +579,13 @@ bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
         hPos += static_cast<uint32_t>(n);
         if (hPos >= sizeof(line) - 2U) { hdrTrunc = true; break; }
     }
-    // All column labels must fit in line; fires in debug if the header is truncated.
-    ARES_ASSERT(!hdrTrunc);
+    // Detect header truncation in all builds (P2-4): return false so the
+    // caller skips the append and can retry on the next cycle.
+    if (hdrTrunc)
+    {
+        LOG_W(TAG, "log header truncated at field — skipping header");
+        return false;
+    }
 
     // Append CRC8 column label; data rows carry the computed checksum (AMS-4.3.2).
     if (hPos >= sizeof(line) - 7U)  // need room for ",crc8\n\0" = 7 bytes

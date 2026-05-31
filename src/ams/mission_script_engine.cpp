@@ -114,8 +114,8 @@ bool MissionScriptEngine::activate(const char* fileName)
     seq_ = 0;
     lastHkMs_ = 0;
     lastLogMs_ = 0;
-    std::fill_n(lastHkSlotMs_,  ares::AMS_MAX_HK_SLOTS, uint64_t{0U});
-    std::fill_n(lastLogSlotMs_, ares::AMS_MAX_HK_SLOTS, uint64_t{0U});
+    memset(lastHkSlotMs_,  0U, sizeof(lastHkSlotMs_));
+    memset(lastLogSlotMs_, 0U, sizeof(lastLogSlotMs_));
 
     uint8_t startIdx = 0;
     const uint8_t waitIdx = findStateByNameLocked("WAIT");

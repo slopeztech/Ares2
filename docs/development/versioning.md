@@ -104,4 +104,3 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.10](../changelog/v2.3.10.md) | 2026-05-31 | Patch   | Hardening: P0-2/P0-3/P1-5/P1-6 API server fixes; P3-4 HTTP parser fuzz tests (10 new); clang-tidy clean |
 | [2.3.11](../changelog/v2.3.11.md) | 2026-05-31 | Patch   | Patch: P1-2 radio dispatcher single-task enforcement (`ARES_REQUIRE`); P1-4 `encode()` bool + out-param; P3-1 `dxlr03` magic-number cleanup |
 | [2.3.12](../changelog/v2.3.12.md) | 2026-05-31 | Patch   | Patch: P1-3 SIOF `main.cpp` (placement new, `startApiServer`); P2-1/P2-4 truncation guards; P2-5 `std::fill_n`; P3-2 `kCrcSuffix`; P2-2 single-task contract |
-| [2.3.12](../changelog/v2.3.12.md) | 2026-05-31 | Patch   | Patch: P1-3 SIOF `main.cpp` (placement new, `startApiServer`); P2-1/P2-4 truncation guards; P2-5 `std::fill_n`; P3-2 `kCrcSuffix`; P2-2 single-task contract |
