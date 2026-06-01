@@ -13,7 +13,7 @@
  *                                                monitoring alarm,
  *                                                configureMonitorFromParam)
  *
- * Test count: 15
+ * Test count: 18
  */
 
 #include <unity.h>
@@ -26,6 +26,7 @@ using ares::ams::BaroEntry;
 using ares::ams::ComEntry;
 using ares::ams::ImuEntry;
 
+#include "sim_ams_scripts.h"
 #include "sim_clock.h"
 #include "sim_gps_driver.h"
 #include "sim_baro_driver.h"
@@ -684,4 +685,106 @@ void test_bad_imu_field_rejected()
     CovFixture f{kGroundProfile};
     f.init("/missions/bad_imu.ams", kScriptBadImuField);
     TEST_ASSERT_FALSE(f.engine.activate("bad_imu.ams"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// parser_actions error-path coverage — on_error EVENT bad syntax
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Script with an unknown EVENT verb inside on_error — parser should reject it.
+/// Covers parseOnErrorEventLineLocked lines 71-72 ("unknown EVENT verb in on_error").
+static const char kScriptOnErrorUnknownVerb[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_error:\n"
+    "    EVENT.bogus \"bad verb\"\n"
+    "  transition to END when TC.command == LAUNCH\n"
+    "\n"
+    "state END:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"DONE\"\n";
+
+/// Script with trailing garbage after EVENT.info in on_error — parser should reject it.
+/// Covers parseOnErrorEventLineLocked lines 60-61 ("unexpected tokens after EVENT").
+static const char kScriptOnErrorTrailingGarbage[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_error:\n"
+    "    EVENT.info \"msg\" extratoken\n"
+    "  transition to END when TC.command == LAUNCH\n"
+    "\n"
+    "state END:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"DONE\"\n";
+
+// ── Test 16: unknown on_error EVENT verb rejected ─────────────────────────────
+
+void test_on_error_event_unknown_verb_rejected()
+{
+    CovFixture f{kGroundProfile};
+    f.init("/missions/onerr_badverb.ams", kScriptOnErrorUnknownVerb);
+    TEST_ASSERT_FALSE(f.engine.activate("onerr_badverb.ams"));
+}
+
+// ── Test 17: trailing garbage after on_error EVENT directive rejected ─────────
+
+void test_on_error_event_trailing_garbage_rejected()
+{
+    CovFixture f{kGroundProfile};
+    f.init("/missions/onerr_trailing.ams", kScriptOnErrorTrailingGarbage);
+    TEST_ASSERT_FALSE(f.engine.activate("onerr_trailing.ams"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// checkpoint.cpp coverage — v3 checkpoint restore (vars + slot timers)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// This test exercises the v2/v3 lenient restore path in tryRestoreResumePointLocked,
+// covering restoreCheckpointVarsLocked and restoreCheckpointSlotsLocked which are
+// never reached by v4 checkpoint tests.
+//
+// v3 format: version|file|stateIdx|exec|running|status|seq|stElap|hkElap|logElap
+//            |varCount|name=val=valid|...|hkSlotCount|hkElap0|...|logSlotCount|logElap0|...
+//
+// ── Test 18: v3 checkpoint with one variable restores successfully ─────────────
+
+void test_checkpoint_v3_with_var_restored()
+{
+    // v3 checkpoint: WAIT state (idx=0), 1 var "ground_alt"=0 valid, 0 HK/log slots.
+    static const char kV3Checkpoint[] =
+        "3|vfl.ams|0|1|1|1|0|0|0|0|1|ground_alt=0=1|0|0";
+
+    CovFixture f{kGroundProfile};
+    (void)f.storage.begin();
+    f.storage.registerFile(ares::AMS_RESUME_PATH,     kV3Checkpoint);
+    f.storage.registerFile("/missions/vfl.ams",       ares::sim::kScriptVarFieldInLog);
+    (void)f.gps.begin();
+    (void)f.baro.begin();
+    (void)f.imu.begin();
+    (void)f.radio.begin();
+    // begin() reads the checkpoint and calls tryRestoreResumePointLocked,
+    // which takes the v3 path → restoreCheckpointVarsLocked + restoreCheckpointSlotsLocked.
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    // Engine should have been restored to RUNNING in WAIT state.
+    TEST_ASSERT_EQUAL(EngineStatus::RUNNING, snap.status);
+    TEST_ASSERT_EQUAL_STRING("WAIT", snap.stateName);
 }

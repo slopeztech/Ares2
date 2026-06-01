@@ -75,7 +75,13 @@ void ApiServer::handleLogsList(WiFiClient& client)
         return;
     }
 
-    ARES_ASSERT(count <= ares::MAX_LOG_FILES);
+    if (count > ares::MAX_LOG_FILES)
+    {
+        LOG_E(TAG, "GET /api/logs: storage returned count=%u > MAX_LOG_FILES",
+              static_cast<uint32_t>(count));
+        sendError(client, 500, "storage error");
+        return;
+    }
 
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
@@ -89,7 +95,12 @@ void ApiServer::handleLogsList(WiFiClient& client)
 
     memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
     const size_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
-    ARES_ASSERT(len < sizeof(g_jsonBuf));
+    if (len >= sizeof(g_jsonBuf) - 1U)
+    {
+        LOG_W(TAG, "GET /api/logs: JSON response truncated (%zu bytes)", len);
+        sendError(client, 500, "response too large");
+        return;
+    }
     sendJson(client, 200U, g_jsonBuf, static_cast<uint32_t>(len));
     LOG_D(TAG, "GET /api/logs 200: %u files", static_cast<uint32_t>(count));
 }
@@ -121,8 +132,17 @@ void ApiServer::sendFileChunked(WiFiClient& client,
         {
             break;
         }
-        ARES_ASSERT(bytesRead <= ares::DOWNLOAD_CHUNK_SIZE);
-        ARES_ASSERT((offset + bytesRead) <= fileSize);
+        if (bytesRead > ares::DOWNLOAD_CHUNK_SIZE)
+        {
+            LOG_E(TAG, "readFileChunk over-read: bytesRead=%u > CHUNK_SIZE", bytesRead);
+            break;
+        }
+        if ((offset + bytesRead) > fileSize)
+        {
+            LOG_W(TAG, "readFileChunk past EOF: offset=%" PRIu32 " bytesRead=%u size=%" PRIu32,
+                  offset, bytesRead, fileSize);
+            bytesRead = fileSize - offset;
+        }
         client.write(chunk, bytesRead);
         offset += bytesRead;
     }
@@ -262,12 +282,23 @@ void ApiServer::handleLogDeleteAll(WiFiClient& client)
         return;
     }
 
-    ARES_ASSERT(count <= ares::MAX_LOG_FILES);
+    if (count > ares::MAX_LOG_FILES)
+    {
+        LOG_E(TAG, "DELETE /api/logs: storage returned count=%u > MAX_LOG_FILES",
+              static_cast<uint32_t>(count));
+        sendError(client, 500, "storage error");
+        return;
+    }
 
     uint8_t deleted = 0;
     for (uint8_t i = 0; i < count; i++)
     {
-        ARES_ASSERT(g_logEntries[i].name[0] == '/');
+        if (g_logEntries[i].name[0] != '/')
+        {
+            LOG_W(TAG, "DELETE /api/logs: skipping malformed entry [%u]",
+                  static_cast<uint32_t>(i));
+            continue;
+        }
         if (storage_->removeFile(g_logEntries[i].name) == StorageStatus::OK)
         {
             deleted++;
@@ -325,7 +356,12 @@ void ApiServer::handleStorageHealth(WiFiClient& client)
 
     memset(g_jsonBuf, 0, sizeof(g_jsonBuf));
     const size_t len = serializeJson(doc, g_jsonBuf, sizeof(g_jsonBuf));
-    ARES_ASSERT(len < sizeof(g_jsonBuf));
+    if (len >= sizeof(g_jsonBuf) - 1U)
+    {
+        LOG_W(TAG, "GET /api/storage/health: JSON response truncated (%zu bytes)", len);
+        sendError(client, 500, "response too large");
+        return;
+    }
     sendJson(client, 200U, g_jsonBuf, static_cast<uint32_t>(len));
     LOG_D(TAG, "GET /api/storage/health 200");
 }

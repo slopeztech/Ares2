@@ -786,13 +786,11 @@ HAL read up to N extra times (total attempts = N + 1) before treating a read as
 failed.
 
 ```ams
-include BMP280 as BARO retry=3 timeout=500ms
+include BMP280 as BARO retry=3
 include BN220 as GPS  retry=2
 ```
 
 - `N` must be in the range 1–`AMS_MAX_SENSOR_RETRY` (default 5).
-- `timeout=Nms` is validated syntactically; the effective per-attempt timeout is
-  governed by the hardware I2C configuration.
 - Retry is applied for every context where that alias is read: transitions,
   conditions, `set` actions, `LOG/HK` fields.
 

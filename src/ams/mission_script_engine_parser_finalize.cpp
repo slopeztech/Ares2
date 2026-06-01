@@ -346,11 +346,17 @@ bool MissionScriptEngine::parseTaskLineLocked(const char* line)
     else
     {
         char name[ares::AMS_MAX_STATE_NAME] = {};
+        int afterColon = 0;
         // cppcheck-suppress [cert-err34-c]
-        const int32_t n = static_cast<int32_t>(sscanf(line, "task %15[^:]:", name));
+        const int32_t n = static_cast<int32_t>(sscanf(line, "task %15[^:]:%n", name, &afterColon));
         if (n != 1 || name[0] == '\0')
         {
             setErrorLocked("invalid task syntax (expected: task NAME:)");
+            return false;
+        }
+        if (afterColon == 0)
+        {
+            setErrorLocked("task name too long (max 15 characters)");
             return false;
         }
         ares::util::copyZ(td.name, name, sizeof(td.name));
@@ -559,11 +565,17 @@ bool MissionScriptEngine::parseAssertLineLocked(const char* line)  // NOLINT(rea
     if (startsWith(line, "reachable "))
     {
         char name[ares::AMS_MAX_STATE_NAME] = {};
+        int afterName = 0;
         // cppcheck-suppress [cert-err34-c]
-        const int32_t n = static_cast<int32_t>(sscanf(line, "reachable %15s", name));
+        const int32_t n = static_cast<int32_t>(sscanf(line, "reachable %15s%n", name, &afterName));
         if (n != 1 || name[0] == '\0')
         {
             setErrorLocked("assert: invalid 'reachable' syntax (expected: reachable STATE)");
+            return false;
+        }
+        if (line[afterName] != '\0' && line[afterName] != ' ' && line[afterName] != '\t')
+        {
+            setErrorLocked("assert: target state name too long (max 15 characters)");
             return false;
         }
         ad.kind = AssertKind::REACHABLE;

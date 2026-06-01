@@ -206,6 +206,15 @@ extern void test_negative_threshold_accel_z_transition_fires();
 extern void test_negative_delta_threshold_accel_z_transition_fires();
 extern void test_gyro_mag_transition_fires_on_tumbling();
 extern void test_var_field_in_log_report();
+extern void test_checkpoint_v4_wrong_varcount_discarded();
+extern void test_checkpoint_v4_wrong_hkcount_discarded();
+extern void test_checkpoint_v4_truncated_confirm_section_discarded();
+extern void test_checkpoint_v4_truncated_hold_section_discarded();
+extern void test_parser_error_state_name_too_long();
+extern void test_parser_error_task_name_too_long();
+extern void test_parser_error_assert_reachable_name_too_long();
+extern void test_parser_error_transition_target_too_long();
+extern void test_parser_error_fallback_target_too_long();
 
 // ── test_ams_tasks.cpp ───────────────────────────────────────────────────────
 
@@ -226,6 +235,7 @@ extern void test_wakeup_hk_slot_tightens_deadline();
 
 extern void test_failed_sensor_writes_nan_sentinel_in_csv();
 extern void test_valid_sensor_writes_numeric_value_in_csv();
+extern void test_nan_baro_value_writes_nan_sentinel_in_csv();
 
 // ── test_ams_coverage_ext.cpp ─────────────────────────────────────────────────
 
@@ -244,6 +254,9 @@ extern void test_on_exit_unknown_verb_rejected();
 extern void test_bad_gps_field_rejected();
 extern void test_bad_baro_field_rejected();
 extern void test_bad_imu_field_rejected();
+extern void test_on_error_event_unknown_verb_rejected();
+extern void test_on_error_event_trailing_garbage_rejected();
+extern void test_checkpoint_v3_with_var_restored();
 
 
 // ── Runner ───────────────────────────────────────────────────────────────────
@@ -433,6 +446,15 @@ int main()
     RUN_TEST(test_negative_delta_threshold_accel_z_transition_fires);
     RUN_TEST(test_gyro_mag_transition_fires_on_tumbling);
     RUN_TEST(test_var_field_in_log_report);
+    RUN_TEST(test_checkpoint_v4_wrong_varcount_discarded);
+    RUN_TEST(test_checkpoint_v4_wrong_hkcount_discarded);
+    RUN_TEST(test_checkpoint_v4_truncated_confirm_section_discarded);
+    RUN_TEST(test_checkpoint_v4_truncated_hold_section_discarded);
+    RUN_TEST(test_parser_error_state_name_too_long);
+    RUN_TEST(test_parser_error_task_name_too_long);
+    RUN_TEST(test_parser_error_assert_reachable_name_too_long);
+    RUN_TEST(test_parser_error_transition_target_too_long);
+    RUN_TEST(test_parser_error_fallback_target_too_long);
 
     // ams_tasks
     RUN_TEST(test_task_state_filter_script_parses_ok);
@@ -450,6 +472,7 @@ int main()
     // ams_telemetry_sentinel
     RUN_TEST(test_failed_sensor_writes_nan_sentinel_in_csv);
     RUN_TEST(test_valid_sensor_writes_numeric_value_in_csv);
+    RUN_TEST(test_nan_baro_value_writes_nan_sentinel_in_csv);
 
     // ams_coverage_ext
     RUN_TEST(test_on_exit_event_parses_ok);
@@ -467,6 +490,9 @@ int main()
     RUN_TEST(test_bad_gps_field_rejected);
     RUN_TEST(test_bad_baro_field_rejected);
     RUN_TEST(test_bad_imu_field_rejected);
+    RUN_TEST(test_on_error_event_unknown_verb_rejected);
+    RUN_TEST(test_on_error_event_trailing_garbage_rejected);
+    RUN_TEST(test_checkpoint_v3_with_var_restored);
 
     return UNITY_END();
 }

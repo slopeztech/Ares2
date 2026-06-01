@@ -942,14 +942,16 @@ void test_checkpoint_v4_confirm_restored()
     // Field breakdown:
     //   ver=4, file=confirm3.ams, stateIdx=0 (WAIT), exec=1, running=1,
     //   status=1 (RUNNING), seq=0, stElap=0, hkElap=0, logElap=0,
-    //   varCount=0, hkCount=0, logCount=0,
+    //   hkCount=0, logCount=0,
     //   cc0=0, cc1=2, cc2=0, cc3=0  (LAUNCH=TC index 1, already confirmed 2x)
     //   hold0=0|condElap0=0  (not holding)
     //   hold1=0|condElap1=0
     //   hold2=0|condElap2=0
     //   hold3=0|condElap3=0
+    // Note: appendVarsSectionLocked writes nothing when varCount==0, so there
+    // is no varCount field in the checkpoint (strict path relies on this).
     static const char kBodyNoCrc[] =
-        "4|confirm3.ams|0|1|1|1|0|0|0|0|0|0|0|0|2|0|0|0|0|0|0|0|0|0|0";
+        "4|confirm3.ams|0|1|1|1|0|0|0|0|0|0|0|2|0|0|0|0|0|0|0|0|0|0";
     // Compute correct CRC over the body.
     const uint32_t crc = testCrc32Compute(kBodyNoCrc,
                                           sizeof(kBodyNoCrc) - 1U);  // exclude NUL
@@ -1022,10 +1024,11 @@ void test_checkpoint_millis_rollover_elapsed_wrap()
 
     // v4 checkpoint: stateElapsed = 200 (larger than nowMs = 50 → underflow).
     // Field order: ver|file|stateIdx|exec|running|status|seq|
-    //              stElap|hkElap|logElap|varCount|hkCount|logCount|
+    //              stElap|hkElap|logElap|hkCount|logCount|
     //              cc0|cc1|cc2|cc3|hold0|cElap0|hold1|cElap1|hold2|cElap2|hold3|cElap3
+    // (No varCount field — appendVarsSectionLocked writes nothing when varCount==0.)
     static const char kBodyNoCrc[] =
-        "4|timeout_wrap.ams|0|1|1|1|0|200|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0";
+        "4|timeout_wrap.ams|0|1|1|1|0|200|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0";
     const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
     char kCheckpoint[128] = {};
     (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
@@ -1123,7 +1126,7 @@ void test_checkpoint_resume_missing_file()
     // registered in SimStorageDriver).  loadFromStorageLocked will fail and
     // tryRestoreResumePointLocked must call clearResumePointLocked + return.
     static const char kBodyNoCrc[] =
-        "4|missing.ams|0|1|1|1|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0";
+        "4|missing.ams|0|1|1|1|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0";
     const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
     char kCheckpoint[96] = {};
     (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
@@ -1351,7 +1354,7 @@ void test_gyro_mag_transition_fires_on_tumbling()
  *   1. Activate + arm kScriptVarFieldInLog.
  *   2. Tick at t=0 → WAIT entered; on_enter sets ground_alt = BARO.alt (≈0).
  *   3. Arm fires LAUNCH TC → engine transitions to FLIGHT (same tick or next).
- *   4. Tick at t=10ms → LOG slot due; LOG.report writes CSV row with ga value.
+ *   4. Tick at t=100ms → LOG slot due; LOG.report writes CSV row with ga value.
  *   5. Assert script parses without error (engine status RUNNING).
  *   6. Assert log CSV output contains a column named "ga".
  *   7. Assert CSV data row (not "nan") — variable was valid at log time.
@@ -1372,8 +1375,8 @@ void test_var_field_in_log_report()
     TEST_ASSERT_EQUAL(EngineStatus::RUNNING, snap.status);
     TEST_ASSERT_EQUAL_STRING("FLIGHT", snap.stateName);
 
-    // tick(10ms): LOG slot due → CSV header + first data row written.
-    ares::sim::clock::advanceMs(10U);
+    // tick(100ms): LOG slot due → CSV header + first data row written.
+    ares::sim::clock::advanceMs(100U);
     f.engine.tick(ares::sim::clock::nowMs());
 
     const char* content = f.storage.appendedContent();
@@ -1390,3 +1393,309 @@ void test_var_field_in_log_report()
                              "LOG CSV row must not end with ',nan'");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// P2-3 regression tests — v4 strict restore (restoreCheckpointV4StrictLocked).
+//
+// A v4 record with a valid CRC but an inconsistent field count (wrong varCount,
+// wrong hkSlotCount, or a truncated section) must be discarded atomically
+// rather than partially applied.  Each test crafts a well-formed CRC over a
+// structurally defective body to isolate the strict-parse path from the CRC
+// gate (which catches genuine write corruption separately).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4 strict: varCount in checkpoint (2) does not match the loaded script (0).
+// The mission has no declared variables; a checkpoint claiming varCount=2 must
+// be discarded — the strict path must not restore partial variable state.
+// ─────────────────────────────────────────────────────────────────────────────
+void test_checkpoint_v4_wrong_varcount_discarded()
+{
+    // Simple two-state mission with no var declarations.
+    static const char kMission[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  transition to DONE when TC.command == LAUNCH\n"
+        "state DONE:\n";
+
+    // v4 body: varCount=2 but the script above has 0 variables.
+    // Format: ver|file|stateIdx|exec|running|status|seq|stElap|hkElap|logElap|
+    //         varCount|name1=value1=valid1|name2=value2=valid2|
+    //         hkSlotCount|logSlotCount|cc0|cc1|cc2|cc3|
+    //         hold0|condElap0|hold1|condElap1|hold2|condElap2|hold3|condElap3
+    static const char kBodyNoCrc[] =
+        "4|wrongvc.ams|0|1|1|1|0|0|0|0"
+        "|2|x=1.0=1|y=2.0=1"
+        "|0|0|0|0|0|0|0|0|0|0|0|0|0|0";
+    const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
+    char kCheckpoint[160] = {};
+    (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
+                   "%s|%08" PRIX32, kBodyNoCrc, crc);
+
+    ScriptFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/.ams_resume.chk", kCheckpoint);
+    f.storage.registerFile("/missions/wrongvc.ams", kMission);
+    (void)f.gps.begin();
+    (void)f.baro.begin();
+    (void)f.imu.begin();
+    (void)f.radio.begin();
+    (void)f.engine.begin();
+
+    // CRC is valid but varCount mismatch → strict restore must discard.
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "[P2-3] v4 checkpoint with wrong varCount must be discarded (engine IDLE)");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4 strict: hkSlotCount in checkpoint (0) does not match the state (1 slot).
+// ─────────────────────────────────────────────────────────────────────────────
+void test_checkpoint_v4_wrong_hkcount_discarded()
+{
+    // One HK slot in WAIT state (every 200ms: HK.report { baro_alt: BARO.alt }).
+    // All includes must precede pus.* directives.
+    static const char kMission[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  every 200ms:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to DONE when TC.command == LAUNCH\n"
+        "state DONE:\n";
+
+    // Checkpoint claims hkSlotCount=0 but the WAIT state has 1 HK slot → mismatch.
+    static const char kBodyNoCrc[] =
+        "4|wronghk.ams|0|1|1|1|0|0|0|0"
+        "|0"
+        "|0"
+        "|0|0|0|0"
+        "|0|0|0|0|0|0|0|0";
+    const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
+    char kCheckpoint[160] = {};
+    (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
+                   "%s|%08" PRIX32, kBodyNoCrc, crc);
+
+    ScriptFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/.ams_resume.chk", kCheckpoint);
+    f.storage.registerFile("/missions/wronghk.ams", kMission);
+    (void)f.gps.begin();
+    (void)f.baro.begin();
+    (void)f.imu.begin();
+    (void)f.radio.begin();
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "[P2-3] v4 checkpoint with wrong hkSlotCount must be discarded (engine IDLE)");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4 strict: record truncated inside the confirm-counter section (only 2 of 4
+// counters present).  The strict parser must detect the missing fields and
+// discard without partially updating tcConfirmCount_.
+// ─────────────────────────────────────────────────────────────────────────────
+void test_checkpoint_v4_truncated_confirm_section_discarded()
+{
+    static const char kMission[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  transition to DONE when TC.command == LAUNCH confirm 3\n"
+        "state DONE:\n";
+
+    // Only cc0 and cc1 present; cc2/cc3 and the hold fields are absent.
+    // This forms a valid CRC over a truncated body — the strict path must
+    // catch the missing fields before the CRC gate would otherwise pass.
+    static const char kBodyNoCrc[] =
+        "4|trunccc.ams|0|1|1|1|0|0|0|0|0|0|0|1|2";
+    const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
+    char kCheckpoint[96] = {};
+    (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
+                   "%s|%08" PRIX32, kBodyNoCrc, crc);
+
+    ScriptFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/.ams_resume.chk", kCheckpoint);
+    f.storage.registerFile("/missions/trunccc.ams", kMission);
+    (void)f.gps.begin();
+    (void)f.baro.begin();
+    (void)f.imu.begin();
+    (void)f.radio.begin();
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "[P2-3] v4 checkpoint truncated in confirm section must be discarded");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4 strict: record truncated inside the hold-window section (only 1 of 4
+// hold/condElap pairs present).  Live transitionCondHolding_ must remain
+// untouched — the entire v4 restore must be atomic.
+// ─────────────────────────────────────────────────────────────────────────────
+void test_checkpoint_v4_truncated_hold_section_discarded()
+{
+    static const char kMission[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  transition to DONE when TC.command == LAUNCH\n"
+        "state DONE:\n";
+
+    // Full confirm section (cc0..cc3) present, but only hold0|condElap0 —
+    // hold1 through hold3 are absent.  CRC computed over this truncated body.
+    static const char kBodyNoCrc[] =
+        "4|trunchld.ams|0|1|1|1|0|0|0|0|0|0|0|0|0|0|0|1|500";
+    const uint32_t crc = testCrc32Compute(kBodyNoCrc, sizeof(kBodyNoCrc) - 1U);
+    char kCheckpoint[96] = {};
+    (void)snprintf(kCheckpoint, sizeof(kCheckpoint),
+                   "%s|%08" PRIX32, kBodyNoCrc, crc);
+
+    ScriptFixture f;
+    (void)f.storage.begin();
+    f.storage.registerFile("/missions/.ams_resume.chk", kCheckpoint);
+    f.storage.registerFile("/missions/trunchld.ams", kMission);
+    (void)f.gps.begin();
+    (void)f.baro.begin();
+    (void)f.imu.begin();
+    (void)f.radio.begin();
+    (void)f.engine.begin();
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "[P2-3] v4 checkpoint truncated in hold section must be discarded");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2-6: state/task/assert/transition target names longer than 15 characters
+// must be rejected with a clear "too long" diagnostic instead of being
+// silently truncated by %15s / %15[^:].
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_parser_error_state_name_too_long()
+{
+    // "TOOLONGSTATENAME" = 16 chars — exceeds AMS_MAX_STATE_NAME-1 = 15.
+    static const char kScript[] =
+        "state TOOLONGSTATENAME:\n"
+        "  transition to END when TIME.elapsed > 1000\n"
+        "state END:\n";
+
+    ScriptFixture f;
+    f.init("/missions/longname.ams", kScript);
+
+    const bool ok = f.engine.activate("longname.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "too long"),
+                                 snap.lastError);
+}
+
+void test_parser_error_task_name_too_long()
+{
+    // "TOOLONG_TASKNAME" = 16 chars.
+    static const char kScript[] =
+        "pus.apid = 1\n"
+        "pus.service 5 as EVENT\n"
+        "state RUN:\n"
+        "  transition to END when TIME.elapsed > 500\n"
+        "state END:\n"
+        "task TOOLONG_TASKNAME:\n"
+        "  every 100ms:\n"
+        "    EVENT.info \"tick\"\n";
+
+    ScriptFixture f;
+    f.init("/missions/longtask.ams", kScript);
+
+    const bool ok = f.engine.activate("longtask.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "too long"),
+                                 snap.lastError);
+}
+
+void test_parser_error_assert_reachable_name_too_long()
+{
+    // Assert references a 16-char state name — must reject at parse time.
+    static const char kScript[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "state END:\n"
+        "assert:\n"
+        "  reachable TOOLONGSTATENAME\n";
+
+    ScriptFixture f;
+    f.init("/missions/longassert.ams", kScript);
+
+    const bool ok = f.engine.activate("longassert.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "too long"),
+                                 snap.lastError);
+}
+
+void test_parser_error_transition_target_too_long()
+{
+    // Transition target with 16-char name — must be caught as too long.
+    static const char kScript[] =
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  transition to TOOLONGSTATENAME when TC.command == LAUNCH\n"
+        "state END:\n";
+
+    ScriptFixture f;
+    f.init("/missions/longtrans.ams", kScript);
+
+    const bool ok = f.engine.activate("longtrans.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "too long"),
+                                 snap.lastError);
+}
+
+void test_parser_error_fallback_target_too_long()
+{
+    // Fallback target with 16-char name — must be caught as too long.
+    static const char kScript[] =
+        "state WAIT:\n"
+        "  transition to END when TIME.elapsed > 5000\n"
+        "  fallback transition to TOOLONGSTATENAME after 1000ms\n"
+        "state END:\n";
+
+    ScriptFixture f;
+    f.init("/missions/longfallback.ams", kScript);
+
+    const bool ok = f.engine.activate("longfallback.ams");
+    TEST_ASSERT_FALSE(ok);
+
+    EngineSnapshot snap{};
+    f.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(snap.lastError, "too long"),
+                                 snap.lastError);
+}

@@ -10,10 +10,11 @@
  * the numeric value or the "nan" sentinel so post-flight CSV analysis
  * can distinguish valid samples from fault periods.
  *
- * Test count: 2
+ * Test count: 3
  */
 
 #include <unity.h>
+#include <cmath>
 #include <cstring>
 
 #include "ams/mission_script_engine.h"
@@ -45,6 +46,28 @@ class SimFailingBaroDriver final : public BarometerInterface
 public:
     bool begin()                            override { return true; }
     BaroStatus read(BaroReading& /*out*/)   override { return BaroStatus::ERROR; }
+    void setSeaLevelPressure(float /*hPa*/) override {}
+    const char* driverModel()         const override { return "SIM_BARO"; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SimNanBaroDriver — returns BaroStatus::OK but fills every float field with
+// quiet NaN, simulating a driver that claims success but propagates corrupt
+// data (e.g. failed NMEA parse, division-by-zero in sensor firmware).
+// Used to verify the isfinite guard in readBaroFieldLocked.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SimNanBaroDriver final : public BarometerInterface
+{
+public:
+    bool begin()                            override { return true; }
+    BaroStatus read(BaroReading& out)       override
+    {
+        out.altitudeM    = std::nanf("");
+        out.pressurePa   = std::nanf("");
+        out.temperatureC = std::nanf("");
+        return BaroStatus::OK;
+    }
     void setSeaLevelPressure(float /*hPa*/) override {}
     const char* driverModel()         const override { return "SIM_BARO"; }
 };
@@ -105,8 +128,8 @@ void test_failed_sensor_writes_nan_sentinel_in_csv()
     TEST_ASSERT_TRUE(engine.activate("log_baro.ams"));
     TEST_ASSERT_TRUE(engine.arm());
 
-    // Advance past the log_every 10 ms slot so one CSV row is produced.
-    ares::sim::clock::advanceMs(15U);
+    // Advance past the log_every 100 ms slot so one CSV row is produced.
+    ares::sim::clock::advanceMs(105U);
     engine.tick(ares::sim::clock::nowMs());
 
     const char* csv = storage.appendedContent();
@@ -154,8 +177,8 @@ void test_valid_sensor_writes_numeric_value_in_csv()
     TEST_ASSERT_TRUE(engine.activate("log_baro2.ams"));
     TEST_ASSERT_TRUE(engine.arm());
 
-    // Advance past the log_every 10 ms slot so one CSV row is produced.
-    ares::sim::clock::advanceMs(15U);
+    // Advance past the log_every 100 ms slot so one CSV row is produced.
+    ares::sim::clock::advanceMs(105U);
     engine.tick(ares::sim::clock::nowMs());
 
     const char* csv = storage.appendedContent();
@@ -167,4 +190,56 @@ void test_valid_sensor_writes_numeric_value_in_csv()
         "[H4] valid barometer read must not write 'nan' sentinel in LOG CSV");
     TEST_ASSERT_NULL_MESSAGE(strstr(csv, ",nan\n"),
         "[H4] valid barometer read must not end CSV row with ',nan'");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 3: a driver returning OK but NaN values writes the "nan" sentinel.
+//
+// Regression guard for P2-2: the isfinite guard in readBaroFieldLocked must
+// catch NaN propagated by a driver that claims success, invalidate the cache,
+// and fall through to the same "nan" sentinel path used for failing drivers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void test_nan_baro_value_writes_nan_sentinel_in_csv()
+{
+    SimNanBaroDriver nanBaro;
+
+    ares::sim::SimStorageDriver storage;
+    ares::sim::SimGpsDriver     gps{kSentinelProfile};
+    ares::sim::SimImuDriver     imu{kSentinelProfile};
+    ares::sim::SimRadioDriver   radio;
+
+    BaroEntry baroEntry { "SIM_BARO", &nanBaro };
+    GpsEntry  gpsEntry  { "SIM_GPS",  &gps     };
+    ComEntry  comEntry  { "SIM_COM",  &radio   };
+    ImuEntry  imuEntry  { "SIM_IMU",  &imu     };
+
+    MissionScriptEngine engine{
+        storage,
+        &gpsEntry, 1U, &baroEntry, 1U, &comEntry, 1U, &imuEntry, 1U
+    };
+
+    (void)storage.begin();
+    storage.registerFile("/missions/nan_baro.ams", ares::sim::kScriptLogHeaderRetry);
+    (void)gps.begin();
+    (void)nanBaro.begin();
+    (void)imu.begin();
+    (void)radio.begin();
+    (void)engine.begin();
+
+    TEST_ASSERT_TRUE(engine.activate("nan_baro.ams"));
+    TEST_ASSERT_TRUE(engine.arm());
+
+    // Advance past the log_every 100 ms slot so one CSV row is produced.
+    ares::sim::clock::advanceMs(105U);
+    engine.tick(ares::sim::clock::nowMs());
+
+    const char* csv = storage.appendedContent();
+    TEST_ASSERT_NOT_NULL_MESSAGE(csv,
+        "[P2-2] storage must have log content after tick with NaN baro");
+
+    // The driver returned OK with NaN — the isfinite guard must catch it
+    // and write the \"nan\" sentinel, same as for a failing driver (H4 path).
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(csv, ",nan,"),
+        "[P2-2] baro OK+NaN must write 'nan' sentinel in LOG CSV");
 }

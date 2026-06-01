@@ -661,7 +661,7 @@ static const char kScriptBaroCacheTtl[] =
 /**
  * @brief Minimal script with a log_every slot to exercise CSV-header retry.
  *
- * The WAIT state logs BARO.alt every 10 ms.  The transition condition
+ * The WAIT state logs BARO.alt every 100 ms.  The transition condition
  * (BARO.alt > 9999) is never satisfied by the sim driver (max ~300 m),
  * so the engine stays RUNNING in WAIT indefinitely — ideal for
  * single-tick instrumented tests (AMS-4.3.2).
@@ -674,7 +674,7 @@ static const char kScriptLogHeaderRetry[] =
     "pus.apid = 1\n"
     "pus.service 1 as TC\n"
     "state WAIT:\n"
-    "  log_every 10ms:\n"
+    "  log_every 100ms:\n"
     "    LOG.report {\n"
     "      baro_alt: BARO.alt\n"
     "    }\n"
@@ -881,7 +881,7 @@ static const char kScriptShadowedTransition[] =
  * @brief Script with a `var` field in a LOG.report block (AMS-4.8).
  *
  * WAIT state sets `ground_alt` to the current BARO.alt on entry, then
- * FLIGHT state logs it every 10 ms via `LOG.report { ga: ground_alt }`.
+ * FLIGHT state logs it every 100 ms via `LOG.report { ga: ground_alt }`.
  * This exercises SensorField::VAR parsing and formatting in LOG CSV output.
  *
  * Used by test_var_field_in_log_report.
@@ -904,7 +904,7 @@ static const char kScriptVarFieldInLog[] =
     "  transition to FLIGHT when TC.command == LAUNCH\n"
     "\n"
     "state FLIGHT:\n"
-    "  log_every 10ms:\n"
+    "  log_every 100ms:\n"
     "    LOG.report {\n"
     "      ga: ground_alt\n"
     "    }\n"

@@ -1,27 +1,44 @@
 /**
  * @file  Wire.h
- * @brief Minimal TwoWire (I2C) stub for native api_routing test builds.
+ * @brief TwoWire (I2C) stub for native / sim test builds.
  *
- * bus_scan_handler.cpp includes <Wire.h> and calls TwoWire::beginTransmission()
- * and TwoWire::endTransmission() on non-null bus pointers.  In the routing
- * tests both i2c0_ and i2c1_ are nullptr so handleI2cScan() returns 500
- * before reaching those calls, but the type must be complete to compile.
+ * Provides a virtual-method base class so test suites can derive concrete
+ * scripted subclasses (e.g. for BMP280 driver tests) without changing
+ * production code.
  *
- * endTransmission() returns 1 (NACK / no device) so if a bus were ever
- * exercised no false-positive device detections would occur.
+ * All base-class methods are safe no-ops:
+ *   - write() / endTransmission() return success codes.
+ *   - requestFrom() / read() return 0 / -1 (bus empty).
+ *
+ * api_routing tests use a null TwoWire* that is never dereferenced, so the
+ * change from non-virtual to virtual is backward-compatible.
+ *
+ * delay() is declared here (not in Arduino.h) because bmp280_driver.cpp
+ * includes <Wire.h> (via bmp280_driver.h) and calls delay() from the
+ * Arduino framework.  The stub provides a safe no-op.
  */
 #pragma once
 
 #include <cstdint>
 
+// Arduino framework global — no-op in host builds.
+inline void delay(uint32_t /*ms*/) {}
+
 /**
  * @brief Minimal I2C bus stub.
  *
- * Only the two methods called by scanI2cBus() are provided.
+ * All methods are virtual so test suites can subclass and script I2C
+ * responses without modifying production code.
  */
 class TwoWire
 {
 public:
-    void    beginTransmission(uint8_t /*addr*/) {}
-    uint8_t endTransmission()  { return 1U; }  ///< 1 = no device (NACK).
+    virtual ~TwoWire() = default;
+
+    virtual void    beginTransmission(uint8_t /*addr*/)            {}
+    virtual int     write(uint8_t /*data*/)                        { return 1; }
+    virtual uint8_t endTransmission()                              { return 1U; } ///< 1 = NACK (no device).
+    virtual uint8_t endTransmission(bool /*stop*/)                 { return 0U; } ///< 0 = success (repeated start).
+    virtual uint8_t requestFrom(uint8_t /*addr*/, uint8_t /*len*/) { return 0U; }
+    virtual int     read()                                         { return -1; }
 };

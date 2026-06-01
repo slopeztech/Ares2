@@ -975,11 +975,8 @@ Add `retry=N` to an `include` directive to enable automatic re-attempts when a
 sensor read fails.  The engine retries up to `N` extra times (1 ≤ N ≤ 5) before
 treating the read as definitively failed.
 
-Optional `timeout=Nms` documents the per-attempt deadline but is not enforced by
-the engine beyond the underlying I2C hardware timeout.
-
 ```ams
-include BMP280 as BARO retry=3 timeout=500ms
+include BMP280 as BARO retry=3
 include BN220 as GPS  retry=2
 ```
 

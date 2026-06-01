@@ -237,15 +237,16 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
         if (tr.condCount == 0U) { continue; }
 
         // Compute the flat base index for this transition's prev-value slots.
-        const uint8_t prevBase =
-            static_cast<uint8_t>(ti * static_cast<uint8_t>(ares::AMS_MAX_TRANSITION_CONDS));
+        const size_t prevBase =
+            static_cast<size_t>(ti) * static_cast<size_t>(ares::AMS_MAX_TRANSITION_CONDS);
 
         bool compound = (tr.logic == TransitionLogic::AND);
         bool tcPendingMatch = false;
 
         for (uint8_t i = 0; i < tr.condCount; i++)
         {
-            const uint8_t flatIdx = static_cast<uint8_t>(prevBase + i);
+            const size_t flatIdx = prevBase + static_cast<size_t>(i);
+            if (flatIdx >= std::size(transitionPrevVal_)) { continue; }
             const bool condResult = evaluateOneTransitionConditionLocked(
                 tr.conds[i], state, flatIdx, nowMs, tcPendingMatch);
             if (tr.logic == TransitionLogic::OR)
@@ -284,7 +285,7 @@ bool MissionScriptEngine::evaluateTransitionAndMaybeEnterLocked(StateDef& state,
 
 bool MissionScriptEngine::evaluateOneTransitionConditionLocked(const CondExpr& cond,
                                                                StateDef&,
-                                                               uint8_t         condIdx,
+                                                               size_t          condIdx,
                                                                uint64_t        nowMs,
                                                                bool&           tcPendingMatch)
 {
@@ -1072,9 +1073,9 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint64_t nowMs)
     // AMS-4.11.2: reset TC CONFIRM counters on state entry (clean slate per state).
     memset(tcConfirmCount_, 0U, sizeof(tcConfirmCount_));
     // AMS-4.6.2: reset flat prev-value table so no delta baseline carries over between states.
-    constexpr uint8_t kPrevSlots =
-        static_cast<uint8_t>(ares::AMS_MAX_TRANSITIONS * ares::AMS_MAX_TRANSITION_CONDS);
-    for (uint8_t pi = 0U; pi < kPrevSlots; pi++)
+    constexpr size_t kPrevSlots =
+        static_cast<size_t>(ares::AMS_MAX_TRANSITIONS) * static_cast<size_t>(ares::AMS_MAX_TRANSITION_CONDS);
+    for (size_t pi = 0U; pi < kPrevSlots; pi++)
     {
         transitionPrevVal_[pi]   = 0.0f;
         transitionPrevValid_[pi] = false;

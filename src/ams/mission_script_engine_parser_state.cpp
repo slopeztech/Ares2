@@ -471,9 +471,11 @@ bool MissionScriptEngine::parseLogEveryLineLocked(const char* line, StateDef& st
     trimInPlace(valueBuf);
 
     uint32_t everyMs = 0;
-    if (!parseUint(valueBuf, everyMs) || everyMs == 0U)
+    if (!parseUint(valueBuf, everyMs)
+        || everyMs < ares::LOG_INTERVAL_MIN_MS
+        || everyMs > ares::LOG_INTERVAL_MAX_MS)
     {
-        setErrorLocked("invalid log_every period");
+        setErrorLocked("log_every: period must be in [LOG_INTERVAL_MIN_MS, LOG_INTERVAL_MAX_MS] ms (AMS-4.3.1)");
         return false;
     }
 
@@ -702,11 +704,19 @@ bool MissionScriptEngine::parseFieldLineLocked(const char* line,
 
     char key[20]  = {};
     char expr[32] = {};
-    const int32_t n = static_cast<int32_t>(sscanf(line, "%19[^:]: %31s", key, expr));
+    int32_t pos = 0;
+    const int32_t n = static_cast<int32_t>(sscanf(line, "%19[^:]: %31s%n", key, expr, &pos));
     if (n != 2)
     {
         char msg[48] = {};
         snprintf(msg, sizeof(msg), "invalid %s field syntax", ctxName);
+        setErrorLocked(msg);
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(line + pos))
+    {
+        char msg[64] = {};
+        snprintf(msg, sizeof(msg), "unexpected tokens after %s field value", ctxName);
         setErrorLocked(msg);
         return false;
     }

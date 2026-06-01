@@ -354,10 +354,10 @@ void test_sensor_cache_within_ttl_is_reused()
  *
  * Flow:
  *   1. Inject one NO_SPACE failure.
- *   2. Tick at t=10 ms  — slot is due; header append fails → flag stays false.
+ *   2. Tick at t=100 ms  — slot is due; header append fails → flag stays false.
  *      Data row succeeds (failure counter already exhausted).
  *   3. Assert captured content does NOT yet contain "t_ms,state,slot".
- *   4. Tick at t=20 ms  — slot due again; header is retried and succeeds.
+ *   4. Tick at t=200 ms  — slot due again; header is retried and succeeds.
  *   5. Assert captured content NOW contains "t_ms,state,slot".
  */
 void test_log_slot_header_retried_after_no_space()
@@ -371,15 +371,15 @@ void test_log_slot_header_retried_after_no_space()
     // (the slot CSV header), leaving logSlotHeaderWritten_[0] = false.
     f.storage.failNextAppends(1U);
 
-    // Tick 1 at t=10 ms — slot cadence satisfied (10 ms ≥ 10 ms).
+    // Tick 1 at t=100 ms — slot cadence satisfied (100 ms ≥ 100 ms).
     // Header append → NO_SPACE (failure consumed); data row → OK.
-    ares::sim::clock::advanceMs(10U);
+    ares::sim::clock::advanceMs(100U);
     f.engine.tick(ares::sim::clock::nowMs());
     TEST_ASSERT_NULL(strstr(f.storage.appendedContent(), "t_ms,state,slot"));
 
-    // Tick 2 at t=20 ms — slot due again.  Flag still false → header retried;
+    // Tick 2 at t=200 ms — slot due again.  Flag still false → header retried;
     // both header and data row now succeed.
-    ares::sim::clock::advanceMs(10U);
+    ares::sim::clock::advanceMs(100U);
     f.engine.tick(ares::sim::clock::nowMs());
     TEST_ASSERT_NOT_NULL(strstr(f.storage.appendedContent(), "t_ms,state,slot"));
 }
@@ -392,7 +392,7 @@ void test_log_slot_header_retried_after_no_space()
  *
  * Flow:
  *   1. Activate + arm with kScriptLogHeaderRetry (has a log_every slot).
- *   2. One clean tick at t=10 ms — header and data row both succeed.
+ *   2. One clean tick at t=100 ms — header and data row both succeed.
  *   3. Assert header contains ",crc8\n".
  *   4. Assert each numeric data row ends with ",<hex><hex>\n".
  */
@@ -404,7 +404,7 @@ void test_log_slot_row_has_crc8_field()
     TEST_ASSERT_TRUE(f.engine.arm());
 
     // One clean tick — no injected failures.
-    ares::sim::clock::advanceMs(10U);
+    ares::sim::clock::advanceMs(100U);
     f.engine.tick(ares::sim::clock::nowMs());
 
     const char* content = f.storage.appendedContent();

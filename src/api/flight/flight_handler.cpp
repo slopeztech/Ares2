@@ -55,7 +55,12 @@ void ApiServer::handleMode(WiFiClient& client,
     target = doc["mode"].as<const char*>();
     const auto  current = getMode();
     const uint8_t rawCurrent = static_cast<uint8_t>(current);
-    ARES_ASSERT(rawCurrent <= static_cast<uint8_t>(ares::OperatingMode::LAST));
+    if (rawCurrent > static_cast<uint8_t>(ares::OperatingMode::LAST))
+    {
+        LOG_E(TAG, "POST /api/mode: invalid operating mode %u", rawCurrent);
+        sendError(client, 500, "internal mode error");
+        return;
+    }
 
     // REST-6.1: mode transition matrix
     ares::OperatingMode next = current;
@@ -86,7 +91,12 @@ void ApiServer::handleMode(WiFiClient& client,
 void ApiServer::handleArm(WiFiClient& client)
 {
     const uint8_t rawMode = static_cast<uint8_t>(getMode());
-    ARES_ASSERT(rawMode <= static_cast<uint8_t>(ares::OperatingMode::LAST));
+    if (rawMode > static_cast<uint8_t>(ares::OperatingMode::LAST))
+    {
+        LOG_E(TAG, "POST /api/arm: invalid operating mode %u", rawMode);
+        sendError(client, 500, "internal mode error");
+        return;
+    }
 
     if (armed_.load())
     {
@@ -169,7 +179,12 @@ void ApiServer::handleAbort(WiFiClient& client)
 {
     const auto mode = getMode();
     const uint8_t rawMode = static_cast<uint8_t>(mode);
-    ARES_ASSERT(rawMode <= static_cast<uint8_t>(ares::OperatingMode::LAST));
+    if (rawMode > static_cast<uint8_t>(ares::OperatingMode::LAST))
+    {
+        LOG_E(TAG, "POST /api/abort: invalid operating mode %u", rawMode);
+        sendError(client, 500, "internal mode error");
+        return;
+    }
 
     // H10: Allow abort in any mode when the AMS engine is actively running.
     // A race between the mode transition and the abort request (e.g. abort

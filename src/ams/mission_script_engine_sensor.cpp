@@ -227,14 +227,21 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
     const GpsReading& r = gpsCachedReadings_[aliasIdx];
     switch (field)
     {
-    case SensorField::LAT:   outVal = r.latitude;                        return true;
-    case SensorField::LON:   outVal = r.longitude;                       return true;
-    case SensorField::ALT:   outVal = r.altitudeM;                       return true;
-    case SensorField::SPEED: outVal = r.speedKmh;                        return true;
-    case SensorField::SATS:  outVal = static_cast<float>(r.satellites);  return true;
-    case SensorField::HDOP:  outVal = r.hdop;                            return true;
+    case SensorField::LAT:   outVal = r.latitude;                        break;
+    case SensorField::LON:   outVal = r.longitude;                       break;
+    case SensorField::ALT:   outVal = r.altitudeM;                       break;
+    case SensorField::SPEED: outVal = r.speedKmh;                        break;
+    case SensorField::SATS:  outVal = static_cast<float>(r.satellites);  break;
+    case SensorField::HDOP:  outVal = r.hdop;                            break;
     default:                                                              return false;
     }
+    if (!std::isfinite(outVal))
+    {
+        gpsCacheValid_[aliasIdx] = false;
+        LOG_W(TAG, "%s: non-finite GPS value, cache invalidated", ae.alias);
+        return false;
+    }
+    return true;
 }
 
 bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
@@ -267,11 +274,18 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
     const BaroReading& r = baroCachedReadings_[aliasIdx];
     switch (field)
     {
-    case SensorField::ALT:      outVal = r.altitudeM;    return true;
-    case SensorField::TEMP:     outVal = r.temperatureC; return true;
-    case SensorField::PRESSURE: outVal = r.pressurePa;   return true;
+    case SensorField::ALT:      outVal = r.altitudeM;    break;
+    case SensorField::TEMP:     outVal = r.temperatureC; break;
+    case SensorField::PRESSURE: outVal = r.pressurePa;   break;
     default:                                              return false;
     }
+    if (!std::isfinite(outVal))
+    {
+        baroCacheValid_[aliasIdx] = false;
+        LOG_W(TAG, "%s: non-finite BARO value, cache invalidated", ae.alias);
+        return false;
+    }
+    return true;
 }
 
 bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
@@ -316,9 +330,9 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
     const ImuReading& r = imuCachedReading_;
     switch (field)
     {
-    case SensorField::ACCEL_X:   outVal = r.accelX; return true;
-    case SensorField::ACCEL_Y:   outVal = r.accelY; return true;
-    case SensorField::ACCEL_Z:   outVal = r.accelZ; return true;
+    case SensorField::ACCEL_X:   outVal = r.accelX; break;
+    case SensorField::ACCEL_Y:   outVal = r.accelY; break;
+    case SensorField::ACCEL_Z:   outVal = r.accelZ; break;
     case SensorField::ACCEL_MAG:
         // PROFILING NOTE: sqrtf() is evaluated on every sensor read for this
         // field.  At a 50 ms tick cadence (20 reads/s) the ESP32-S3 FPU
@@ -330,19 +344,26 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
         outVal = sqrtf(r.accelX * r.accelX
                      + r.accelY * r.accelY
                      + r.accelZ * r.accelZ);
-        return true;
-    case SensorField::GYRO_X:    outVal = r.gyroX;  return true;
-    case SensorField::GYRO_Y:    outVal = r.gyroY;  return true;
-    case SensorField::GYRO_Z:    outVal = r.gyroZ;  return true;
+        break;
+    case SensorField::GYRO_X:    outVal = r.gyroX;  break;
+    case SensorField::GYRO_Y:    outVal = r.gyroY;  break;
+    case SensorField::GYRO_Z:    outVal = r.gyroZ;  break;
     case SensorField::GYRO_MAG:
         outVal = sqrtf(r.gyroX * r.gyroX
                      + r.gyroY * r.gyroY
                      + r.gyroZ * r.gyroZ);
-        return true;
-    case SensorField::IMU_TEMP:  outVal = r.tempC;  return true;
+        break;
+    case SensorField::IMU_TEMP:  outVal = r.tempC;  break;
     default:
         return false;
     }
+    if (!std::isfinite(outVal))
+    {
+        imuCacheValid_ = false;
+        LOG_W(TAG, "%s: non-finite IMU value, cache invalidated", ae.alias);
+        return false;
+    }
+    return true;
 }
 
 // ── parseCondExprLocked ──────────────────────────────────────────────────────

@@ -77,9 +77,19 @@ void RadioDispatcher::poll(uint32_t nowMs)
         uint16_t received = 0U;
         const uint16_t space = static_cast<uint16_t>(kRxBufLen - rxLen_);
         const RadioStatus st = radio_.receive(&rxBuf_[rxLen_], space, received);
-        if (st == RadioStatus::OK && received > 0U)
+        if (st == RadioStatus::OK && received > 0U && received <= space)
         {
             rxLen_ = static_cast<uint16_t>(rxLen_ + received);
+        }
+        else if (st == RadioStatus::OK && received > space)
+        {
+            // CERT-1: driver violated its own contract (received > space).
+            // Treat driver as an untrusted boundary; reset buffer to avoid
+            // rxLen_ exceeding kRxBufLen and causing an OOB read in the
+            // SYNC scan loop of processBuffer().
+            LOG_E(TAG, "driver contract violation: received=%u > space=%u; rx buffer reset (CERT-1)",
+                  static_cast<unsigned>(received), static_cast<unsigned>(space));
+            rxLen_ = 0U;
         }
     }
 
@@ -492,9 +502,8 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
              pidRaw <= static_cast<uint8_t>(proto::ConfigParamId::LAST);
              ++pidRaw)
         {
-            // MISRA-14.3: validate range before integer→enum cast.
-            ARES_ASSERT(pidRaw >= static_cast<uint8_t>(proto::ConfigParamId::FIRST));
-            ARES_ASSERT(pidRaw <= static_cast<uint8_t>(proto::ConfigParamId::LAST));
+            // MISRA-14.3: loop bounds [FIRST, LAST] serve as the range validation
+            // for the integer-to-enum cast below; no redundant check needed.
             const proto::ConfigParamId pid = static_cast<proto::ConfigParamId>(pidRaw);
             float override = 0.0f;
             if (engine_.getScriptRadioConfig(pid, override))

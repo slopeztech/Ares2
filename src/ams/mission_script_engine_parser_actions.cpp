@@ -48,10 +48,16 @@ bool MissionScriptEngine::parseOnErrorEventLineLocked(const char* line,
         setErrorLocked("invalid EVENT syntax in on_error");
         return false;
     }
-    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
+    int32_t pos = 0;
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"""%n", verb, text, &pos));
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax in on_error");
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(dotPos + 1 + pos))
+    {
+        setErrorLocked("unexpected tokens after EVENT directive in on_error");
         return false;
     }
 
@@ -98,10 +104,16 @@ bool MissionScriptEngine::parseOnExitEventLineLocked(const char* line,
         setErrorLocked("invalid EVENT syntax in on_exit");
         return false;
     }
-    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
+    int32_t pos = 0;
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"""%n", verb, text, &pos));
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax in on_exit");
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(dotPos + 1 + pos))
+    {
+        setErrorLocked("unexpected tokens after EVENT directive in on_exit");
         return false;
     }
 
@@ -215,10 +227,16 @@ bool MissionScriptEngine::parseOnTimeoutEventLineLocked(const char* line,
         setErrorLocked("invalid EVENT syntax in on_timeout");
         return false;
     }
-    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"", verb, text));
+    int32_t pos = 0;
+    const int32_t n = static_cast<int32_t>(sscanf(dotPos + 1, "%7[^ ] \"%63[^\"]\"""%n", verb, text, &pos));
     if (n != 2)
     {
         setErrorLocked("invalid EVENT syntax in on_timeout");
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(dotPos + 1 + pos))
+    {
+        setErrorLocked("unexpected tokens after EVENT directive in on_timeout");
         return false;
     }
 
@@ -259,11 +277,17 @@ bool MissionScriptEngine::parseOnTimeoutTransitionLineLocked(const char* line,
     }
 
     char target[ares::AMS_MAX_STATE_NAME] = {};
+    int32_t pos = 0;
     // cppcheck-suppress [cert-err34-c]
-    const int32_t n = static_cast<int32_t>(sscanf(line, "transition to %15s", target));
+    const int32_t n = static_cast<int32_t>(sscanf(line, "transition to %15s%n", target, &pos));
     if (n != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid on_timeout transition syntax: missing target state");
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(line + pos))
+    {
+        setErrorLocked("on_timeout transition: unexpected tokens after target state");
         return false;
     }
 
@@ -476,9 +500,15 @@ bool MissionScriptEngine::parseDeltaSetActionLocked(const char* rhsBuf,
 {
     char exprBuf[32] = {};
     char kwBuf[8] = {};
-    const int32_t nd = static_cast<int32_t>(sscanf(rhsBuf, "%31s %7s", exprBuf, kwBuf));
+    int32_t pos = 0;
+    const int32_t nd = static_cast<int32_t>(sscanf(rhsBuf, "%31s %7s%n", exprBuf, kwBuf, &pos));
     if (nd != 2 || strcmp(kwBuf, "delta") != 0)
     {
+        return false;
+    }
+    if (!detail::isOnlyTrailingWhitespace(rhsBuf + pos))
+    {
+        setErrorLocked("set delta: unexpected tokens after 'delta' keyword");
         return false;
     }
 

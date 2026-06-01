@@ -85,9 +85,21 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint64_t nowMs,
         return false;
     }
 
-    appendVarsSectionLocked(record, recSize, written);
-    appendSlotTimersSectionLocked(record, recSize, written, nowMs);
-    appendConfirmHoldSectionLocked(record, recSize, written, nowMs);
+    if (!appendVarsSectionLocked(record, recSize, written))
+    {
+        LOG_W(TAG, "checkpoint: vars section truncated, aborting");
+        return false;
+    }
+    if (!appendSlotTimersSectionLocked(record, recSize, written, nowMs))
+    {
+        LOG_W(TAG, "checkpoint: slot timers section truncated, aborting");
+        return false;
+    }
+    if (!appendConfirmHoldSectionLocked(record, recSize, written, nowMs))
+    {
+        LOG_W(TAG, "checkpoint: confirm-hold section truncated, aborting");
+        return false;
+    }
 
     // Append CRC32 over all bytes written so far (AMS-8.5).
     // The CRC is computed AFTER all data fields so it covers the complete record.
@@ -109,25 +121,24 @@ bool MissionScriptEngine::buildCheckpointRecordLocked(uint64_t nowMs,
     return true;
 }
 
-void MissionScriptEngine::appendConfirmHoldSectionLocked(char*    record,
+bool MissionScriptEngine::appendConfirmHoldSectionLocked(char*    record,
                                                          size_t   recSize,
                                                          int32_t& written,
                                                          uint64_t nowMs) const
 {
-    if (written <= 0) { return; }
+    if (written <= 0) { return false; }
 
     // tcConfirmCount_[0..3] (AMS-4.11.2 v4 checkpoint).
+    const size_t  rem1 = recSize - static_cast<size_t>(written);
     const int32_t wCc = static_cast<int32_t>(snprintf(
-        record + written, recSize - static_cast<size_t>(written),
+        record + written, rem1,
         "|%" PRIu32 "|%" PRIu32 "|%" PRIu32 "|%" PRIu32,
         static_cast<uint32_t>(tcConfirmCount_[0]),
         static_cast<uint32_t>(tcConfirmCount_[1]),
         static_cast<uint32_t>(tcConfirmCount_[2]),
         static_cast<uint32_t>(tcConfirmCount_[3])));
-    if (wCc > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wCc)) < recSize)
-    {
-        written += wCc;
-    }
+    if (wCc <= 0 || static_cast<size_t>(wCc) >= rem1) { return false; }
+    written += wCc;
 
     // transitionCondHolding_[i] and elapsed-since-condMet for each slot (AMS-4.6.1).
     for (uint8_t i = 0U; i < ares::AMS_MAX_TRANSITIONS; i++)  // PO10-2
@@ -135,95 +146,94 @@ void MissionScriptEngine::appendConfirmHoldSectionLocked(char*    record,
         const uint32_t condElap = transitionCondHolding_[i]
             ? static_cast<uint32_t>(nowMs - transitionCondMetMs_[i])
             : 0U;
+        const size_t  remH = recSize - static_cast<size_t>(written);
         const int32_t wh = static_cast<int32_t>(snprintf(
-            record + written,
-            recSize - static_cast<size_t>(written),
+            record + written, remH,
             "|%" PRIu32 "|%" PRIu32,
             transitionCondHolding_[i] ? 1U : 0U,
             condElap));
-        if (wh > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wh)) < recSize)
-        {
-            written += wh;
-        }
+        if (wh <= 0 || static_cast<size_t>(wh) >= remH) { return false; }
+        written += wh;
     }
+    return true;
 }
 
-void MissionScriptEngine::appendVarsSectionLocked(char*   record,
-                                                  size_t  recSize,
+bool MissionScriptEngine::appendVarsSectionLocked(char*    record,
+                                                  size_t   recSize,
                                                   int32_t& written) const
 {
-    if (program_.varCount == 0U || written <= 0) { return; }
+    if (program_.varCount == 0U) { return true; }
+    if (written <= 0) { return false; }
 
-    int32_t w2 = static_cast<int32_t>(snprintf(record + written,
-                     recSize - static_cast<size_t>(written),
+    const size_t  rem0 = recSize - static_cast<size_t>(written);
+    int32_t w2 = static_cast<int32_t>(snprintf(record + written, rem0,
                      "|%" PRIu32, static_cast<uint32_t>(program_.varCount)));
-    if (w2 > 0) { written += w2; }
+    if (w2 <= 0 || static_cast<size_t>(w2) >= rem0) { return false; }
+    written += w2;
 
-    for (uint8_t vi = 0; vi < program_.varCount && written > 0; vi++)  // PO10-2
+    for (uint8_t vi = 0; vi < program_.varCount; vi++)  // PO10-2
     {
         const VarEntry& v = program_.vars[vi];
         char floatBuf[24] = {};
         (void)snprintf(floatBuf, sizeof(floatBuf), "%.6g",
                        static_cast<double>(v.value));
-        const int32_t w3 = static_cast<int32_t>(snprintf(record + written,
-                                recSize - static_cast<size_t>(written),
+        const size_t  remV = recSize - static_cast<size_t>(written);
+        const int32_t w3 = static_cast<int32_t>(snprintf(record + written, remV,
                                 "|%s=%s=%u",
                                 v.name, floatBuf, v.valid ? 1U : 0U));
-        if (w3 > 0 &&
-            (static_cast<size_t>(written) + static_cast<size_t>(w3)) < recSize)
-        {
-            written += w3;
-        }
+        if (w3 <= 0 || static_cast<size_t>(w3) >= remV) { return false; }
+        written += w3;
     }
+    return true;
 }
 
-void MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
+bool MissionScriptEngine::appendSlotTimersSectionLocked(char*    record,
                                                         size_t   recSize,
                                                         int32_t& written,
                                                         uint64_t nowMs) const
 {
-    if (written <= 0 || currentState_ >= program_.stateCount) { return; }
+    if (written <= 0) { return false; }
+    if (currentState_ >= program_.stateCount) { return true; }
     const StateDef& curSt = program_.states[currentState_];
 
     // HK slots: count then per-slot elapsed (AMS-4.3.1 v3 checkpoint).
+    const size_t  remH = recSize - static_cast<size_t>(written);
     const int32_t wHk = static_cast<int32_t>(snprintf(
-        record + written, recSize - static_cast<size_t>(written),
+        record + written, remH,
         "|%" PRIu32, static_cast<uint32_t>(curSt.hkSlotCount)));
-    if (wHk > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wHk)) < recSize)
-    {
-        written += wHk;
-    }
-    for (uint8_t s = 0U; s < curSt.hkSlotCount && written > 0; s++)  // PO10-2
+    if (wHk <= 0 || static_cast<size_t>(wHk) >= remH) { return false; }
+    written += wHk;
+
+    for (uint8_t s = 0U; s < curSt.hkSlotCount; s++)  // PO10-2
     {
         const uint32_t slotElap = static_cast<uint32_t>(nowMs - lastHkSlotMs_[s]);
+        const size_t  remS = recSize - static_cast<size_t>(written);
         const int32_t ws = static_cast<int32_t>(snprintf(
-            record + written, recSize - static_cast<size_t>(written),
+            record + written, remS,
             "|%" PRIu32, slotElap));
-        if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
-        {
-            written += ws;
-        }
+        if (ws <= 0 || static_cast<size_t>(ws) >= remS) { return false; }
+        written += ws;
     }
 
     // LOG slots: count then per-slot elapsed.
+    const size_t  remL = recSize - static_cast<size_t>(written);
     const int32_t wLog = static_cast<int32_t>(snprintf(
-        record + written, recSize - static_cast<size_t>(written),
+        record + written, remL,
         "|%" PRIu32, static_cast<uint32_t>(curSt.logSlotCount)));
-    if (wLog > 0 && (static_cast<size_t>(written) + static_cast<size_t>(wLog)) < recSize)
-    {
-        written += wLog;
-    }
-    for (uint8_t s = 0U; s < curSt.logSlotCount && written > 0; s++)  // PO10-2
+    if (wLog <= 0 || static_cast<size_t>(wLog) >= remL) { return false; }
+    written += wLog;
+
+    for (uint8_t s = 0U; s < curSt.logSlotCount; s++)  // PO10-2
     {
         const uint32_t slotElap = static_cast<uint32_t>(nowMs - lastLogSlotMs_[s]);
+        const size_t  remS = recSize - static_cast<size_t>(written);
         const int32_t ws = static_cast<int32_t>(snprintf(
-            record + written, recSize - static_cast<size_t>(written),
+            record + written, remS,
             "|%" PRIu32, slotElap));
-        if (ws > 0 && (static_cast<size_t>(written) + static_cast<size_t>(ws)) < recSize)
-        {
-            written += ws;
-        }
+        if (ws <= 0 || static_cast<size_t>(ws) >= remS) { return false; }
+        written += ws;
     }
+    return true;
 }
 
 bool MissionScriptEngine::saveResumePointLocked(uint64_t nowMs, bool force)
@@ -590,6 +600,261 @@ const char* MissionScriptEngine::restoreCheckpointSlotsLocked(const char* cursor
     return cursor;
 }
 
+// ── restoreCheckpointV4StrictLocked ──────────────────────────────────────────
+//
+// Strict, atomic restore of all v4-specific sections.
+//
+// Called by tryRestoreResumePointLocked ONLY for version == 4 records whose
+// CRC has already been validated.  Parses every section (vars, HK/LOG slots,
+// confirm counters, hold windows) into temporary staging buffers first.  If
+// any required field is missing or a count is inconsistent with the currently-
+// loaded program, the function logs a warning and returns false WITHOUT
+// modifying any live engine state.  All changes are committed atomically only
+// when every check passes.
+//
+// This prevents the partial-restore hazard that the lenient v2/v3 path
+// tolerates for backward compat: a v4 record with a valid CRC but a wrong
+// field count would previously corrupt tcConfirmCount_, hold windows, or slot
+// timers.
+//
+// @param cursor  Points to the first character of the 11th pipe-delimited
+//                token in the checkpoint buffer, i.e., the first field after
+//                the 10-field header.  The caller has already advanced past
+//                the 10th pipe.
+// @param nowMs   Current monotonic clock value, used to reconstruct absolute
+//                timestamps from stored elapsed values.
+// @return true   All fields parsed and consistent; live state updated.
+// @return false  Structural mismatch; caller should discard the checkpoint.
+bool MissionScriptEngine::restoreCheckpointV4StrictLocked(const char* cursor, uint64_t nowMs) // NOLINT(readability-function-size)
+{
+    // ── Temporary staging buffers ──────────────────────────────────────────
+    // All reads go here first; live state is not touched until all checks pass.
+    float    tmpVarVal[ares::AMS_MAX_VARS]          = {};
+    bool     tmpVarValid[ares::AMS_MAX_VARS]        = {};
+    bool     tmpVarSet[ares::AMS_MAX_VARS]          = {};  // which slots were populated
+    uint32_t tmpHkElap[ares::AMS_MAX_HK_SLOTS]     = {};
+    uint32_t tmpLogElap[ares::AMS_MAX_HK_SLOTS]    = {};
+    uint8_t  tmpCc[4]                              = {};
+    bool     tmpHolding[ares::AMS_MAX_TRANSITIONS] = {};
+    uint32_t tmpCondElap[ares::AMS_MAX_TRANSITIONS]= {};
+
+    const StateDef& curSt = program_.states[currentState_];
+
+    // ── 1. Vars section (only written when program_.varCount > 0) ─────────
+    // When varCount == 0 the checkpoint has no varCount token; cursor is
+    // already pointing at the hkSlotCount digit.
+    if (program_.varCount > 0U)
+    {
+        uint32_t vcStored = 0U;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &vcStored)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            return false;
+        }
+        if (vcStored != static_cast<uint32_t>(program_.varCount))
+        {
+            LOG_W(TAG, "resume v4: varCount mismatch (stored=%u loaded=%u) — discarding",
+                  static_cast<unsigned>(vcStored),
+                  static_cast<unsigned>(program_.varCount));
+            return false;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+        for (uint32_t vi = 0U; vi < vcStored && *cursor != '\0'; vi++)
+        {
+            if (*cursor != '|') { return false; }
+            cursor++;
+            char vName[ares::AMS_VAR_NAME_LEN] = {};
+            char vValStr[24] = {};
+            uint32_t vValid = 0U;
+            // Safe: NUL-terminated buffer; widths limit both strings; return checked == 3.
+            // cppcheck-suppress [cert-err34-c]
+            if (static_cast<int32_t>(sscanf(cursor, "%15[^=]=%23[^=]=%u",  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+                                            vName, vValStr, &vValid)) != 3)
+            {
+                return false;
+            }
+            const VarEntry* v = findVarLocked(vName);
+            if (v != nullptr)
+            {
+                const uint32_t vidx = static_cast<uint32_t>(v - program_.vars);
+                if (vidx < static_cast<uint32_t>(ares::AMS_MAX_VARS))
+                {
+                    float fval = 0.0f;
+                    if (parseFloatValue(vValStr, fval))
+                    {
+                        tmpVarVal[vidx]   = fval;
+                        tmpVarValid[vidx] = (vValid != 0U);
+                        tmpVarSet[vidx]   = true;
+                    }
+                }
+            }
+            while (*cursor != '\0' && *cursor != '|') { cursor++; }
+        }
+        // cursor is now at '|' before hkSlotCount (or '\0').
+    }
+    // else: cursor already at hkSlotCount digit — no varCount token present.
+
+    // ── 2. HK slot count (must match currently-loaded state) ──────────────
+    // When varCount > 0 the vars section leaves cursor at '|hkSlotCount';
+    // when varCount == 0 cursor is already at the hkSlotCount digit.
+    if (program_.varCount > 0U)
+    {
+        if (*cursor != '|') { return false; }
+        cursor++;
+    }
+    uint32_t hkCount = 0U;
+    // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+    if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &hkCount)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    {
+        return false;
+    }
+    if (hkCount != static_cast<uint32_t>(curSt.hkSlotCount))
+    {
+        LOG_W(TAG, "resume v4: hkSlotCount mismatch (stored=%u state=%u) — discarding",
+              static_cast<unsigned>(hkCount),
+              static_cast<unsigned>(curSt.hkSlotCount));
+        return false;
+    }
+    while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+    for (uint8_t s = 0U; s < static_cast<uint8_t>(hkCount); s++)
+    {
+        if (*cursor != '|') { return false; }
+        cursor++;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &tmpHkElap[s])) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            return false;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
+
+    // ── 3. LOG slot count (must match currently-loaded state) ─────────────
+    if (*cursor != '|') { return false; }
+    cursor++;
+    uint32_t logCount = 0U;
+    // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+    if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &logCount)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+    {
+        return false;
+    }
+    if (logCount != static_cast<uint32_t>(curSt.logSlotCount))
+    {
+        LOG_W(TAG, "resume v4: logSlotCount mismatch (stored=%u state=%u) — discarding",
+              static_cast<unsigned>(logCount),
+              static_cast<unsigned>(curSt.logSlotCount));
+        return false;
+    }
+    while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+    for (uint8_t s = 0U; s < static_cast<uint8_t>(logCount); s++)
+    {
+        if (*cursor != '|') { return false; }
+        cursor++;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &tmpLogElap[s])) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            return false;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
+
+    // ── 4. Confirm counters (exactly 4 required) ──────────────────────────
+    for (uint8_t i = 0U; i < 4U; i++)  // PO10-2
+    {
+        if (*cursor != '|')
+        {
+            LOG_W(TAG, "resume v4: confirm counter[%u] missing — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        cursor++;
+        uint32_t cc = 0U;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &cc)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            LOG_W(TAG, "resume v4: confirm counter[%u] unparseable — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        tmpCc[i] = static_cast<uint8_t>(cc < 255U ? cc : 255U);
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+    }
+
+    // ── 5. Transition hold windows (2 × AMS_MAX_TRANSITIONS fields) ───────
+    for (uint8_t i = 0U; i < ares::AMS_MAX_TRANSITIONS; i++)  // PO10-2
+    {
+        if (*cursor != '|')
+        {
+            LOG_W(TAG, "resume v4: hold flag[%u] missing — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        cursor++;
+        uint32_t holding = 0U;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &holding)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            LOG_W(TAG, "resume v4: hold flag[%u] unparseable — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+        if (*cursor != '|')
+        {
+            LOG_W(TAG, "resume v4: hold elapsed[%u] missing — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        cursor++;
+        uint32_t elap = 0U;
+        // Safe: NUL-terminated checkpoint buffer; single SCNu32; return checked.
+        if (static_cast<int32_t>(sscanf(cursor, "%" SCNu32, &elap)) != 1)  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        {
+            LOG_W(TAG, "resume v4: hold elapsed[%u] unparseable — discarding",
+                  static_cast<unsigned>(i));
+            return false;
+        }
+        while (*cursor != '\0' && *cursor != '|') { cursor++; }
+
+        tmpHolding[i]  = (holding != 0U);
+        tmpCondElap[i] = elap;
+    }
+
+    // ── 6. All checks passed — commit to live state ────────────────────────
+    for (uint8_t vi = 0U; vi < program_.varCount; vi++)
+    {
+        if (tmpVarSet[vi])
+        {
+            program_.vars[vi].value = tmpVarVal[vi];
+            program_.vars[vi].valid = tmpVarValid[vi];
+        }
+    }
+    for (uint8_t s = 0U; s < static_cast<uint8_t>(hkCount); s++)
+    {
+        lastHkSlotMs_[s] = nowMs - tmpHkElap[s];
+    }
+    for (uint8_t s = 0U; s < static_cast<uint8_t>(logCount); s++)
+    {
+        lastLogSlotMs_[s] = nowMs - tmpLogElap[s];
+    }
+    for (uint8_t i = 0U; i < 4U; i++)
+    {
+        tcConfirmCount_[i] = tmpCc[i];
+    }
+    for (uint8_t i = 0U; i < ares::AMS_MAX_TRANSITIONS; i++)
+    {
+        transitionCondHolding_[i] = tmpHolding[i];
+        if (tmpHolding[i])
+        {
+            transitionCondMetMs_[i] = nowMs - tmpCondElap[i];
+        }
+    }
+    return true;
+}
+
 void MissionScriptEngine::restoreCheckpointV4FieldsLocked(const char* cursor, uint64_t nowMs)
 {
     // cursor points to the first character of cc[0] (tcConfirmCount_[0]).
@@ -715,7 +980,8 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint64_t nowMs) // NOLINT(
     // SINGLE-INSTANCE ASSUMPTION: this buffer is intentionally static to avoid
     // placing 512 bytes on the FreeRTOS task stack (stack space is scarce on
     // ESP32-S3).  This is safe only because the firmware runs exactly one
-    // MissionScriptEngine instance — enforced by the ARES_ASSERT in begin().
+    // MissionScriptEngine instance — enforced by the ARES_REQUIRE in begin()
+    // (ARES_REQUIRE is NOT elided with ARES_NDEBUG, unlike ARES_ASSERT).
     // If a second engine is ever added, convert this to a member array or
     // allocate from a dedicated scratch region.
     static char buf[512] = {};
@@ -849,7 +1115,7 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint64_t nowMs) // NOLINT(
     // ── v2+: restore global variables ────────────────────────────────────────
     if (version >= 2U)
     {
-        // Locate the 11th '|'-delimited token (index 10 = varCount field).
+        // Locate the 11th '|'-delimited token (field after the 10-field header).
         const char* cursor = buf;
         uint8_t pipes = 0U;
         while (*cursor != '\0' && pipes < 10U)
@@ -857,21 +1123,32 @@ bool MissionScriptEngine::tryRestoreResumePointLocked(uint64_t nowMs) // NOLINT(
             if (*cursor == '|') { pipes++; }
             cursor++;
         }
-        if (*cursor != '\0')
-        {
-            cursor = restoreCheckpointVarsLocked(cursor);
-        }
 
-        // ── v3+: restore per-slot HK/LOG elapsed timers (AMS-4.3.1) ──────────
-        if (version >= 3U && *cursor == '|')
+        if (version == 4U)
         {
-            cursor = restoreCheckpointSlotsLocked(cursor + 1U, nowMs);
+            // v4: strict atomic restore — all sections must be complete and
+            // coherent with the loaded script.  A partial record (wrong field
+            // counts, truncated sections) is discarded outright (P2-3).
+            if (*cursor == '\0' || !restoreCheckpointV4StrictLocked(cursor, nowMs))
+            {
+                LOG_W(TAG, "resume: v4 record structurally incomplete — discarding");
+                deactivateLocked();        // undo applyCheckpointStateLocked
+                clearResumePointLocked();
+                return false;
+            }
         }
-
-        // ── v4: restore tcConfirmCount_ and transition hold windows (AMS-8.5) ─
-        if (version == 4U && *cursor == '|')
+        else
         {
-            restoreCheckpointV4FieldsLocked(cursor + 1U, nowMs);
+            // v2/v3: lenient restore for backward compatibility with records
+            // written by older firmware that may omit optional sections.
+            if (*cursor != '\0')
+            {
+                cursor = restoreCheckpointVarsLocked(cursor);
+            }
+            if (version >= 3U && *cursor == '|')
+            {
+                (void)restoreCheckpointSlotsLocked(cursor + 1U, nowMs);
+            }
         }
     }
 
