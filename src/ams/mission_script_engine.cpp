@@ -114,8 +114,8 @@ bool MissionScriptEngine::activate(const char* fileName)
     seq_ = 0;
     lastHkMs_ = 0;
     lastLogMs_ = 0;
-    memset(lastHkSlotMs_,  0U, sizeof(lastHkSlotMs_));
-    memset(lastLogSlotMs_, 0U, sizeof(lastLogSlotMs_));
+    std::fill_n(lastHkSlotMs_,  ares::AMS_MAX_HK_SLOTS, uint64_t{0U});
+    std::fill_n(lastLogSlotMs_, ares::AMS_MAX_HK_SLOTS, uint64_t{0U});
 
     uint8_t startIdx = 0;
     const uint8_t waitIdx = findStateByNameLocked("WAIT");
@@ -158,7 +158,7 @@ void MissionScriptEngine::deactivateLocked()
         transitionPrevVal_[pi]   = 0.0f;
         transitionPrevValid_[pi] = false;
     }
-    memset(taskLastTickMs_, 0U, sizeof(taskLastTickMs_));
+    std::fill_n(taskLastTickMs_, ares::AMS_MAX_TASKS, uint64_t{0U});
     parseCurrentTask_     = 0xFFU;
     parseCurrentTaskRule_ = 0xFFU;
 
@@ -188,11 +188,11 @@ void MissionScriptEngine::deactivateLocked()
 void MissionScriptEngine::resetSensorCachesLocked()
 {
     std::fill(std::begin(baroCachedReadings_), std::end(baroCachedReadings_), BaroReading{});
-    memset(baroCacheTsMs_,      0, sizeof(baroCacheTsMs_));
-    memset(baroCacheValid_,     0, sizeof(baroCacheValid_));
+    std::fill_n(baroCacheTsMs_,  ares::AMS_MAX_INCLUDES, uint64_t{0U});
+    std::fill_n(baroCacheValid_, ares::AMS_MAX_INCLUDES, false);
     std::fill(std::begin(gpsCachedReadings_),  std::end(gpsCachedReadings_),  GpsReading{});
-    memset(gpsCacheTsMs_,       0, sizeof(gpsCacheTsMs_));
-    memset(gpsCacheValid_,      0, sizeof(gpsCacheValid_));
+    std::fill_n(gpsCacheTsMs_,  ares::AMS_MAX_INCLUDES, uint64_t{0U});
+    std::fill_n(gpsCacheValid_, ares::AMS_MAX_INCLUDES, false);
     imuCacheValid_ = false;
     imuCacheTsMs_  = 0U;
 }

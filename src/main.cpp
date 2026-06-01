@@ -221,7 +221,7 @@ static bool startApiServer()
 }
 
 // ═════════════════════════════════════════════════════════
-void setup()
+void setup() // NOLINT(readability-function-size)
 {
     // Keep USB serial available for on-demand diagnostics, but do not
     // emit boot banners or periodic traces in normal operation.
@@ -240,10 +240,19 @@ void setup()
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
     imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
 
-    for (BarometerInterface* iface : s_baroIfaces) { (void)iface->begin(); }
-    for (ImuInterface*        iface : kImuIfaces)  { (void)iface->begin(); }
-    for (GpsInterface*        iface : kGpsIfaces)  { (void)iface->begin(); }
-    (void)pulse.begin();
+    for (BarometerInterface* iface : s_baroIfaces)
+    {
+        if (!iface->begin()) { LOG_W("BOOT", "baro begin() failed"); }
+    }
+    for (ImuInterface* iface : kImuIfaces)
+    {
+        if (!iface->begin()) { LOG_W("BOOT", "imu begin() failed"); }
+    }
+    for (GpsInterface* iface : kGpsIfaces)
+    {
+        if (!iface->begin()) { LOG_W("BOOT", "gps begin() failed"); }
+    }
+    if (!pulse.begin()) { LOG_W("BOOT", "pulse begin() failed"); }
 
     // Status LED — NeoPixel on GPIO 21
     (void)ledIf.begin();

@@ -305,10 +305,16 @@ bool MissionScriptEngine::parseTransitionLineLocked(const char* line,
     }
 
     char target[ares::AMS_MAX_STATE_NAME] = {};
-    const int32_t nTarget = static_cast<int32_t>(sscanf(line, "transition to %15s", target));
+    int afterTarget = 0;
+    const int32_t nTarget = static_cast<int32_t>(sscanf(line, "transition to %15s%n", target, &afterTarget));
     if (nTarget != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid transition syntax: missing target state");
+        return false;
+    }
+    if (line[afterTarget] != '\0' && line[afterTarget] != ' ' && line[afterTarget] != '\t')
+    {
+        setErrorLocked("transition target state name too long (max 15 characters)");
         return false;
     }
 
@@ -523,11 +529,17 @@ bool MissionScriptEngine::parseFallbackTransitionLineLocked(const char* line,
 
     // "fallback transition to TARGET after Nms"
     // Extract target state name.
+    int afterTarget = 0;
     // cppcheck-suppress [cert-err34-c]
-    const int32_t nt = static_cast<int32_t>(sscanf(line, "fallback transition to %15s", target));
+    const int32_t nt = static_cast<int32_t>(sscanf(line, "fallback transition to %15s%n", target, &afterTarget));
     if (nt != 1 || target[0] == '\0')
     {
         setErrorLocked("invalid fallback transition syntax: missing target state");
+        return false;
+    }
+    if (line[afterTarget] != '\0' && line[afterTarget] != ' ' && line[afterTarget] != '\t')
+    {
+        setErrorLocked("fallback transition target state name too long (max 15 characters)");
         return false;
     }
 

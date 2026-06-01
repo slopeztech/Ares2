@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 62
+ * Test count: 64
  */
 #include <unity.h>
 
@@ -97,6 +97,11 @@ extern void test_cmd_mac_valid_timestamp_accepted();
 extern void test_cmd_mac_expired_timestamp_rejected();
 extern void test_cmd_mac_future_timestamp_rejected();
 
+// ── test_rx_buffer_guard.cpp ────────────────────────────────────────────────
+
+extern void test_poll_liar_driver_received_exceeds_space_no_crash();
+extern void test_poll_liar_driver_recovery_processes_heartbeat();
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -186,6 +191,10 @@ int main()
     RUN_TEST(test_cmd_mac_valid_timestamp_accepted);
     RUN_TEST(test_cmd_mac_expired_timestamp_rejected);
     RUN_TEST(test_cmd_mac_future_timestamp_rejected);
+
+    // RX-buffer boundary guard (P3-5 / CERT-1)
+    RUN_TEST(test_poll_liar_driver_received_exceeds_space_no_crash);
+    RUN_TEST(test_poll_liar_driver_recovery_processes_heartbeat);
 
     return UNITY_END();
 }

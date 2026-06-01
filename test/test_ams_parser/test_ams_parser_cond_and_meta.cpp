@@ -7,7 +7,7 @@
  * exercise `parseScriptLocked` paths not currently covered by the SITL
  * integration suite.
  *
- * Test count: 9
+ * Test count: 19
  */
 
 #include <unity.h>
@@ -231,6 +231,298 @@ void test_parser_falling_unknown_alias_error()
     fx.engine.getSnapshot(snap);
     TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
     TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+// ── Helpers shared by radio.config rejection tests ────────────────────────────
+
+namespace {
+    bool loadScriptWithRadioValue(CondParserFixture& fx,
+                                  const char*        scriptName,
+                                  const char*        radioLine)
+    {
+        char script[512] = {};
+        snprintf(script, sizeof(script),
+            "include SIM_BARO as BARO\n"
+            "include SIM_COM as COM\n"
+            "\n"
+            "pus.apid = 1\n"
+            "pus.service 3 as HK\n"
+            "pus.service 5 as EVENT\n"
+            "pus.service 1 as TC\n"
+            "\n"
+            "%s\n"
+            "\n"
+            "state WAIT:\n"
+            "  transition to END when TC.command == LAUNCH\n"
+            "\n"
+            "state END:\n"
+            "  on_enter:\n"
+            "    EVENT.info \"OK\"\n",
+            radioLine);
+        return fx.load(scriptName, script);
+    }
+} // namespace
+
+// ── Test 10: radio.config with NaN value is rejected ─────────────────────────
+
+void test_parser_radio_config_nan_rejected()
+{
+    CondParserFixture fx;
+    const bool ok = loadScriptWithRadioValue(
+        fx,
+        "radio_config_nan.ams",
+        "radio.config telem_interval = nan");
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "radio.config nan must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 11: radio.config with Inf value is rejected ─────────────────────────
+
+void test_parser_radio_config_inf_rejected()
+{
+    CondParserFixture fx;
+    const bool ok = loadScriptWithRadioValue(
+        fx,
+        "radio_config_inf.ams",
+        "radio.config telem_interval = inf");
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "radio.config inf must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 12: radio.config with alphanumeric suffix is rejected ────────────────
+
+void test_parser_radio_config_alpha_suffix_rejected()
+{
+    CondParserFixture fx;
+    const bool ok = loadScriptWithRadioValue(
+        fx,
+        "radio_config_alpha_suffix.ams",
+        "radio.config telem_interval = 5000abc");
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "radio.config value with trailing 'abc' must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 13: radio.config with extra token is rejected ───────────────────────
+
+void test_parser_radio_config_extra_token_rejected()
+{
+    CondParserFixture fx;
+    const bool ok = loadScriptWithRadioValue(
+        fx,
+        "radio_config_extra_token.ams",
+        "radio.config telem_interval = 5000 extra");
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "radio.config value with trailing ' extra' must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+// ── Test 14: log_every below LOG_INTERVAL_MIN_MS is rejected ─────────────────
+
+void test_parser_log_every_below_min_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state WAIT:\n"
+        "  log_every 1ms:\n"
+        "    LOG.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("log_every_below_min.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok,
+        "log_every 1ms must be rejected (below LOG_INTERVAL_MIN_MS = 100)");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 15: log_every at LOG_INTERVAL_MIN_MS is accepted ────────────────────
+
+void test_parser_log_every_at_min_accepted()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state WAIT:\n"
+        "  log_every 100ms:\n"
+        "    LOG.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("log_every_at_min.ams", kScript);
+
+    TEST_ASSERT_TRUE_MESSAGE(ok,
+        "log_every 100ms must be accepted (equals LOG_INTERVAL_MIN_MS)");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+}
+
+// ── Test 16: pulse.min_altitude 0 is rejected (below [1,50000]) ───────────────
+// Exercises the TokenCursor readUint32 + val==0 guard added in P3-4.
+
+void test_parser_pulse_min_alt_zero_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "pulse.channel A\n"
+        "pulse.min_altitude 0\n"
+        "\n"
+        "state WAIT:\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("pulse_min_alt_zero.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok,
+        "pulse.min_altitude 0 must be rejected (below minimum of 1 m)");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 17: pulse.min_altitude 1 is accepted (at lower bound) ────────────────
+
+void test_parser_pulse_min_alt_boundary_accepted()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "pulse.channel A\n"
+        "pulse.min_altitude 1\n"
+        "\n"
+        "state WAIT:\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("pulse_min_alt_boundary.ams", kScript);
+
+    TEST_ASSERT_TRUE_MESSAGE(ok,
+        "pulse.min_altitude 1 must be accepted (equals lower bound)");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+}
+
+// ── Test 18: pulse.safe_delay below minimum (99 ms) is rejected ───────────────
+// Exercises the val < 100 guard converted to TokenCursor in P3-4.
+
+void test_parser_pulse_safe_delay_below_min_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "pulse.channel A\n"
+        "pulse.safe_delay 99\n"
+        "\n"
+        "state WAIT:\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("pulse_safe_delay_below_min.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok,
+        "pulse.safe_delay 99 must be rejected (below minimum of 100 ms)");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 19: radio.config dotted key (monitor.alt.high) is accepted ───────────
+// Exercises TokenCursor.readKeyBounded which allows '.' in the key name.
+
+void test_parser_radio_config_dotted_key_accepted()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "pus.service 5 as EVENT\n"
+        "\n"
+        "radio.config monitor.alt.high = 5000\n"
+        "\n"
+        "state WAIT:\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"done\"\n";
+
+    const bool ok = fx.load("radio_config_dotted_key.ams", kScript);
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_TRUE_MESSAGE(ok, snap.lastError);
 }
 
 // ── Test 6: delta condition with invalid threshold rejected ───────────────────

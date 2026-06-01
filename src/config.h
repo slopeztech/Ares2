@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <freertos/FreeRTOS.h>
 
 // ── Version ─────────────────────────────────────────────────
@@ -27,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.3.14"
+#define ARES_VERSION_STRING "2.3.15"
 
 namespace ares
 {
@@ -177,6 +178,10 @@ constexpr uint8_t     AMS_MAX_HK_SLOTS     = 4U;           ///< Max every/log_ev
 constexpr uint8_t     AMS_MAX_CONDITIONS        = 4;  ///< Max guard conditions per state.
 constexpr uint8_t     AMS_MAX_TRANSITION_CONDS = 4U; ///< Max sub-conditions in one transition (AMS-4.6.2).
 constexpr uint8_t     AMS_MAX_TRANSITIONS      = 4U; ///< Max "transition to" directives per state (AMS-4.6).
+static_assert(
+    static_cast<unsigned>(AMS_MAX_TRANSITIONS) * static_cast<unsigned>(AMS_MAX_TRANSITION_CONDS)
+        <= std::numeric_limits<uint8_t>::max(),
+    "AMS_MAX_TRANSITIONS * AMS_MAX_TRANSITION_CONDS exceeds uint8_t range — widen flatIdx type");
 constexpr uint8_t     AMS_MAX_VARS             = 8U; ///< Max global variables per script (AMS-4.8).
 constexpr uint8_t     AMS_MAX_CONSTS           = 8U;  ///< Max named constants per script (AMS-4.12).
 constexpr uint8_t     AMS_MAX_TASKS              = 4U;  ///< Max background task blocks per script (AMS-11).
@@ -202,6 +207,8 @@ constexpr uint32_t    AMS_SENSOR_CACHE_TTL_MS           = 5U;     ///< Maximum a
 // ── Config field validation bounds (REST-5.4) ───────────────
 constexpr uint32_t    TELEMETRY_INTERVAL_MIN = 100;     ///< Min telemetry interval ms.
 constexpr uint32_t    TELEMETRY_INTERVAL_MAX = 60000;   ///< Max telemetry interval ms.
+constexpr uint32_t    LOG_INTERVAL_MIN_MS    = 100;     ///< Min log_every interval ms (flash wear + latency protection, AMS-4.3.1).
+constexpr uint32_t    LOG_INTERVAL_MAX_MS    = 60000;   ///< Max log_every interval ms.
 constexpr uint8_t     NODE_ID_MIN            = 1;       ///< Min telemetry node ID.
 constexpr uint8_t     NODE_ID_MAX            = 253;     ///< Max telemetry node ID.
 

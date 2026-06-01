@@ -408,7 +408,7 @@ struct Transition
 
 /**
  * One entry in the per-script alias table.
- * Created by 'include <MODEL> as <ALIAS> [retry=N] [timeout=Nms]' (AMS-4.9.1).
+ * Created by 'include <MODEL> as <ALIAS> [retry=N]' (AMS-4.9.1).
  */
 struct AliasEntry
 {

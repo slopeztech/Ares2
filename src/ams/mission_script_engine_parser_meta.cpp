@@ -8,6 +8,7 @@
 
 #include "ams/mission_script_engine.h"
 #include "ams/mission_script_engine_helpers.h"
+#include "ams/ams_token_cursor.h"
 
 #include "ares_assert.h"
 #include "ares_util.h"
@@ -131,19 +132,35 @@ bool MissionScriptEngine::parsePusServiceDirectiveLocked(const char* line)
  * @return @c true if the directive was parsed and stored without error.
  * @pre  Caller holds the engine mutex.
  */
-bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line)
+bool MissionScriptEngine::parseRadioConfigLineLocked(const char* line) // NOLINT(readability-function-size)
 {
     // Parse:  radio.config PARAM_NAME = VALUE
-    char  key[32] = {};
-    float value   = 0.0F;
-    // cppcheck-suppress [cert-err34-c]
-    // MISRA-1: sscanf returns int (third-party API); cast to int32_t on capture.
-    // Safe: key[32] is a local buffer; format %31s limits the scan to 31 chars (sizeof-1);
-    // return value checked == 2 before any field is used.
-    const int32_t n = static_cast<int32_t>(sscanf(line, "radio.config %31s = %f", key, &value)); // NOLINT(bugprone-unchecked-string-to-number-conversion)
-    if (n != 2 || key[0] == '\0')
+    // Step 1: extract the key token using TokenCursor (handles dotted names
+    // such as "monitor.alt.high" without sscanf format-string fragility).
+    char key[32] = {};
+    TokenCursor cur(line);
+    if (!cur.expectLiteral("radio.config ")
+        || !cur.readKeyBounded(key, sizeof(key)))
     {
         setErrorLocked("invalid radio.config syntax (expected: radio.config PARAM = VALUE)");
+        return false;
+    }
+
+    // Step 2: locate '=' and parse the value with parseFloatValue(), which
+    // rejects NaN, ±Inf, and any trailing non-whitespace characters.
+    cur.skipWs();
+    if (!cur.expectLiteral("="))
+    {
+        setErrorLocked("invalid radio.config syntax (expected: radio.config PARAM = VALUE)");
+        return false;
+    }
+    cur.skipWs();
+    const char* valStr = cur.remaining();
+
+    float value = 0.0F;
+    if (!parseFloatValue(valStr, value))
+    {
+        setErrorLocked("radio.config: value must be a finite number without trailing characters");
         return false;
     }
 
@@ -429,24 +446,23 @@ bool MissionScriptEngine::parsePulseRequireContinuityLineLocked(const char* line
 {
     ARES_ASSERT(line != nullptr);
 
-    static constexpr uint8_t kPrefixLen = 25U; // "pulse.require_continuity "
-    const char* rest = line + kPrefixLen;
+    // TokenCursor replaces the manual character-by-character extraction loop.
+    // readIdentBounded handles overflow uniformly; ensureEol() enforces that no
+    // trailing garbage is silently ignored (strict acceptance, AMS-4.18.6).
+    TokenCursor cur(line);
+    (void)cur.expectLiteral("pulse.require_continuity "); // prefix guaranteed by caller dispatch
 
-    // Extract channel token (letter or alias).
     char token[ares::AMS_PULSE_LABEL_LEN] = {};
-    uint8_t tokLen = 0U;
-    while (rest[tokLen] != '\0' && rest[tokLen] != ' ')
+    if (!cur.readIdentBounded(token, sizeof(token)))
     {
-        if (tokLen >= ares::AMS_PULSE_LABEL_LEN - 1U)
-        {
-            setErrorLocked("pulse.require_continuity: channel token too long");
-            return false;
-        }
-        token[tokLen] = rest[tokLen];
-        tokLen++;
+        setErrorLocked("pulse.require_continuity: missing channel");
+        return false;
     }
-    token[tokLen] = '\0';
-    if (tokLen == 0U) { setErrorLocked("pulse.require_continuity: missing channel"); return false; }
+    if (!cur.ensureEol())
+    {
+        setErrorLocked("pulse.require_continuity: unexpected tokens after channel name");
+        return false;
+    }
 
     const uint8_t ch = resolveChannelOrAliasLocked(token);
     if (ch == 0xFFU) { setErrorLocked("pulse.require_continuity: unknown channel or undeclared alias"); return false; }
@@ -480,14 +496,12 @@ bool MissionScriptEngine::parsePulseMinAltLineLocked(const char* line)
 {
     ARES_ASSERT(line != nullptr);
 
-    static constexpr uint8_t kPrefixLen = 19U; // "pulse.min_altitude "
-    const char* rest = line + kPrefixLen;
-
-    if (*rest == '\0') { setErrorLocked("pulse.min_altitude: missing value"); return false; }
-
-    char* endp = nullptr;
-    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
-    if (endp == rest || val <= 0 || val > 50000)
+    // TokenCursor replaces the hardcoded prefix offset + strtol pattern:
+    // parse exactly one unsigned integer followed by end-of-line.
+    TokenCursor cur(line);
+    (void)cur.expectLiteral("pulse.min_altitude "); // prefix guaranteed by caller dispatch
+    uint32_t val = 0U;
+    if (!cur.readUint32(val) || !cur.ensureEol() || val == 0U || val > 50000U)
     {
         setErrorLocked("pulse.min_altitude: value must be in range [1, 50000] m");
         return false;
@@ -500,7 +514,7 @@ bool MissionScriptEngine::parsePulseMinAltLineLocked(const char* line)
     }
 
     program_.pulseHasMinAlt    = true;
-    program_.pulseMinAltitudeM = static_cast<uint32_t>(val);
+    program_.pulseMinAltitudeM = val;
     LOG_I(TAG, "pulse.min_altitude = %" PRIu32 " m", program_.pulseMinAltitudeM);
     return true;
 }
@@ -520,14 +534,10 @@ bool MissionScriptEngine::parsePulseSafeDelayLineLocked(const char* line)
 {
     ARES_ASSERT(line != nullptr);
 
-    static constexpr uint8_t kPrefixLen = 17U; // "pulse.safe_delay "
-    const char* rest = line + kPrefixLen;
-
-    if (*rest == '\0') { setErrorLocked("pulse.safe_delay: missing value"); return false; }
-
-    char* endp = nullptr;
-    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
-    if (endp == rest || val < 100 || val > 60000)
+    TokenCursor cur(line);
+    (void)cur.expectLiteral("pulse.safe_delay ");
+    uint32_t val = 0U;
+    if (!cur.readUint32(val) || !cur.ensureEol() || val < 100U || val > 60000U)
     {
         setErrorLocked("pulse.safe_delay: value must be in range [100, 60000] ms");
         return false;
@@ -539,7 +549,7 @@ bool MissionScriptEngine::parsePulseSafeDelayLineLocked(const char* line)
         return false;
     }
 
-    program_.pulseSafeDelayMs = static_cast<uint32_t>(val);
+    program_.pulseSafeDelayMs = val;
     LOG_I(TAG, "pulse.safe_delay = %" PRIu32 " ms", program_.pulseSafeDelayMs);
     return true;
 }
@@ -559,14 +569,10 @@ bool MissionScriptEngine::parsePulseArmTimeoutLineLocked(const char* line)
 {
     ARES_ASSERT(line != nullptr);
 
-    static constexpr uint8_t kPrefixLen = 18U; // "pulse.arm_timeout "
-    const char* rest = line + kPrefixLen;
-
-    if (*rest == '\0') { setErrorLocked("pulse.arm_timeout: missing value"); return false; }
-
-    char* endp = nullptr;
-    const int64_t val = static_cast<int64_t>(strtol(rest, &endp, 10));
-    if (endp == rest || val < 500 || val > 300000)
+    TokenCursor cur(line);
+    (void)cur.expectLiteral("pulse.arm_timeout ");
+    uint32_t val = 0U;
+    if (!cur.readUint32(val) || !cur.ensureEol() || val < 500U || val > 300000U)
     {
         setErrorLocked("pulse.arm_timeout: value must be in range [500, 300000] ms");
         return false;
@@ -578,7 +584,7 @@ bool MissionScriptEngine::parsePulseArmTimeoutLineLocked(const char* line)
         return false;
     }
 
-    program_.pulseArmTimeoutMs = static_cast<uint32_t>(val);
+    program_.pulseArmTimeoutMs = val;
     LOG_I(TAG, "pulse.arm_timeout = %" PRIu32 " ms", program_.pulseArmTimeoutMs);
     return true;
 }
@@ -603,17 +609,29 @@ bool MissionScriptEngine::parsePulseNoBaroPolicyLineLocked(const char* line)
 {
     ARES_ASSERT(line != nullptr);
 
-    static constexpr uint8_t kPrefixLen = 21U; // "pulse.no_baro_policy "
-    const char* rest = line + kPrefixLen;
+    // TokenCursor replaces the hardcoded offset + strncmp + isOnlyTrailingWhitespace
+    // pair, making the word-boundary check implicit via ensureEol().
+    // Note: expectLiteral("allow") on input "allowance" succeeds for 5 chars,
+    // then ensureEol() fails on "ance" — correctly rejecting the bad token.
+    // expectLiteral("block") is then tried from the start of "ance", also
+    // failing — so we fall through to setError.  The behaviour is correct for
+    // all valid/invalid inputs because "allow" is not a prefix of "block" and
+    // vice versa.
+    TokenCursor cur(line);
+    (void)cur.expectLiteral("pulse.no_baro_policy "); // prefix guaranteed by caller dispatch
 
-    if (*rest == '\0') { setErrorLocked("pulse.no_baro_policy: missing value (expected 'allow' or 'block')"); return false; }
+    if (cur.isEol())
+    {
+        setErrorLocked("pulse.no_baro_policy: missing value (expected 'allow' or 'block')");
+        return false;
+    }
 
     bool policyAllow = false;
-    if (strncmp(rest, "allow", 5U) == 0 && (rest[5] == '\0' || rest[5] == ' '))
+    if (cur.expectLiteral("allow") && cur.ensureEol())
     {
         policyAllow = true;
     }
-    else if (strncmp(rest, "block", 5U) == 0 && (rest[5] == '\0' || rest[5] == ' '))
+    else if (cur.expectLiteral("block") && cur.ensureEol())
     {
         policyAllow = false;
     }
@@ -688,9 +706,8 @@ bool MissionScriptEngine::parseIncludeOptionalsLocked(const char* line, AliasEnt
     if (retryP != nullptr)
     {
         uint32_t retries = 0U;
-        // Safe: retryP+7 points into a NUL-terminated script line; reads a single SCNu32;
-        // return checked != 1; value validated in range [1, AMS_MAX_SENSOR_RETRY] before use.
-        if (sscanf(retryP + 7, "%" SCNu32, &retries) != 1  // NOLINT(bugprone-unchecked-string-to-number-conversion)
+        // parseUint validates digits, range, and rejects trailing non-whitespace (e.g. "2x").
+        if (!parseUint(retryP + 7, retries)
             || retries == 0U
             || retries > static_cast<uint32_t>(ares::AMS_MAX_SENSOR_RETRY))
         {
@@ -703,30 +720,28 @@ bool MissionScriptEngine::parseIncludeOptionalsLocked(const char* line, AliasEnt
     const char* toP = strstr(line, " timeout=");
     if (toP != nullptr)
     {
-        const char* numStart = toP + 9;
-        const char* msPtr    = strstr(numStart, "ms");
-        if (msPtr == nullptr || msPtr == numStart)
-        {
-            setErrorLocked("include timeout= must be of the form Nms");
-            return false;
-        }
-        const ptrdiff_t numLen = msPtr - numStart;
-        if (numLen <= 0 || numLen >= 16)
-        {
-            setErrorLocked("include timeout= numeric value out of range");
-            return false;
-        }
+        // timeout= is not implemented: sensor reads are synchronous with no
+        // per-attempt deadline beyond the underlying I2C hardware timeout.
+        // Accepting it silently would mislead the operator into believing a
+        // deadline is enforced.  Reject it explicitly instead.
+        setErrorLocked("include timeout= is not supported; remove it or use retry= for resilience");
+        return false;
     }
     return true;
 }
 
 bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
 {
+    // Parse:  include MODEL as ALIAS [retry=N]
+    // Use TokenCursor to make the two-token "as" boundary explicit and
+    // bounds-safe (sscanf %15s would silently truncate oversized tokens).
     char model[16] = {};
     char alias[16] = {};
-    // cppcheck-suppress [cert-err34-c]
-    const int32_t parsed = static_cast<int32_t>(sscanf(line, "include %15s as %15s", model, alias));
-    if (parsed != 2 || model[0] == '\0' || alias[0] == '\0')
+    TokenCursor cur(line);
+    if (!cur.expectLiteral("include ")
+        || !cur.readIdentBounded(model, sizeof(model))
+        || !cur.expectLiteral(" as ")
+        || !cur.readIdentBounded(alias, sizeof(alias)))
     {
         setErrorLocked("invalid include syntax (expected: include <MODEL> as <ALIAS>)");
         return false;
@@ -768,20 +783,28 @@ bool MissionScriptEngine::parseIncludeLineLocked(const char* line)
         return false;
     }
 
-    AliasEntry& ae = program_.aliases[program_.aliasCount++];
-    ares::util::copyZ(ae.alias, alias, sizeof(ae.alias));
-    ares::util::copyZ(ae.model, model, sizeof(ae.model));
-    ae.kind      = kind;
-    ae.driverIdx = driverIdx;
-    ae.retryCount = 0U;
+    // Build and validate a local staging entry before touching program_ state.
+    // This gives parseIncludeLineLocked() transactional semantics: program_.aliases
+    // and program_.aliasCount are only updated after all validation passes.
+    AliasEntry tmp = {};
+    ares::util::copyZ(tmp.alias, alias, sizeof(tmp.alias));
+    ares::util::copyZ(tmp.model, model, sizeof(tmp.model));
+    tmp.kind      = kind;
+    tmp.driverIdx = driverIdx;
+    tmp.retryCount = 0U;
 
-    if (!parseIncludeOptionalsLocked(line, ae)) { return false; }
+    // Pass the tail (everything after "ALIAS") so parseIncludeOptionalsLocked
+    // does not need to skip the already-consumed "include MODEL as ALIAS" prefix.
+    if (!parseIncludeOptionalsLocked(cur.remaining(), tmp)) { return false; }
+
+    program_.aliases[program_.aliasCount] = tmp;
+    program_.aliasCount++;
 
     LOG_I(TAG, "include: alias=%s model=%s kind=%u idx=%u retry=%u",
-          ae.alias, ae.model,
-          static_cast<uint32_t>(ae.kind),
-          static_cast<uint32_t>(ae.driverIdx),
-          static_cast<uint32_t>(ae.retryCount));
+          tmp.alias, tmp.model,
+          static_cast<uint32_t>(tmp.kind),
+          static_cast<uint32_t>(tmp.driverIdx),
+          static_cast<uint32_t>(tmp.retryCount));
     return true;
 }
 
@@ -808,10 +831,16 @@ bool MissionScriptEngine::parseStateLineLocked(const char* line,
     }
 
     char stateName[ares::AMS_MAX_STATE_NAME] = {};
-    const int32_t n = static_cast<int32_t>(sscanf(line, "state %15[^:]:", stateName));
+    int afterColon = 0;
+    const int32_t n = static_cast<int32_t>(sscanf(line, "state %15[^:]:%n", stateName, &afterColon));
     if (n != 1)
     {
         setErrorLocked("invalid state syntax");
+        return false;
+    }
+    if (afterColon == 0)
+    {
+        setErrorLocked("state name too long (max 15 characters)");
         return false;
     }
 

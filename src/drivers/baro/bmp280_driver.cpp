@@ -5,8 +5,11 @@
 
 #include "drivers/baro/bmp280_driver.h"
 #include "config.h"
+#include "debug/ares_log.h"
 
 #include <cmath>
+
+static constexpr const char* TAG = "BMP280";
 
 // ── BMP280 register map (BST-BMP280-DS001, Table 18) ────────
 namespace bmp280
@@ -79,8 +82,14 @@ bool Bmp280Driver::begin()
     for (uint8_t i = 0; i < bmp280::MAX_INIT_POLLS; i++)
     {
         uint8_t status = 0;
-        // PO10-7: readReg failure yields status=0 → loop exits safely
-        (void)readReg(bmp280::REG_STATUS, status);
+        if (!readReg(bmp280::REG_STATUS, status))
+        {
+            // CERT-1: I2C read failure during NVM-load wait is a hard
+            // bus error; abort init rather than silently continuing with a
+            // stale status=0 that could mask a stuck im_update bit.
+            LOG_W(TAG, "status register read failed during NVM wait; aborting init");
+            return false;
+        }
         if ((status & bmp280::STATUS_IM_UPD) == 0)
         {
             break;
@@ -136,7 +145,7 @@ BaroStatus Bmp280Driver::read(BaroReading& out)
     out.pressurePa   = compensatePressure(rawPress);
 
     // CERT-16.2: guard against NaN/Inf from compensation
-    if (!isfinite(out.temperatureC) || !isfinite(out.pressurePa))
+    if (!std::isfinite(out.temperatureC) || !std::isfinite(out.pressurePa))
     {
         return BaroStatus::ERROR;
     }
@@ -146,7 +155,7 @@ BaroStatus Bmp280Driver::read(BaroReading& out)
                    * (1.0f - powf(pressHPa / seaLevelHPa_,
                                   bmp280::HYPSOMETRIC_EXP));
 
-    if (!isfinite(out.altitudeM))
+    if (!std::isfinite(out.altitudeM))
     {
         return BaroStatus::ERROR;
     }
@@ -157,7 +166,7 @@ BaroStatus Bmp280Driver::read(BaroReading& out)
 void Bmp280Driver::setSeaLevelPressure(float hPa)
 {
     // PO10-7.2: validate parameter (interface @pre: finite, positive)
-    if (isfinite(hPa) && hPa > 0.0f)
+    if (std::isfinite(hPa) && hPa > 0.0f)
     {
         seaLevelHPa_ = hPa;
     }

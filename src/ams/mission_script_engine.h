@@ -468,7 +468,7 @@ private:
     bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint64_t nowMs);
     bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
                                               StateDef&,
-                                              uint8_t         condIdx,
+                                              size_t          condIdx,
                                               uint64_t        nowMs,
                                               bool&           tcPendingMatch);
     bool applyTransitionHoldLocked(const Transition& tr, uint8_t trIdx, uint64_t nowMs);
@@ -599,9 +599,9 @@ private:
 
     bool saveResumePointLocked(uint64_t nowMs, bool force);
     bool buildCheckpointRecordLocked(uint64_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
-    void appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
-    void appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
-    void appendConfirmHoldSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
+    bool appendVarsSectionLocked(char* record, size_t recSize, int32_t& written) const;
+    bool appendSlotTimersSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
+    bool appendConfirmHoldSectionLocked(char* record, size_t recSize, int32_t& written, uint64_t nowMs) const;
     bool tryRestoreResumePointLocked(uint64_t nowMs);
     bool applyCheckpointStateLocked(uint64_t nowMs, uint32_t stateIdx, uint32_t execEnabled,
                                      uint32_t running, uint32_t status, uint32_t seq,
@@ -610,6 +610,7 @@ private:
     static bool parseCheckpointHeaderLocked(const char* buf, uint32_t& version, char* fileName, uint32_t& stateIdx, uint32_t& execEnabled, uint32_t& running, uint32_t& status, uint32_t& seq, uint32_t& stateElapsed, uint32_t& hkElapsed, uint32_t& logElapsed);
     const char* restoreCheckpointVarsLocked(const char* cursor);
     const char* restoreCheckpointSlotsLocked(const char* cursor, uint64_t nowMs);
+    bool        restoreCheckpointV4StrictLocked(const char* cursor, uint64_t nowMs);
     void        restoreCheckpointV4FieldsLocked(const char* cursor, uint64_t nowMs);
     void clearResumePointLocked();
     void writeAbortMarkerLocked(const char* stateName, uint64_t nowMs);
