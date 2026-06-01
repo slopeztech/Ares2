@@ -26,6 +26,7 @@ AMS supports:
 - TC token gating from API commands (TC.command)
 - Local sensor logging to text files (LOG.report)
 - Priority arbitration among EVENT, HK, and LOG
+- Per-slot COM routing via `every Nms via ALIAS:` (A2-3)
 
 AMS does not use dynamic allocation and is interpreted at runtime.
 
@@ -204,6 +205,7 @@ Allowed statements inside a state:
 - `on_error:`
 - `on_timeout Nms:`
 - `every Nms:`
+- `every Nms via ALIAS:` (routes HK slot to the COM bound to ALIAS — AMS-4.3.2)
 - `HK.report { ... }`
 - `log_every Nms:`
 - `LOG.report { ... }`
@@ -254,6 +256,42 @@ Rules:
 - `HK.report` requires a preceding `every` block
 - `LOG.report` requires a preceding `log_every` block
 - HK and LOG slots use independent per-slot per-state timers
+
+#### AMS-4.3.2 Per-slot COM routing (`via ALIAS`)
+
+An `every` block may optionally target a specific COM peripheral instead of the
+primary radio interface:
+
+```ams
+every 500ms via COM2:
+  HK.report { gps_alt: GPS.alt  baro_alt: BARO.alt }
+```
+
+Syntax:
+
+```
+every <N>ms via <ALIAS>:
+  HK.report { … }
+```
+
+Normative constraints:
+- `ALIAS` must be declared with `include MODEL as ALIAS` in the metadata section.
+- The alias must be of kind `COM` (radio peripheral).  A non-COM alias (e.g. `GPS`, `BARO`) is rejected at parse time with error `"every via: alias is not a COM include"`.
+- The alias name must be 1–15 characters.  An empty or over-length name is a parse error.
+- No characters may follow the colon after `ALIAS:` (trailing garbage is rejected).
+- The minimum interval is `TELEMETRY_INTERVAL_MIN` (100 ms), same as a plain `every` block.
+- Omitting `via ALIAS` is equivalent to routing through `primaryCom_` (unchanged behaviour).
+- At runtime, if the alias cannot be resolved (e.g. the driver was registered with a different index), a `LOG_W` is emitted and the frame falls back to `primaryCom_`.
+- `via` routing applies only to `HK.report` slots; `log_every` and `LOG.report` blocks always write to the local filesystem and are unaffected.
+- Multiple `every` blocks in the same state may target different COM aliases:
+
+```ams
+state FLIGHT:
+  every 1000ms:                   // routes to primaryCom_
+    HK.report { gps_alt: GPS.alt }
+  every 500ms via BACKUP_COM:     // routes to BACKUP_COM
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y }
+```
 
 ### AMS-4.4 Priorities and Tick Budget
 
@@ -1029,8 +1067,15 @@ processed within 50 ms even in states that have no sensor conditions.
 
 ### AMS-5.4 HK Behavior
 
-`HK.report` builds a binary telemetry frame and sends through radio protocol
+`HK.report` builds a binary telemetry frame and sends through the radio protocol
 encoder (`MsgType::TELEMETRY`).
+
+**COM routing (AMS-4.3.2):** By default every HK slot transmits through
+`primaryCom_` — the first COM driver registered with the engine.  When a slot
+is declared with `every Nms via ALIAS:`, the engine resolves the alias at
+dispatch time and transmits through that driver instead.  If resolution fails
+at dispatch time (driver not registered or alias mismatch), a `LOG_W` is
+emitted and `primaryCom_` is used as fallback.
 
 ### AMS-5.5 LOG Behavior
 

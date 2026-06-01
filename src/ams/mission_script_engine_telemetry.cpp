@@ -116,7 +116,23 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& s
     }
 
     finaliseHkPayloadLocked(tm, nowMs);
-    transmitHkFrameLocked(tm, "HK slot");
+
+    // Resolve the slot's COM alias to a RadioInterface; nullptr falls back to primaryCom_.
+    RadioInterface* via = nullptr;
+    if (slot.comAlias[0] != '\0')
+    {
+        const AliasEntry* ae = findAliasLocked(slot.comAlias);
+        if (ae != nullptr && ae->kind == PeripheralKind::COM && ae->driverIdx < comCount_
+            && comDrivers_[ae->driverIdx].iface != nullptr)
+        {
+            via = comDrivers_[ae->driverIdx].iface;
+        }
+        else
+        {
+            LOG_W(TAG, "HK slot: via alias '%s' unresolved — using primaryCom_", slot.comAlias);
+        }
+    }
+    transmitHkFrameLocked(tm, "HK slot", via);
 }
 
 // ── finaliseHkPayloadLocked ────────────────────────────────────────────
@@ -203,7 +219,8 @@ void MissionScriptEngine::finaliseHkPayloadLocked(TelemetryPayload& tm, uint64_t
  * @pre  Caller holds the engine mutex.
  * @post @c seq_ is advanced by one.
  */
-void MissionScriptEngine::transmitHkFrameLocked(const TelemetryPayload& tm, const char* logLabel)
+void MissionScriptEngine::transmitHkFrameLocked(const TelemetryPayload& tm, const char* logLabel,
+                                               RadioInterface* com)
 {
     Frame frame = {};
     frame.ver   = PROTOCOL_VERSION;
@@ -214,7 +231,7 @@ void MissionScriptEngine::transmitHkFrameLocked(const TelemetryPayload& tm, cons
     frame.len   = static_cast<uint8_t>(sizeof(TelemetryPayload));
     memcpy(frame.payload, &tm, sizeof(tm));
 
-    if (!sendFrameLocked(frame))
+    if (!sendFrameLocked(frame, com))
     {
         LOG_W(TAG, "%s frame send failed", logLabel);
     }
@@ -1014,23 +1031,24 @@ bool MissionScriptEngine::getScriptRadioConfig(ares::proto::ConfigParamId id,
 // ── sendFrameLocked ──────────────────────────────────────────────────────────
 
 /**
- * @brief Encode an APUS @c Frame and transmit it via the primary COM interface.
+ * @brief Encode an APUS @c Frame and transmit it via @p com if non-null, otherwise via primaryCom_.
  *
  * @param[in] frame  Fully populated @c Frame to send.
  * @return @c true if @c RadioInterface::send() returned @c RadioStatus::OK.
  * @pre  Caller holds the engine mutex.  @c frame.len <= MAX_PAYLOAD_LEN.
  */
-bool MissionScriptEngine::sendFrameLocked(const Frame& frame)
+bool MissionScriptEngine::sendFrameLocked(const Frame& frame, RadioInterface* com)
 {
     ARES_ASSERT(frame.len <= MAX_PAYLOAD_LEN);
 
-    if (primaryCom_ == nullptr) { return false; }
+    RadioInterface* const iface = (com != nullptr) ? com : primaryCom_;
+    if (iface == nullptr) { return false; }
 
     uint8_t wire[MAX_FRAME_LEN] = {};
     uint16_t wireLen = 0U;
     if (!ares::proto::encode(frame, wire, sizeof(wire), wireLen)) { return false; }
 
-    const RadioStatus rs = primaryCom_->send(wire, wireLen);
+    const RadioStatus rs = iface->send(wire, wireLen);
     return rs == RadioStatus::OK;
 }
 

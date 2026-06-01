@@ -7,7 +7,7 @@
  * exercise `parseScriptLocked` paths not currently covered by the SITL
  * integration suite.
  *
- * Test count: 19
+ * Test count: 26
  */
 
 #include <unity.h>
@@ -639,4 +639,251 @@ void test_parser_sensor_cond_unknown_alias_error()
     EngineSnapshot snap {};
     fx.engine.getSnapshot(snap);
     TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+}
+
+// ── Test 20: every Nms via COM_ALIAS: is accepted ────────────────────────────
+// Exercises the A2-3 multi-radio routing extension: a valid COM alias in the
+// via clause must be accepted and the slot's comAlias must be populated.
+
+void test_parser_every_via_com_accepted()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM1\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 5 as EVENT\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms via COM1:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"done\"\n";
+
+    const bool ok = fx.load("every_via_com.ams", kScript);
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_TRUE_MESSAGE(ok, snap.lastError);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+}
+
+// ── Test 21: every Nms via non-COM alias is rejected ─────────────────────────
+// A BARO alias is not a COM peripheral; the parser must reject the via clause.
+
+void test_parser_every_via_noncom_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_BARO as BARO\n"
+        "include SIM_COM as COM\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms via BARO:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("every_via_noncom.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "every via non-COM alias must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 22: every Nms via unregistered alias is rejected ─────────────────────
+// An alias that was never declared with 'include' must be rejected.
+
+void test_parser_every_via_unknown_alias_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms via GHOST:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("every_via_ghost.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "every via unregistered alias must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 23: every Nms via COM: with interval below minimum is rejected ────────
+// The 100 ms floor (TELEMETRY_INTERVAL_MIN / APUS-19.3) applies even with via.
+
+void test_parser_every_via_below_min_interval_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 99ms via COM:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("every_via_below_min.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "every via interval below 100 ms must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 24: every Nms via COM: with trailing garbage is rejected ─────────────
+// Characters after the closing ':' are not allowed.
+
+void test_parser_every_via_trailing_garbage_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms via COM: garbage\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("every_via_trailing.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "every via with trailing chars must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 25: every Nms via with empty alias name is rejected ──────────────────
+// "every 500ms via :" has nothing between 'via ' and ':'.
+
+void test_parser_every_via_empty_alias_rejected()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms via :\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    const bool ok = fx.load("every_via_empty_alias.ams", kScript);
+
+    TEST_ASSERT_FALSE_MESSAGE(ok, "every via with empty alias must be rejected");
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL(EngineStatus::ERROR, snap.status);
+    TEST_ASSERT_TRUE(snap.lastError[0] != '\0');
+}
+
+// ── Test 26: two every blocks — one plain, one with via — both accepted ────────
+// A state may have multiple HK slots; mixing plain 'every' and 'every via'
+// must parse cleanly without conflating the slot COM alias fields.
+
+void test_parser_every_via_two_slots_accepted()
+{
+    CondParserFixture fx;
+
+    static const char kScript[] =
+        "include SIM_COM as COM1\n"
+        "include SIM_COM as COM2\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 5 as EVENT\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state FLY:\n"
+        "  every 500ms:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  every 1000ms via COM2:\n"
+        "    HK.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n"
+        "  on_enter:\n"
+        "    EVENT.info \"done\"\n";
+
+    const bool ok = fx.load("every_via_two_slots.ams", kScript);
+
+    EngineSnapshot snap {};
+    fx.engine.getSnapshot(snap);
+    TEST_ASSERT_TRUE_MESSAGE(ok, snap.lastError);
+    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
 }

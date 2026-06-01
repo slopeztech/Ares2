@@ -377,9 +377,10 @@ struct HkField
  */
 struct HkSlot
 {
-    uint32_t everyMs    = 0U;                            ///< Report interval (ms); 0 = unused.
-    uint8_t  fieldCount = 0U;                            ///< Number of populated fields.
-    HkField  fields[ares::AMS_MAX_HK_FIELDS] = {};      ///< Field descriptors.
+    uint32_t everyMs      = 0U;                            ///< Report interval (ms); 0 = unused.
+    uint8_t  fieldCount   = 0U;                            ///< Number of populated fields.
+    char     comAlias[16] = {};                            ///< Target COM alias; empty = use primaryCom_.
+    HkField  fields[ares::AMS_MAX_HK_FIELDS] = {};        ///< Field descriptors.
 };
 
 /**

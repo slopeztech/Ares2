@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.3.14"
+#define ARES_VERSION_STRING "2.4.0"
 ```
 
 ---
@@ -69,6 +69,8 @@ docs/changelog/
     v2.3.12.md  ← Patch: P1-3 SIOF main.cpp (placement new + startApiServer); P2-1/P2-4 truncation guards; P2-5 fill_n; P3-2 kCrcSuffix; P2-2 single-task contract
     v2.3.13.md  ← Patch: tick() flush — single-exit restructure guarantees flushPendingIoUnlocked() on every exit path; 4 new SITL tests
     v2.3.14.md  ← Patch: checkpoint timing markers committed only after confirmed writeFile(); 1 new SITL retry test
+    v2.3.15.md  ← Patch: hardening pass — checkpoint atomicity, parser trailing-garbage, radio.config refactor, sensor NaN guard, BMP280 suite, clang-tidy PASS
+    v2.4.0.md   ← Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias`; runtime fallback LOG_W; 10 new tests
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -108,3 +110,5 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.12](../changelog/v2.3.12.md) | 2026-05-31 | Patch   | Patch: P1-3 SIOF `main.cpp` (placement new, `startApiServer`); P2-1/P2-4 truncation guards; P2-5 `std::fill_n`; P3-2 `kCrcSuffix`; P2-2 single-task contract |
 | [2.3.13](../changelog/v2.3.13.md) | 2026-05-31 | Patch   | Patch:  `tick()` flush — single-exit restructure; P3-1 `uint64_t` elapsed; 4 new SITL flush tests |
 | [2.3.14](../changelog/v2.3.14.md) | 2026-05-31 | Patch   | Patch: checkpoint timing markers deferred to confirmed `writeFile()`; re-arm dirty on failure; 1 new SITL retry test |
+| [2.3.15](../changelog/v2.3.15.md) | 2026-06-01 | Patch   | Patch: checkpoint atomicity; parser trailing-garbage rejection; `radio.config` `TokenCursor` refactor; sensor NaN guard; `std::fill_n`; API/storage defensive returns; BMP280 suite; clang-tidy PASS |
+| [2.4.0](../changelog/v2.4.0.md)   | 2026-06-02 | Minor   | Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias[16]`; runtime unresolved-alias `LOG_W`; 7 parser tests + 3 integration tests |
