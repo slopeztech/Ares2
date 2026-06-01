@@ -122,7 +122,8 @@ void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& s
     if (slot.comAlias[0] != '\0')
     {
         const AliasEntry* ae = findAliasLocked(slot.comAlias);
-        if (ae != nullptr && ae->kind == PeripheralKind::COM && ae->driverIdx < comCount_)
+        if (ae != nullptr && ae->kind == PeripheralKind::COM && ae->driverIdx < comCount_
+            && comDrivers_[ae->driverIdx].iface != nullptr)
         {
             via = comDrivers_[ae->driverIdx].iface;
         }

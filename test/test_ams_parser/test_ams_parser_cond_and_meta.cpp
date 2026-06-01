@@ -7,7 +7,7 @@
  * exercise `parseScriptLocked` paths not currently covered by the SITL
  * integration suite.
  *
- * Test count: 21
+ * Test count: 26
  */
 
 #include <unity.h>

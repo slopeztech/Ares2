@@ -125,7 +125,7 @@ void test_via_slot_routes_to_named_com()
     TEST_ASSERT_TRUE(f.engine.activate("via_named.ams"));
     TEST_ASSERT_TRUE(f.engine.arm());
 
-    // Tick at t=0: consume queued LAUNCH TC; TIME.elapsed > 5000 is false; no HK yet.
+    // Tick at t=0: enter initial state; TIME.elapsed > 5000 is false; no HK yet.
     f.engine.tick(ares::sim::clock::nowMs());
 
     // Clear any frames emitted by state entry (e.g. on_enter EVENT).

@@ -395,6 +395,7 @@ bool MissionScriptEngine::parseEveryViaAliasLocked(const char* rawAliasStart,
     }
 
     memcpy(outAlias, aliasStart, static_cast<size_t>(aliasLen));
+    outAlias[static_cast<size_t>(aliasLen)] = '\0';
 
     const AliasEntry* ae = findAliasLocked(outAlias);
     if (ae == nullptr || ae->kind != PeripheralKind::COM)
