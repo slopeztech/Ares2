@@ -193,8 +193,9 @@ void MissionScriptEngine::resetSensorCachesLocked()
     std::fill(std::begin(gpsCachedReadings_),  std::end(gpsCachedReadings_),  GpsReading{});
     std::fill_n(gpsCacheTsMs_,  ares::AMS_MAX_INCLUDES, uint64_t{0U});
     std::fill_n(gpsCacheValid_, ares::AMS_MAX_INCLUDES, false);
-    imuCacheValid_ = false;
-    imuCacheTsMs_  = 0U;
+    std::fill(std::begin(imuCachedReadings_),  std::end(imuCachedReadings_),  ImuReading{});
+    std::fill_n(imuCacheTsMs_,  ares::AMS_MAX_INCLUDES, uint64_t{0U});
+    std::fill_n(imuCacheValid_, ares::AMS_MAX_INCLUDES, false);
 }
 
 void MissionScriptEngine::resetTelemetryStateLocked()

@@ -306,6 +306,17 @@ private:
     bool parseStateLineLocked(const char* line, uint8_t& currentState);
     bool parseEventLineLocked(const char* line, StateDef& st);
     bool parseEveryLineLocked(const char* line, StateDef& st);
+    bool commitEverySlotLocked(StateDef&   st,
+                               const char* valueStart,
+                               const char* marker,
+                               const char* comAlias);
+    bool resolveEveryMarkerLocked(const char* valueStart,
+                                  const char** outMarker,
+                                  char*        outAlias,
+                                  size_t       aliasSize);
+    bool parseEveryViaAliasLocked(const char* rawAliasStart,
+                                  char*       outAlias,
+                                  size_t      aliasSize);
     bool parseLogEveryLineLocked(const char* line, StateDef& st);    static bool parsePrioritiesValuesLocked(const char* line,
                                             uint32_t& event,
                                             uint32_t& hk,
@@ -434,7 +445,7 @@ private:
     bool readImuFieldLocked(const AliasEntry& ae,
                             SensorField       field,
                             float&            outVal) const;
-    bool refreshImuCacheLocked(ImuInterface* imu, uint8_t maxAttempts) const;
+    bool refreshImuCacheLocked(ImuInterface* imu, uint8_t aliasIdx, uint8_t maxAttempts) const;
     bool parseCondExprLocked(const char* lhs,
                              const char* op,
                              const char* rhs,
@@ -558,7 +569,8 @@ private:
      */
     uint8_t readGpsSatsLocked() const;
     void    finaliseHkPayloadLocked(ares::proto::TelemetryPayload& tm, uint64_t nowMs);
-    void    transmitHkFrameLocked(const ares::proto::TelemetryPayload& tm, const char* logLabel);
+    void    transmitHkFrameLocked(const ares::proto::TelemetryPayload& tm, const char* logLabel,
+                                  RadioInterface* com = nullptr);
 
     /**
      * @brief Evaluate all enabled monitoring slots against @p tm (APUS-12.4).
@@ -588,7 +600,7 @@ private:
                                   char*          out,
                                   uint32_t       outSize) const;
 
-    bool sendFrameLocked(const ares::proto::Frame& frame);
+    bool sendFrameLocked(const ares::proto::Frame& frame, RadioInterface* com = nullptr);
 
     /// Stage a log-file append for deferred execution outside the mutex (AMS-8.3).
     void queueAppendLocked(const char* path, const uint8_t* data, uint32_t len,
@@ -716,10 +728,14 @@ private:
     // the full sensor reading; subsequent field requests within the same tick
     // return the cached value with zero hardware I/O.
     //
-    // IMU: original per-engine cache (unchanged).
-    mutable ImuReading imuCachedReading_ = {};   ///< Last successful IMU burst.
-    mutable uint64_t   imuCacheTsMs_     = 0U;   ///< millis64() when last attempt was made.
-    mutable bool       imuCacheValid_    = false; ///< true iff imuCachedReading_ holds good data.
+    // IMU: per-alias cache (one entry per 'include' alias, indexed by alias
+    // slot).  A single shared slot would otherwise cross-contaminate readings
+    // when a script declares two IMUs (e.g. a standard MPU6050 plus a high-g
+    // ADXL375): the second alias would receive the first sensor's data while
+    // the shared slot was still within its TTL.
+    mutable ImuReading imuCachedReadings_[ares::AMS_MAX_INCLUDES] = {};   ///< Last successful IMU burst, per alias.
+    mutable uint64_t   imuCacheTsMs_[ares::AMS_MAX_INCLUDES]      = {};   ///< millis64() of last attempt, per alias.
+    mutable bool       imuCacheValid_[ares::AMS_MAX_INCLUDES]     = {};   ///< true iff imuCachedReadings_[i] holds good data.
     /// Cache age limit: reuse reading if age < AMS_SENSOR_CACHE_TTL_MS (config.h).
     static constexpr uint32_t IMU_CACHE_MAX_AGE_MS  = ares::AMS_SENSOR_CACHE_TTL_MS;
 

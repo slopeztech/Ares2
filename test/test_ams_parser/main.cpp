@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_parser
  *
- * Test count: 26
+ * Test count: 33
  */
 #include <unity.h>
 
@@ -33,6 +33,13 @@ extern void test_parser_pulse_min_alt_zero_rejected();
 extern void test_parser_pulse_min_alt_boundary_accepted();
 extern void test_parser_pulse_safe_delay_below_min_rejected();
 extern void test_parser_radio_config_dotted_key_accepted();
+extern void test_parser_every_via_com_accepted();
+extern void test_parser_every_via_noncom_rejected();
+extern void test_parser_every_via_unknown_alias_rejected();
+extern void test_parser_every_via_below_min_interval_rejected();
+extern void test_parser_every_via_trailing_garbage_rejected();
+extern void test_parser_every_via_empty_alias_rejected();
+extern void test_parser_every_via_two_slots_accepted();
 
 // ── test_ams_parser_corpus.cpp ───────────────────────────────────────────────
 
@@ -70,6 +77,13 @@ int main()
     RUN_TEST(test_parser_pulse_min_alt_boundary_accepted);
     RUN_TEST(test_parser_pulse_safe_delay_below_min_rejected);
     RUN_TEST(test_parser_radio_config_dotted_key_accepted);
+    RUN_TEST(test_parser_every_via_com_accepted);
+    RUN_TEST(test_parser_every_via_noncom_rejected);
+    RUN_TEST(test_parser_every_via_unknown_alias_rejected);
+    RUN_TEST(test_parser_every_via_below_min_interval_rejected);
+    RUN_TEST(test_parser_every_via_trailing_garbage_rejected);
+    RUN_TEST(test_parser_every_via_empty_alias_rejected);
+    RUN_TEST(test_parser_every_via_two_slots_accepted);
 
     // ams_parser_corpus
     RUN_TEST(test_parser_utf8_bom_rejected);

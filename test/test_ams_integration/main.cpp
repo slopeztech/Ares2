@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 183
+ * Test count: 186
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -258,6 +258,12 @@ extern void test_on_error_event_unknown_verb_rejected();
 extern void test_on_error_event_trailing_garbage_rejected();
 extern void test_checkpoint_v3_with_var_restored();
 
+// ── test_ams_via_routing.cpp ──────────────────────────────────────────────────
+
+extern void test_via_slot_routes_to_named_com();
+extern void test_no_via_slot_routes_to_primary_com();
+extern void test_two_slots_two_radios_independent_counts();
+
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -493,6 +499,11 @@ int main()
     RUN_TEST(test_on_error_event_unknown_verb_rejected);
     RUN_TEST(test_on_error_event_trailing_garbage_rejected);
     RUN_TEST(test_checkpoint_v3_with_var_restored);
+
+    // ams_via_routing
+    RUN_TEST(test_via_slot_routes_to_named_com);
+    RUN_TEST(test_no_via_slot_routes_to_primary_com);
+    RUN_TEST(test_two_slots_two_radios_independent_counts);
 
     return UNITY_END();
 }

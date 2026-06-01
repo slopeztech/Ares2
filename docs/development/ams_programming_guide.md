@@ -86,6 +86,25 @@ state FLIGHT:
 
 Each slot fires at its own cadence independently. The minimum interval is `TELEMETRY_INTERVAL_MIN` (100 ms).
 
+**Per-slot COM routing — `via ALIAS` (AMS-4.3.2):** Each `every` block can optionally target a specific
+COM peripheral instead of the primary radio.  This is useful when the avionics board has two radios
+(e.g. primary RF link + backup LoRa) and different telemetry streams must be routed independently:
+
+```ams
+include DXLR03 as COM          // primary link
+include DXLR03 as BACKUP       // backup / redundant link
+
+state FLIGHT:
+  every 1000ms:                // routes to primaryCom_ (COM)
+    HK.report { gps_alt: GPS.alt  baro_alt: BARO.alt }
+  every 500ms via BACKUP:      // routes to BACKUP COM
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+```
+
+- The alias after `via` must be declared as a `COM` peripheral; a non-COM alias (GPS, BARO, …) is rejected.
+- If the alias cannot be resolved at dispatch time a `LOG_W` is emitted and `primaryCom_` is used.
+- See §20 for a full multi-radio example and operational guidance.
+
 ### 2.4 Local Sensor Logging (File)
 
 Use `log_every` + `LOG.report` for local text logs.
@@ -1657,4 +1676,91 @@ persisted in the checkpoint (AMS-2).  After a power cycle, confirm counters
 restart from 0 and any partially elapsed hold window restarts from the beginning.
 Design mission scripts to tolerate this: a `confirm N` gate that had accumulated
 N−1 injections will require N fresh injections after restore.
+
+---
+
+## 20. Multi-radio Routing with `via ALIAS` (AMS-4.3.2)
+
+Some avionics configurations include more than one COM peripheral — for example,
+a primary RF link (long-range, low data-rate) and a secondary LoRa module
+(short-range, higher data-rate for pad operations).  AMS-4.3.2 lets individual
+HK slots be routed to a specific COM at the script level, with no firmware change
+required.
+
+### 20.1 Hardware setup
+
+Register each COM driver with the engine before calling `arm()`:
+
+```cpp
+// In main.cpp / hardware init:
+engine.registerCom("PRIMARY", &primaryRadio);   // index 0 → primaryCom_
+engine.registerCom("BACKUP",  &backupRadio);    // index 1
+```
+
+Any registered alias name can be referenced from a script.
+
+### 20.2 Minimal dual-radio script
+
+```ams
+apid 0x01
+
+include BMP280 as BARO
+include BN220  as GPS
+include DXLR03 as PRIMARY      # primary RF link
+include DXLR03 as BACKUP       # backup LoRa module
+
+state PAD:
+  every 5000ms:                # slow HK on primary while on the pad
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  baro_alt: BARO.alt }
+  transition to FLIGHT when TC.command == LAUNCH
+
+state FLIGHT:
+  every 1000ms:                # primary: slow navigation HK
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  gps_alt: GPS.alt  baro_alt: BARO.alt }
+  every 200ms via BACKUP:      # backup: high-rate IMU HK
+    HK.report { ax: IMU.accel_x  ay: IMU.accel_y  az: IMU.accel_z }
+  transition to DESCENT when BARO.alt falling for 500ms
+
+state DESCENT:
+  every 1000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon  baro_alt: BARO.alt }
+  transition to LANDED when GPS.speed < 1.5
+
+state LANDED:
+  on_enter:
+    EVENT.info "Landed"
+  every 10000ms:
+    HK.report { gps_lat: GPS.lat  gps_lon: GPS.lon }
+```
+
+### 20.3 Routing rules
+
+| Slot declaration | COM used at dispatch |
+|---|---|
+| `every Nms:` | `primaryCom_` (first registered COM) |
+| `every Nms via ALIAS:` | COM registered under `ALIAS`; falls back to `primaryCom_` with `LOG_W` if not found |
+
+### 20.4 Parse-time errors
+
+| Error message | Cause |
+|---|---|
+| `every via: alias is not a COM include` | ALIAS refers to a non-COM peripheral (GPS, BARO, …) |
+| `every via: alias name empty or too long` | ALIAS is empty string or > 15 characters |
+| `every via: unexpected characters after ':'` | Trailing text after the closing colon |
+| `every via: missing ':'` | `via ALIAS` present but no colon to close the block header |
+
+### 20.5 Operational guidance
+
+- **Budget (§4):** frames on different COM drivers are still counted in the same
+  HK budget group.  `budget=2` with two simultaneously-due `via` slots fires
+  both in a single HK dispatch step.
+- **Cadence tuning:** the bandwidth of the backup radio is independent; you can
+  use a higher frequency on BACKUP without affecting the primary link's load.
+- **Checkpoint restore:** the `comAlias` string is parsed from the script on
+  restore — it is not stored in the checkpoint record.  Renaming an alias between
+  sessions will re-route the slot silently (the engine will attempt resolution
+  with the new alias name on the next tick after restore).
+- **Single-radio fallback:** if the avionics hardware only registers one COM
+  driver, `via BACKUP` silently falls back to the primary on every tick with a
+  `LOG_W`.  No mission data is lost; monitor the log for repeated warnings.
 

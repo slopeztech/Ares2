@@ -358,6 +358,137 @@ bool MissionScriptEngine::parseEventLineLocked(const char* line, StateDef& st)
  * @return @c true if a valid interval was parsed.
  * @pre  Caller holds the engine mutex.
  */
+// ── parseEveryViaAliasLocked ────────────────────────────────────────────────
+// Parses and validates the "ALIAS:" clause that follows "ms via ".
+// rawAliasStart points to the first character after the space in "ms via ".
+// On success: copies the alias into outAlias (NUL-terminated) and returns true.
+// On failure: calls setErrorLocked and returns false.
+bool MissionScriptEngine::parseEveryViaAliasLocked(const char* rawAliasStart,
+                                                   char*       outAlias,
+                                                   size_t      aliasSize)
+{
+    const char* aliasStart = rawAliasStart;
+    while (*aliasStart == ' ') { aliasStart++; }
+
+    const char* colonPos = strchr(aliasStart, ':');
+    if (colonPos == nullptr)
+    {
+        setErrorLocked("every via: missing ':'");
+        return false;
+    }
+
+    const char* aliasEnd = colonPos;
+    while (aliasEnd > aliasStart && *(aliasEnd - 1U) == ' ') { aliasEnd--; }
+
+    // Check empty alias separately so the length check is never redundant.
+    if (aliasEnd <= aliasStart)
+    {
+        setErrorLocked("every via: alias name empty or too long");
+        return false;
+    }
+
+    const ptrdiff_t aliasLen = aliasEnd - aliasStart;  // guaranteed > 0 here
+    if (aliasLen >= static_cast<ptrdiff_t>(aliasSize))
+    {
+        setErrorLocked("every via: alias name empty or too long");
+        return false;
+    }
+
+    memcpy(outAlias, aliasStart, static_cast<size_t>(aliasLen));
+
+    const AliasEntry* ae = findAliasLocked(outAlias);
+    if (ae == nullptr || ae->kind != PeripheralKind::COM)
+    {
+        setErrorLocked("every via: alias is not a COM include");
+        return false;
+    }
+
+    if (!detail::isOnlyTrailingWhitespace(colonPos + 1))
+    {
+        setErrorLocked("every via: unexpected characters after ':'");
+        return false;
+    }
+
+    return true;
+}
+
+// ── resolveEveryMarkerLocked ───────────────────────────────────────────────
+// Detects "ms via ALIAS:" vs plain "ms:" and sets *outMarker to the 'ms' position.
+// For the via-form, delegates alias validation to parseEveryViaAliasLocked.
+bool MissionScriptEngine::resolveEveryMarkerLocked(const char* valueStart,
+                                                   const char** outMarker,
+                                                   char*        outAlias,
+                                                   size_t       aliasSize)
+{
+    const char* msVia   = strstr(valueStart, "ms via ");
+    const char* msColon = strstr(valueStart, "ms:");
+
+    if (msVia != nullptr && (msColon == nullptr || msVia < msColon))
+    {
+        *outMarker = msVia;
+        return parseEveryViaAliasLocked(msVia + 7U, outAlias, aliasSize);
+    }
+    if (msColon != nullptr)
+    {
+        *outMarker = msColon;
+        if (!detail::isOnlyTrailingWhitespace(msColon + 3))
+        {
+            setErrorLocked("invalid every period suffix");
+            return false;
+        }
+        return true;
+    }
+    setErrorLocked("invalid every period");
+    return false;
+}
+
+// ── commitEverySlotLocked ─────────────────────────────────────────────────
+// Parses the numeric period from [valueStart, marker), validates it, and
+// allocates + populates the next HkSlot in st.
+bool MissionScriptEngine::commitEverySlotLocked(StateDef&   st,
+                                                const char* valueStart,
+                                                const char* marker,
+                                                const char* comAlias)
+{
+    const ptrdiff_t rawLen = marker - valueStart;
+    if (rawLen <= 0 || rawLen >= 16)
+    {
+        setErrorLocked("invalid every period length");
+        return false;
+    }
+
+    char valueBuf[16] = {};
+    memcpy(valueBuf, valueStart, static_cast<size_t>(rawLen));
+    valueBuf[static_cast<size_t>(rawLen)] = '\0';
+    trimInPlace(valueBuf);
+
+    uint32_t everyMs = 0U;
+    if (!parseUint(valueBuf, everyMs) || everyMs < ares::TELEMETRY_INTERVAL_MIN)
+    {
+        setErrorLocked("HK interval must be >= 100 ms (APUS-19.3)");
+        return false;
+    }
+
+    if (st.hkSlotCount >= ares::AMS_MAX_HK_SLOTS)
+    {
+        setErrorLocked("too many every blocks in state (max AMS_MAX_HK_SLOTS)");
+        return false;
+    }
+
+    st.hasHkEvery   = true;
+    st.hkEveryMs    = everyMs;
+    st.hkFieldCount = 0;
+
+    const uint8_t slotIdx = st.hkSlotCount;
+    st.hkSlots[slotIdx].everyMs    = everyMs;
+    st.hkSlots[slotIdx].fieldCount = 0U;
+    memcpy(st.hkSlots[slotIdx].comAlias, comAlias, sizeof(st.hkSlots[slotIdx].comAlias));
+    st.hkSlotCount++;
+    parseCurrentHkSlot_ = slotIdx;
+    return true;
+}
+
+// ── parseEveryLineLocked ─────────────────────────────────────────────────────
 bool MissionScriptEngine::parseEveryLineLocked(const char* line, StateDef& st)
 {
     const char* const prefix    = "every ";
@@ -371,54 +502,14 @@ bool MissionScriptEngine::parseEveryLineLocked(const char* line, StateDef& st)
     const char* valueStart = line + prefixLen;
     while (*valueStart == ' ' || *valueStart == '\t') { valueStart++; }
 
-    const char* marker = strstr(valueStart, "ms:");
-    if (marker == nullptr)
+    const char* marker         = nullptr;
+    char        slotComAlias[16] = {};
+    if (!resolveEveryMarkerLocked(valueStart, &marker, slotComAlias, sizeof(slotComAlias)))
     {
-        setErrorLocked("invalid every period");
-        return false;
-    }
-    if (!detail::isOnlyTrailingWhitespace(marker + 3))
-    {
-        setErrorLocked("invalid every period suffix");
         return false;
     }
 
-    const ptrdiff_t rawLen = marker - valueStart;
-    if (rawLen <= 0 || rawLen >= 16)
-    {
-        setErrorLocked("invalid every period length");
-        return false;
-    }
-
-    char valueBuf[16] = {};
-    memcpy(valueBuf, valueStart, static_cast<size_t>(rawLen));
-    valueBuf[static_cast<size_t>(rawLen)] = '\0';
-    trimInPlace(valueBuf);
-
-    uint32_t everyMs = 0;
-    if (!parseUint(valueBuf, everyMs) || everyMs < ares::TELEMETRY_INTERVAL_MIN)
-    {
-        setErrorLocked("HK interval must be >= 100 ms (APUS-19.3)");
-        return false;
-    }
-
-    st.hasHkEvery   = true;
-    st.hkEveryMs    = everyMs;
-    st.hkFieldCount = 0;
-
-    // AMS-4.3.1: allocate a new HK slot for this every directive.
-    if (st.hkSlotCount >= ares::AMS_MAX_HK_SLOTS)
-    {
-        setErrorLocked("too many every blocks in state (max AMS_MAX_HK_SLOTS)");
-        return false;
-    }
-    const uint8_t slotIdx = st.hkSlotCount;
-    st.hkSlots[slotIdx].everyMs    = everyMs;
-    st.hkSlots[slotIdx].fieldCount = 0U;
-    st.hkSlotCount++;
-    parseCurrentHkSlot_ = slotIdx;
-
-    return true;
+    return commitEverySlotLocked(st, valueStart, marker, slotComAlias);
 }
 
 // ── parseLogEveryLineLocked ──────────────────────────────────────────────────

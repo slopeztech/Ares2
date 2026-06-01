@@ -289,10 +289,14 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
 }
 
 bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
+                                                uint8_t       aliasIdx,
                                                 uint8_t       maxAttempts) const
 {
     const uint64_t nowMs = millis64();
-    if ((nowMs - imuCacheTsMs_) < IMU_CACHE_MAX_AGE_MS) { return true; }
+    if (imuCacheValid_[aliasIdx] && (nowMs - imuCacheTsMs_[aliasIdx]) < IMU_CACHE_MAX_AGE_MS)
+    {
+        return true;
+    }
 
     bool readOk = false;
     ImuReading r = {};
@@ -304,14 +308,14 @@ bool MissionScriptEngine::refreshImuCacheLocked(ImuInterface* imu,
             break;
         }
     }
-    imuCacheTsMs_ = millis64();
+    imuCacheTsMs_[aliasIdx] = millis64();
     if (!readOk)
     {
-        imuCacheValid_ = false;
+        imuCacheValid_[aliasIdx] = false;
         return false;
     }
-    imuCachedReading_ = r;
-    imuCacheValid_    = true;
+    imuCachedReadings_[aliasIdx] = r;
+    imuCacheValid_[aliasIdx]     = true;
     return true;
 }
 
@@ -323,11 +327,12 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
     ImuInterface* imu = imuDrivers_[ae.driverIdx].iface;
     if (imu == nullptr) { return false; }
 
+    const uint8_t aliasIdx    = static_cast<uint8_t>(&ae - &program_.aliases[0]);
     const uint8_t maxAttempts = static_cast<uint8_t>(ae.retryCount + 1U);
-    if (!refreshImuCacheLocked(imu, maxAttempts)) { return false; }
+    if (!refreshImuCacheLocked(imu, aliasIdx, maxAttempts)) { return false; }
 
-    if (!imuCacheValid_) { return false; }
-    const ImuReading& r = imuCachedReading_;
+    if (!imuCacheValid_[aliasIdx]) { return false; }
+    const ImuReading& r = imuCachedReadings_[aliasIdx];
     switch (field)
     {
     case SensorField::ACCEL_X:   outVal = r.accelX; break;
@@ -339,7 +344,7 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
         // executes sqrtf in ~14 cycles (~6 ns at 240 MHz) — negligible.
         // If cadence is ever raised above ~1 kHz or accel_mag is used in
         // multiple guards per tick, consider caching the result alongside the
-        // raw components in imuCachedReading_ so a second lookup in the same
+        // raw components in imuCachedReadings_ so a second lookup in the same
         // tick reuses the value without a second sqrtf call.
         outVal = sqrtf(r.accelX * r.accelX
                      + r.accelY * r.accelY
@@ -359,7 +364,7 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
     }
     if (!std::isfinite(outVal))
     {
-        imuCacheValid_ = false;
+        imuCacheValid_[aliasIdx] = false;
         LOG_W(TAG, "%s: non-finite IMU value, cache invalidated", ae.alias);
         return false;
     }
