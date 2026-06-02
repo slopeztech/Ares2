@@ -64,9 +64,10 @@ bool ActiveBuzzerDriver::begin()
 
 bool ActiveBuzzerDriver::beep(uint32_t durationMs, uint32_t /*freqHz*/, uint8_t count)
 {
-    if (!initialised_ || timer_ == nullptr) { return false; }
-    if (durationMs == 0U)                  { return false; }
-    if (pin_ == 0xFFU)                     { return true; }  // no-op, pin not wired
+    if (!initialised_)             { return false; }
+    if (durationMs == 0U)          { return false; }
+    if (pin_ == 0xFFU)             { return true; }  // no-op, pin not wired
+    if (timer_ == nullptr)         { return false; }
 
     // Clamp to configured limits.
     if (durationMs < ares::BUZZER_MIN_DURATION_MS)

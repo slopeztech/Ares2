@@ -1485,8 +1485,8 @@ bool MissionScriptEngine::parseBuzzerBeepLineLocked(const char* line,
  *   BUZZER.beep Nms [Fhz] [Rx]
  * @endcode
  *
- * Only one @c BUZZER.beep is allowed per @c every slot (subsequent calls
- * overwrite the first — a parse error is reported instead).
+ * Only one @c BUZZER.beep is allowed per @c every slot; a second occurrence
+ * is a parse error.
  *
  * @param[in]  line  Script line starting with @c "BUZZER.beep ".
  * @param[out] st    State definition whose current HK slot is updated.

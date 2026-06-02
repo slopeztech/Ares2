@@ -90,9 +90,11 @@ public:
     virtual void stop() = 0;
 
     /**
-     * @brief Query whether a beep is currently in progress.
+     * @brief Query whether a beep sequence is currently in progress.
      *
-     * @return true if the buzzer is actively sounding; false otherwise.
+     * For multi-beep sequences this includes the silent gap phase between tones.
+     *
+     * @return true if the driver is busy with a beep sequence; false otherwise.
      */
     virtual bool isBusy() const = 0;
 
