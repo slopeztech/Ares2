@@ -158,7 +158,7 @@ def current_wifi_ssid() -> Optional[str]:
             timeout=3,
             check=False,
         )
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError):
         return None
 
     if result.returncode != 0:
@@ -422,7 +422,7 @@ class AresApiApp(App[None]):
             try:
                 if int(rec_err) > 0:
                     rec_style = "bold red"
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
             mount_style = "green" if mounted is True else "bold red"
@@ -502,7 +502,7 @@ class AresApiApp(App[None]):
         pretty = text
         try:
             pretty = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             if len(text) > 1200:
                 pretty = text[:1200] + "\n...[truncated]"
 

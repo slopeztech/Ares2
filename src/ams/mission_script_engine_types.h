@@ -368,6 +368,14 @@ struct HkField
     SensorField field     = SensorField::ALT;
 };
 
+/// A single BUZZER.beep command parsed from an on_enter: or every: block (AMS-4.20).
+struct BuzzerAction
+{
+    uint32_t durationMs  = 0U;  ///< Beep duration in milliseconds.
+    uint32_t freqHz      = 0U;  ///< Tone frequency in Hz; 0 = use driver default.
+    uint8_t  repeatCount = 1U;  ///< Number of beeps (1 = single, 2–8 = repeat with equal gap).
+};
+
 /**
  * One scheduled HK (telemetry) or LOG (CSV) report slot (AMS-4.3.1).
  *
@@ -377,10 +385,12 @@ struct HkField
  */
 struct HkSlot
 {
-    uint32_t everyMs      = 0U;                            ///< Report interval (ms); 0 = unused.
-    uint8_t  fieldCount   = 0U;                            ///< Number of populated fields.
-    char     comAlias[16] = {};                            ///< Target COM alias; empty = use primaryCom_.
-    HkField  fields[ares::AMS_MAX_HK_FIELDS] = {};        ///< Field descriptors.
+    uint32_t     everyMs            = 0U;                         ///< Report interval (ms); 0 = unused.
+    uint8_t      fieldCount         = 0U;                         ///< Number of populated fields.
+    char         comAlias[16]       = {};                         ///< Target COM alias; empty = use primaryCom_.
+    HkField      fields[ares::AMS_MAX_HK_FIELDS] = {};            ///< Field descriptors.
+    BuzzerAction buzzerAction       = {};                         ///< BUZZER.beep to fire on each cadence tick (AMS-4.20).
+    bool         hasBuzzerAction    = false;                      ///< True if a BUZZER.beep was declared for this slot.
 };
 
 /**
@@ -515,6 +525,10 @@ struct StateDef
     // ── on_enter PULSE.arm actions (AMS-4.19.1) ──────────
     uint8_t        pulseArmActionCount = 0U;
     PulseArmAction pulseArmActions[ares::AMS_MAX_PULSE_ACTIONS] = {};
+
+    // ── on_enter BUZZER.beep actions (AMS-4.20) ──────────
+    uint8_t      buzzerActionCount = 0U;
+    BuzzerAction buzzerActions[ares::AMS_MAX_BUZZER_ACTIONS] = {};
 
     // ── on_exit handler (AMS-4.9) ────────────────────────
     // Executed synchronously when leaving this state via any transition

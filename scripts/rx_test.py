@@ -29,6 +29,7 @@ except ImportError as exc:  # pragma: no cover - import guard
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal
+    from textual.css.query import NoMatches
     from textual.widgets import DataTable, Footer, Header, RichLog, Static
 except ImportError as exc:  # pragma: no cover - import guard
     raise SystemExit(
@@ -624,8 +625,8 @@ class RxTestApp(App[None]):
                 summary.styles.margin_right = (0, 1, 0, 0)
                 summary.styles.margin_bottom = (0, 0, 0, 0)
                 telemetry.styles.width = "1fr"
-        except Exception:
-            pass  # Gracefully ignore if widgets not yet ready
+        except NoMatches:
+            pass  # Widgets not yet mounted; ignore until layout is ready
 
     def setup_history_table(self) -> None:
         table = self.query_one("#history", DataTable)

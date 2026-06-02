@@ -1764,3 +1764,219 @@ state LANDED:
   driver, `via BACKUP` silently falls back to the primary on every tick with a
   `LOG_W`.  No mission data is lost; monitor the log for repeated warnings.
 
+---
+
+## 21. Buzzer Output (AMS-4.20)
+
+A buzzer can be triggered directly from an `on_enter:` block using `BUZZER.beep`,
+or fired periodically by placing it inside an `every:` cadence slot.
+The engine supports two hardware types — **active** and **passive** — through a
+common `BuzzerInterface` HAL.  Both types are driven from the same AMS syntax;
+the difference is transparent to the script author.
+
+> **Requirement reference:** AMS-4.20 / SRS-2900–2905  
+> **Driver source:** `src/drivers/buzzer/` — `ActiveBuzzerDriver`, `PassiveBuzzerDriver`  
+> **HAL interface:** `src/hal/buzzer/buzzer_interface.h`
+
+---
+
+### 21.1 Syntax
+
+```ams
+BUZZER.beep <duration>ms [<frequency>hz] [<count>x]
+```
+
+| Part | Required | Description |
+|---|---|---|
+| `<duration>ms` | Yes | Beep duration. Range: `BUZZER_MIN_DURATION_MS` (50) – `BUZZER_MAX_DURATION_MS` (10 000). |
+| `<frequency>hz` | No | Tone frequency for passive buzzers. Range: `BUZZER_MIN_FREQ_HZ` (100) – `BUZZER_MAX_FREQ_HZ` (10 000). Omit to use the driver's built-in default (`BUZZER_DEFAULT_FREQ_HZ` = 2 000 Hz). Active buzzers ignore this field entirely. |
+| `<count>x` | No | Repeat count. `1` = single beep (default). `2`–`BUZZER_MAX_REPEAT_COUNT` (8) = play N beeps with an equal-length silent gap between them. Values above 8 are a parse error. |
+
+> **Up to `AMS_MAX_BUZZER_ACTIONS` (2) `BUZZER.beep` lines are allowed per `on_enter:` block.**
+> A third line in the same block is a parse error.
+>
+> **At most one `BUZZER.beep` line is allowed per `every:` slot.**
+> A second `BUZZER.beep` in the same slot is a parse error.
+
+`BUZZER.beep` is valid in two contexts:
+- Inside `on_enter:` blocks (fires once on state entry).
+- At state scope immediately after an `every Nms:` directive or after a
+  `HK.report {}` block that follows an `every Nms:` directive (fires once per
+  cadence tick).
+
+Using it elsewhere (e.g. `on_exit:`, `log_every`) is a parse error.
+
+---
+
+### 21.2 Examples
+
+#### Single beep on state entry
+```ams
+state DEPLOY:
+  on_enter:
+    BUZZER.beep 500ms
+```
+
+#### Beep with explicit frequency (passive buzzer)
+```ams
+state DEPLOY:
+  on_enter:
+    BUZZER.beep 1000ms 3000hz
+```
+
+#### Triple beep — 200 ms on, 200 ms off, 200 ms on, 200 ms off, 200 ms on
+```ams
+state DEPLOY:
+  on_enter:
+    BUZZER.beep 200ms 3x
+```
+
+#### Periodic beep every 2 s (alongside HK telemetry)
+```ams
+state CLIMB:
+  every 2000ms:
+    HK.report {
+      baro_alt: BARO.alt
+    }
+    BUZZER.beep 100ms
+```
+
+#### Periodic beep every 500 ms (buzzer-only, no HK fields)
+```ams
+state DESCENT:
+  every 500ms:
+    BUZZER.beep 150ms 2x
+```
+
+---
+
+### 21.3 Behaviour
+
+**On state entry (`on_enter:`):**
+
+1. All declared `BUZZER.beep` actions are dispatched in order via
+   `BuzzerInterface::beep(durationMs, freqHz, count)`.
+2. Each call starts the buzzer immediately and arms an internal FreeRTOS timer.
+   The call is **non-blocking** — the engine tick continues without waiting.
+3. If `count > 1`, the driver plays `count` beeps separated by equal-length silent
+   gaps (`durationMs` each) using a single-timer state machine.
+
+**On cadence tick (`every:`):**
+
+1. When the slot's period has elapsed, `sendHkReportSlotLocked` fires.
+2. If the slot has `hasBuzzerAction = true`, `beep()` is called before building
+   any HK telemetry frame.
+3. A slot with only `BUZZER.beep` (no `HK.report {}` fields) is valid and only
+   fires the buzzer — no radio packet is sent.
+
+**General:**
+
+- If `freqHz == 0` (omitted), the driver uses its own default frequency.
+  For `ActiveBuzzerDriver` this field is always silently ignored.
+- If no `BuzzerInterface*` was registered (null pointer), `BUZZER.beep` is
+  **silently skipped** at runtime — not an error.
+- If the driver returns `false`, a `LOG_W` is emitted.
+- If `executionEnabled_` is `false`, cadence-slot buzzer calls are suppressed.
+
+---
+
+### 21.4 Active vs Passive buzzer
+
+| Aspect | Active buzzer | Passive buzzer |
+|---|---|---|
+| Driver | `ActiveBuzzerDriver` | `PassiveBuzzerDriver` |
+| Frequency control | No — built-in oscillator | Yes — ESP32 LEDC PWM |
+| `freqHz` parameter | Accepted but ignored | Used as PWM frequency |
+| Default frequency | N/A | `BUZZER_DEFAULT_FREQ_HZ` (2 000 Hz) |
+| Stop mechanism | GPIO LOW via FreeRTOS timer | `ledcWrite(channel, 0)` via timer |
+| Repeat gap | GPIO LOW (silent) | LEDC duty = 0 (silent) |
+| LEDC channel | Not used | `BUZZER_LEDC_CHANNEL` (0 by default) |
+
+---
+
+### 21.5 Configuration (`src/config.h`)
+
+| Constant | Default | Description |
+|---|---|---|
+| `PIN_BUZZER` | `0xFFU` | GPIO pin for the buzzer. `0xFF` = not connected (no-op). |
+| `BUZZER_LEDC_CHANNEL` | `0U` | ESP32 LEDC timer channel (passive only). |
+| `BUZZER_DEFAULT_FREQ_HZ` | `2000U` | Tone frequency when `freqHz` is omitted. |
+| `BUZZER_MIN_DURATION_MS` | `50U` | Shortest accepted duration. |
+| `BUZZER_MAX_DURATION_MS` | `10000U` | Longest accepted duration. |
+| `BUZZER_MIN_FREQ_HZ` | `100U` | Lowest accepted frequency. |
+| `BUZZER_MAX_FREQ_HZ` | `10000U` | Highest accepted frequency. |
+| `BUZZER_MAX_REPEAT_COUNT` | `8U` | Maximum repeat count for `Nx` syntax. |
+| `AMS_MAX_BUZZER_ACTIONS` | `2U` | Maximum `BUZZER.beep` lines per `on_enter:` block. |
+
+To enable the buzzer, set `PIN_BUZZER` to the physical GPIO and instantiate
+the appropriate driver in `src/main.cpp`:
+
+```cpp
+// Active buzzer (no frequency control)
+ActiveBuzzerDriver buzzer(PIN_BUZZER);
+
+// Passive buzzer (ESP32 LEDC, channel 0)
+PassiveBuzzerDriver buzzer(PIN_BUZZER, BUZZER_LEDC_CHANNEL);
+
+// Pass to engine constructor (10th argument):
+MissionScriptEngine engine(storage, gps, 1, baro, 1, com, 1, imu, 1,
+                           &pulse, &buzzer);
+```
+
+---
+
+### 21.5 Parse errors
+
+| Error message | Cause |
+|---|---|
+| `BUZZER.beep: missing or malformed duration (expected Nms)` | Duration field absent or not followed by `ms`. |
+| `BUZZER.beep: duration N ms is out of range [50, 10000]` | Duration below 50 ms or above 10 000 ms. |
+| `BUZZER.beep: frequency N hz is out of range [100, 10000]` | Frequency outside the allowed range. |
+| `BUZZER.beep: repeat count N is out of range [1, 8]` | `Nx` suffix present but value is 0 or exceeds `BUZZER_MAX_REPEAT_COUNT`. |
+| `too many BUZZER.beep actions (max AMS_MAX_BUZZER_ACTIONS)` | More than 2 `BUZZER.beep` lines in the same `on_enter:` block. |
+| `BUZZER.beep: slot already has a buzzer action` | A second `BUZZER.beep` appears in the same `every:` slot. |
+| `only EVENT.*, set, PULSE.fire, PULSE.arm and BUZZER.beep are allowed inside on_enter` | `BUZZER.beep` used in a context other than `on_enter:` or an `every:` slot. |
+
+---
+
+### 21.6 Examples
+
+**Active buzzer — single beep on state entry:**
+
+```ams
+state ARMED:
+  on_enter:
+    EVENT.info "ARMED"
+    BUZZER.beep 200ms        # 200 ms beep, frequency ignored
+```
+
+**Passive buzzer — custom tone:**
+
+```ams
+state COUNTDOWN:
+  on_enter:
+    EVENT.info "COUNTDOWN"
+    BUZZER.beep 1000ms 2000hz    # 1 s beep at 2 kHz
+```
+
+**Two beeps in the same state (max per state = 2):**
+
+```ams
+state DEPLOY:
+  on_enter:
+    PULSE.fire A
+    BUZZER.beep 200ms 1000hz   # first beep
+    BUZZER.beep 400ms 2000hz   # second beep — both dispatched at state entry
+```
+
+**Frequency omitted (driver default):**
+
+```ams
+state LANDED:
+  on_enter:
+    EVENT.info "LANDED"
+    BUZZER.beep 500ms          # uses BUZZER_DEFAULT_FREQ_HZ = 2000 Hz
+```
+
+Full worked example: [`ams_examples/sensors/buzzer_test.ams`](../../ams_examples/sensors/buzzer_test.ams)
+

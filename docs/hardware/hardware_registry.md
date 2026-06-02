@@ -143,6 +143,43 @@ Pins: I2C SDA/SCL per board (see [Pin Map](pin_map.md)).
 
 ---
 
+### Active Buzzer
+
+| Property       | Value                                                      |
+|----------------|------------------------------------------------------------|
+| Type           | Piezoelectric active buzzer (built-in oscillator)          |
+| Control        | GPIO HIGH → on, GPIO LOW → off                            |
+| Pin            | `PIN_BUZZER` (`src/config.h`, default `0xFFU` = not wired) |
+| Driver         | `ActiveBuzzerDriver` (`src/drivers/buzzer/`)               |
+| HAL Interface  | `BuzzerInterface` (`src/hal/buzzer/`)                      |
+| Auto-stop      | FreeRTOS one-shot timer                                    |
+| Frequency      | Fixed by component (driver ignores `freqHz` parameter)    |
+
+No include directive is required in AMS scripts.  The driver is passed directly
+to the engine constructor as `BuzzerInterface*` (10th argument).
+
+---
+
+### Passive Buzzer
+
+| Property       | Value                                                      |
+|----------------|------------------------------------------------------------|
+| Type           | Piezoelectric passive buzzer (requires external PWM tone)  |
+| Control        | ESP32 LEDC PWM — `ledcSetup` + `ledcWrite` (50 % duty)    |
+| Pin            | `PIN_BUZZER` (`src/config.h`, default `0xFFU` = not wired) |
+| LEDC Channel   | `BUZZER_LEDC_CHANNEL` (`src/config.h`, default `0`)        |
+| Driver         | `PassiveBuzzerDriver` (`src/drivers/buzzer/`)              |
+| HAL Interface  | `BuzzerInterface` (`src/hal/buzzer/`)                      |
+| Default tone   | `BUZZER_DEFAULT_FREQ_HZ` (2 000 Hz)                        |
+| Frequency range| 100 – 10 000 Hz                                           |
+| Auto-stop      | FreeRTOS one-shot timer → `ledcWrite(channel, 0)`          |
+
+The passive driver selects `BUZZER_DEFAULT_FREQ_HZ` when `freqHz == 0`
+(i.e. when the `hz` parameter is omitted from `BUZZER.beep` in the AMS script).
+
+---
+
+
 ### ADXL375 High-g Accelerometer — primary IMU
 
 | Property          | Value                                                |

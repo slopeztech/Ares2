@@ -174,6 +174,22 @@ bool MissionScriptEngine::parseStateBlockHeaderLocked(const char* line,
         return parseFallbackTransitionLineLocked(line, st);
     }
 
+    return parseStateScopeUnknownLineLocked(line, st, handled);
+}
+
+// ── parseStateScopeUnknownLineLocked ─────────────────────────────────────────
+
+bool MissionScriptEngine::parseStateScopeUnknownLineLocked(const char* line,
+                                                            StateDef&   st,
+                                                            bool&       handled)
+{
+    // AMS-4.20: BUZZER.beep may appear at state scope after an every: directive.
+    // It is associated with the most recently opened HK slot (parseCurrentHkSlot_).
+    if (startsWith(line, "BUZZER.beep ") && parseCurrentHkSlot_ != 0xFFU
+        && parseCurrentHkSlot_ < st.hkSlotCount)
+    {
+        return parseBuzzerBeepInHkSlotLocked(line, st);
+    }
     handled = false;
     return true;
 }
@@ -196,7 +212,8 @@ bool MissionScriptEngine::parseOnEnterBlockLineLocked(const char* line, StateDef
     if (startsWith(line, "set "))          { return parseSetActionLineLocked(line, st); }
     if (startsWith(line, "PULSE.fire "))   { return parsePulseFireLineLocked(line, st); }  // AMS-4.17
     if (startsWith(line, "PULSE.arm "))    { return parsePulseArmLineLocked(line, st); }   // AMS-4.19.1
-    setErrorLocked("only EVENT.*, set, PULSE.fire and PULSE.arm are allowed inside on_enter");
+    if (startsWith(line, "BUZZER.beep "))  { return parseBuzzerBeepLineLocked(line, st); } // AMS-4.20
+    setErrorLocked("only EVENT.*, set, PULSE.fire, PULSE.arm and BUZZER.beep are allowed inside on_enter");
     return false;
 }
 
@@ -250,6 +267,13 @@ bool MissionScriptEngine::parseHkSlotFieldLineLocked(const char* line, StateDef&
         return false;
     }
     HkSlot& slot = st.hkSlots[parseCurrentHkSlot_];
+
+    // AMS-4.20: BUZZER.beep is allowed inside HK.report {} blocks.
+    if (startsWith(line, "BUZZER.beep "))
+    {
+        return parseBuzzerBeepInHkSlotLocked(line, st);
+    }
+
     if (!parseFieldLineLocked(line, slot.fields, slot.fieldCount, "HK")) { return false; }
     // Keep legacy fields in sync with slot-0 for single-slot code paths.
     if (parseCurrentHkSlot_ == 0U)

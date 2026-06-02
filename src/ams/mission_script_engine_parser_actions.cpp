@@ -1185,5 +1185,340 @@ bool MissionScriptEngine::parsePulseArmLineLocked(const char* line, StateDef& st
     return true;
 }
 
+// ── parseBuzzerBeepDurationLocked ────────────────────────────────────────────
+
+/**
+ * @brief Parse the mandatory @c "Nms" duration token of a @c BUZZER.beep directive.
+ *
+ * @param[in]  args       Pointer to the full argument string.
+ * @param[out] durationMs Parsed and validated duration in milliseconds.
+ * @param[out] cursorOut  Points to the character immediately after the @c "ms" suffix.
+ * @return @c true on success; @c false with the engine error set on failure.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseBuzzerBeepDurationLocked(const char*  args,
+                                                         uint32_t&    durationMs,
+                                                         const char*& cursorOut)
+{
+    const char* msPtr = strstr(args, "ms");
+    if (msPtr == nullptr || msPtr == args)
+    {
+        setErrorLocked("BUZZER.beep: expected 'Nms' duration (e.g. BUZZER.beep 500ms)");
+        return false;
+    }
+
+    const ptrdiff_t numLen = msPtr - args;
+    if (numLen <= 0 || numLen >= 16)
+    {
+        setErrorLocked("BUZZER.beep: duration value out of range");
+        return false;
+    }
+
+    char numBuf[16] = {};
+    memcpy(numBuf, args, static_cast<size_t>(numLen));
+
+    durationMs = 0U;
+    if (!parseUint(numBuf, durationMs) || durationMs == 0U)
+    {
+        setErrorLocked("BUZZER.beep: duration must be a positive integer");
+        return false;
+    }
+    if (durationMs < ares::BUZZER_MIN_DURATION_MS)
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "BUZZER.beep: duration %u ms is below minimum %u ms",
+                 static_cast<unsigned>(durationMs),
+                 static_cast<unsigned>(ares::BUZZER_MIN_DURATION_MS));
+        setErrorLocked(msg);
+        return false;
+    }
+    if (durationMs > ares::BUZZER_MAX_DURATION_MS)
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "BUZZER.beep: duration %u ms exceeds maximum %u ms",
+                 static_cast<unsigned>(durationMs),
+                 static_cast<unsigned>(ares::BUZZER_MAX_DURATION_MS));
+        setErrorLocked(msg);
+        return false;
+    }
+
+    cursorOut = msPtr + 2U;  // skip "ms"
+    return true;
+}
+
+// ── parseBuzzerBeepFreqLocked ─────────────────────────────────────────────────
+
+/**
+ * @brief Parse the optional @c "Fhz" frequency token of a @c BUZZER.beep directive.
+ *
+ * If the next token at @p cursor does not look like a valid frequency, the
+ * function succeeds without consuming any input (@p cursorOut equals @p cursor,
+ * @p freqHz is set to 0).
+ *
+ * @param[in]     cursor     Current parse position (right after the "ms" suffix).
+ * @param[out]    freqHz     Parsed frequency in Hz, or 0 if token absent.
+ * @param[in,out] cursorOut  Advanced past the "hz" suffix when a token is consumed.
+ * @return @c true on success; @c false with the engine error set on failure.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseBuzzerBeepFreqLocked(const char*  cursor,
+                                                     uint32_t&    freqHz,
+                                                     const char*& cursorOut)
+{
+    cursorOut = cursor;
+    freqHz    = 0U;
+
+    if (*cursor != ' ') { return true; }
+
+    const char* tokenStart = cursor + 1U;
+    const char* hzPtr      = strstr(tokenStart, "hz");
+    if (hzPtr == nullptr || hzPtr == tokenStart) { return true; }
+
+    bool looksLikeFreq = true;
+    for (const char* p = tokenStart; p < hzPtr; p++)
+    {
+        if (*p < '0' || *p > '9') { looksLikeFreq = false; break; }
+    }
+    if (!looksLikeFreq) { return true; }
+
+    const ptrdiff_t freqLen = hzPtr - tokenStart;
+    if (freqLen <= 0 || freqLen >= 16)
+    {
+        setErrorLocked("BUZZER.beep: frequency value out of range");
+        return false;
+    }
+
+    char freqBuf[16] = {};
+    memcpy(freqBuf, tokenStart, static_cast<size_t>(freqLen));
+
+    if (!parseUint(freqBuf, freqHz) || freqHz == 0U)
+    {
+        setErrorLocked("BUZZER.beep: frequency must be a positive integer");
+        return false;
+    }
+    if (freqHz < ares::BUZZER_MIN_FREQ_HZ)
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "BUZZER.beep: frequency %u hz is below minimum %u hz",
+                 static_cast<unsigned>(freqHz),
+                 static_cast<unsigned>(ares::BUZZER_MIN_FREQ_HZ));
+        setErrorLocked(msg);
+        return false;
+    }
+    if (freqHz > ares::BUZZER_MAX_FREQ_HZ)
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "BUZZER.beep: frequency %u hz exceeds maximum %u hz",
+                 static_cast<unsigned>(freqHz),
+                 static_cast<unsigned>(ares::BUZZER_MAX_FREQ_HZ));
+        setErrorLocked(msg);
+        return false;
+    }
+
+    cursorOut = hzPtr + 2U;  // skip "hz"
+    return true;
+}
+
+// ── parseBuzzerBeepRepeatLocked ───────────────────────────────────────────────
+
+/**
+ * @brief Parse the optional @c "Rx" repeat-count token of a @c BUZZER.beep directive.
+ *
+ * If the next token at @p cursor does not look like a valid repeat count the
+ * function succeeds without consuming any input (@p repeatCount is set to 1).
+ *
+ * @param[in]     cursor      Current parse position.
+ * @param[out]    repeatCount Parsed repeat count [1, BUZZER_MAX_REPEAT_COUNT], or 1 if absent.
+ * @param[in,out] cursorOut   Advanced past the "x" suffix when a token is consumed.
+ * @return @c true on success; @c false with the engine error set on failure.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseBuzzerBeepRepeatLocked(const char*  cursor,
+                                                       uint8_t&     repeatCount,
+                                                       const char*& cursorOut)
+{
+    cursorOut   = cursor;
+    repeatCount = 1U;
+
+    if (*cursor != ' ') { return true; }
+
+    const char* tokenStart = cursor + 1U;
+    const char* xPtr       = tokenStart;
+    while (*xPtr >= '0' && *xPtr <= '9') { xPtr++; }
+
+    if (*xPtr != 'x' || xPtr == tokenStart) { return true; }
+
+    const ptrdiff_t rLen = xPtr - tokenStart;
+    if (rLen <= 0 || rLen >= 4)
+    {
+        setErrorLocked("BUZZER.beep: repeat count value out of range");
+        return false;
+    }
+
+    char rBuf[4] = {};
+    memcpy(rBuf, tokenStart, static_cast<size_t>(rLen));
+
+    uint32_t rVal = 0U;
+    if (!parseUint(rBuf, rVal) || rVal == 0U)
+    {
+        setErrorLocked("BUZZER.beep: repeat count must be a positive integer");
+        return false;
+    }
+    if (rVal > ares::BUZZER_MAX_REPEAT_COUNT)
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "BUZZER.beep: repeat count %u exceeds maximum %u",
+                 static_cast<unsigned>(rVal),
+                 static_cast<unsigned>(ares::BUZZER_MAX_REPEAT_COUNT));
+        setErrorLocked(msg);
+        return false;
+    }
+
+    repeatCount = static_cast<uint8_t>(rVal);
+    cursorOut   = xPtr + 1U;  // skip "x"
+    return true;
+}
+
+// ── parseBuzzerBeepArgsLocked ─────────────────────────────────────────────────
+
+/**
+ * @brief Parse the argument substring of a @c BUZZER.beep directive (AMS-4.20).
+ *
+ * Syntax of @p args (the part after @c "BUZZER.beep "):
+ * @code
+ *   Nms              -- duration only; driver uses its default frequency
+ *   Nms Fhz          -- duration + frequency
+ *   Nms Rx           -- duration + repeat count
+ *   Nms Fhz Rx       -- duration + frequency + repeat count
+ * @endcode
+ *
+ * @param[in]  args  Pointer to the argument string (e.g. @c "200ms 2000hz 3x").
+ * @param[out] out   Populated @c BuzzerAction on success.
+ * @return @c true on success; @c false with the engine error set on failure.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseBuzzerBeepArgsLocked(const char* args, BuzzerAction& out)
+{
+    ARES_ASSERT(args != nullptr);
+
+    uint32_t    durationMs = 0U;
+    const char* cursor     = nullptr;
+    if (!parseBuzzerBeepDurationLocked(args, durationMs, cursor)) { return false; }
+
+    uint32_t freqHz = 0U;
+    if (!parseBuzzerBeepFreqLocked(cursor, freqHz, cursor)) { return false; }
+
+    uint8_t repeatCount = 1U;
+    if (!parseBuzzerBeepRepeatLocked(cursor, repeatCount, cursor)) { return false; }
+
+    if (!detail::isOnlyTrailingWhitespace(cursor))
+    {
+        setErrorLocked("BUZZER.beep: unexpected tokens after directive");
+        return false;
+    }
+
+    out.durationMs  = durationMs;
+    out.freqHz      = freqHz;
+    out.repeatCount = repeatCount;
+
+    LOG_I(TAG, "BUZZER.beep: %u ms @ %u hz x%u (0=default)",
+          static_cast<unsigned>(durationMs),
+          static_cast<unsigned>(freqHz),
+          static_cast<unsigned>(repeatCount));
+    return true;
+}
+
+// ── parseBuzzerBeepLineLocked ─────────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c BUZZER.beep directive inside an @c on_enter: block (AMS-4.20).
+ *
+ * Syntax:
+ * @code
+ *   BUZZER.beep Nms            -- beep for N ms
+ *   BUZZER.beep Nms Fhz        -- beep for N ms at F Hz (passive buzzer)
+ *   BUZZER.beep Nms Rx         -- beep N ms, repeat R times
+ *   BUZZER.beep Nms Fhz Rx     -- beep N ms at F Hz, repeat R times
+ * @endcode
+ *
+ * @param[in]  line  Script line starting with @c "BUZZER.beep ".
+ * @param[out] st    State definition to append the action to.
+ * @return @c true if the directive was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ */
+bool MissionScriptEngine::parseBuzzerBeepLineLocked(const char* line,
+                                                    StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.buzzerActionCount >= ares::AMS_MAX_BUZZER_ACTIONS)
+    {
+        setErrorLocked("too many BUZZER.beep actions in on_enter block");
+        return false;
+    }
+
+    // Skip "BUZZER.beep " prefix (12 characters).
+    static constexpr uint8_t kPrefixLen = 12U;
+    BuzzerAction act = {};
+    if (!parseBuzzerBeepArgsLocked(line + kPrefixLen, act)) { return false; }
+
+    st.buzzerActions[st.buzzerActionCount] = act;
+    st.buzzerActionCount++;
+    return true;
+}
+
+// ── parseBuzzerBeepInHkSlotLocked ────────────────────────────────────────────
+
+/**
+ * @brief Parse a @c BUZZER.beep directive inside an @c every: slot (AMS-4.20).
+ *
+ * Associates a recurring buzzer action with the currently open HK slot so
+ * that the beep fires every time the slot cadence triggers.
+ *
+ * Syntax is identical to the @c on_enter: variant:
+ * @code
+ *   BUZZER.beep Nms [Fhz] [Rx]
+ * @endcode
+ *
+ * Only one @c BUZZER.beep is allowed per @c every slot (subsequent calls
+ * overwrite the first — a parse error is reported instead).
+ *
+ * @param[in]  line  Script line starting with @c "BUZZER.beep ".
+ * @param[out] st    State definition whose current HK slot is updated.
+ * @return @c true if the directive was parsed and stored.
+ * @pre  Caller holds the engine mutex.
+ * @pre  parseCurrentHkSlot_ is valid (< st.hkSlotCount).
+ */
+bool MissionScriptEngine::parseBuzzerBeepInHkSlotLocked(const char* line,
+                                                        StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (parseCurrentHkSlot_ >= st.hkSlotCount)
+    {
+        setErrorLocked("BUZZER.beep in every: must follow an every block");
+        return false;
+    }
+
+    HkSlot& slot = st.hkSlots[parseCurrentHkSlot_];
+    if (slot.hasBuzzerAction)
+    {
+        setErrorLocked("only one BUZZER.beep is allowed per every: slot");
+        return false;
+    }
+
+    // Skip "BUZZER.beep " prefix (12 characters).
+    static constexpr uint8_t kPrefixLen = 12U;
+    if (!parseBuzzerBeepArgsLocked(line + kPrefixLen, slot.buzzerAction)) { return false; }
+
+    slot.hasBuzzerAction = true;
+    return true;
+}
+
 } // namespace ams
 } // namespace ares
