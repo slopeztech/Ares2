@@ -16,3 +16,5 @@ scripts/downloads/
 scripts/_pycache__/
 docs/doxygen/
 docs/requirements/html
+# Compiler/debugger crash dumps
+*.dump
