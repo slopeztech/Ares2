@@ -103,7 +103,23 @@ void MissionScriptEngine::sendHkReportLocked(uint64_t nowMs)
 void MissionScriptEngine::sendHkReportSlotLocked(uint64_t nowMs, const HkSlot& slot)
 {
     ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
-    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
+    if (slot.everyMs == 0U) { return; }
+
+    // AMS-4.20: fire recurring BUZZER.beep if one was declared for this slot.
+    if (slot.hasBuzzerAction && buzzerIface_ != nullptr
+        && executionEnabled_ && status_ == EngineStatus::RUNNING)
+    {
+        const BuzzerAction& bact = slot.buzzerAction;
+        if (!buzzerIface_->beep(bact.durationMs, bact.freqHz, bact.repeatCount))
+        {
+            LOG_W(TAG, "HK slot BUZZER.beep: driver declined (%u ms, %u hz, x%u)",
+                  static_cast<unsigned>(bact.durationMs),
+                  static_cast<unsigned>(bact.freqHz),
+                  static_cast<unsigned>(bact.repeatCount));
+        }
+    }
+
+    if (slot.fieldCount == 0U) { return; }
 
     TelemetryPayload tm = {};
     tm.timestampMs = static_cast<uint32_t>(nowMs);

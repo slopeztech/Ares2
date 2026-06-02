@@ -113,7 +113,7 @@ def current_wifi_ssid() -> Optional[str]:
             timeout=3,
             check=False,
         )
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError):
         return None
 
     if result.returncode != 0:

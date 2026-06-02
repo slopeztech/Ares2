@@ -23,6 +23,7 @@
 #include "comms/ares_radio_protocol.h"
 #include "config.h"
 #include "hal/baro/barometer_interface.h"
+#include "hal/buzzer/buzzer_interface.h"
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
 #include "hal/pulse/pulse_interface.h"
@@ -58,25 +59,28 @@ public:
     /**
      * Construct the mission script engine.
      *
-     * @param[in] storage     Storage interface for reading .ams files.
-     * @param[in] gpsDrivers  Array of compiled-in GPS drivers.
-     * @param[in] gpsCount    Number of entries in @p gpsDrivers.
-     * @param[in] baroDrivers Array of compiled-in barometer drivers.
-     * @param[in] baroCount   Number of entries in @p baroDrivers.
-     * @param[in] comDrivers  Array of compiled-in COM/radio drivers.
-     * @param[in] comCount    Number of entries in @p comDrivers.
-     * @param[in] imuDrivers  Array of compiled-in IMU drivers.
-     * @param[in] imuCount    Number of entries in @p imuDrivers.
-     * @param[in] pulseIface  Optional electric-pulse channel interface.
-     *                        Pass @c nullptr to disable PULSE.fire execution
-     *                        (e.g. in SITL tests without a pulse driver).
+     * @param[in] storage      Storage interface for reading .ams files.
+     * @param[in] gpsDrivers   Array of compiled-in GPS drivers.
+     * @param[in] gpsCount     Number of entries in @p gpsDrivers.
+     * @param[in] baroDrivers  Array of compiled-in barometer drivers.
+     * @param[in] baroCount    Number of entries in @p baroDrivers.
+     * @param[in] comDrivers   Array of compiled-in COM/radio drivers.
+     * @param[in] comCount     Number of entries in @p comDrivers.
+     * @param[in] imuDrivers   Array of compiled-in IMU drivers.
+     * @param[in] imuCount     Number of entries in @p imuDrivers.
+     * @param[in] pulseIface   Optional electric-pulse channel interface.
+     *                         Pass @c nullptr to disable PULSE.fire execution
+     *                         (e.g. in SITL tests without a pulse driver).
+     * @param[in] buzzerIface  Optional buzzer interface for BUZZER.beep (AMS-4.20).
+     *                         Pass @c nullptr to silently skip all BUZZER.beep actions.
      */
     MissionScriptEngine(StorageInterface&  storage,
                         const GpsEntry*    gpsDrivers,  uint8_t gpsCount,
                         const BaroEntry*   baroDrivers, uint8_t baroCount,
                         const ComEntry*    comDrivers,  uint8_t comCount,
                         const ImuEntry*    imuDrivers,  uint8_t imuCount,
-                        PulseInterface*    pulseIface = nullptr);
+                        PulseInterface*    pulseIface   = nullptr,
+                        BuzzerInterface*   buzzerIface  = nullptr);
 
     MissionScriptEngine(const MissionScriptEngine&)            = delete;
     MissionScriptEngine& operator=(const MissionScriptEngine&) = delete;
@@ -365,6 +369,13 @@ private:
     bool parseSetActionLineLocked(const char* line, StateDef& st);
     bool parsePulseFireLineLocked(const char* line, StateDef& st);            ///< AMS-4.17: parse "PULSE.fire A/B/C/D/ALIAS [Nms]".
     bool parsePulseDurationSuffixLocked(const char* afterCh, uint32_t& out); ///< Parse optional " Nms" suffix; called by parsePulseFireLineLocked.
+    bool parseBuzzerBeepLineLocked(const char* line, StateDef& st);          ///< AMS-4.20: parse "BUZZER.beep Nms [Nhz] [Nx]" in on_enter block.
+    bool parseBuzzerBeepArgsLocked(const char* args, BuzzerAction& out);     ///< AMS-4.20: shared arg parser for "Nms [Nhz] [Nx]".
+    bool parseBuzzerBeepDurationLocked(const char* args, uint32_t& durationMs, const char*& cursorOut); ///< AMS-4.20: parse mandatory "Nms" duration token.
+    bool parseBuzzerBeepFreqLocked(const char* cursor, uint32_t& freqHz, const char*& cursorOut);       ///< AMS-4.20: parse optional "Fhz" frequency token.
+    bool parseBuzzerBeepRepeatLocked(const char* cursor, uint8_t& repeatCount, const char*& cursorOut); ///< AMS-4.20: parse optional "Rx" repeat count token.
+    bool parseBuzzerBeepInHkSlotLocked(const char* line, StateDef& st);      ///< AMS-4.20: parse "BUZZER.beep …" in every/HK-slot context.
+    bool parseStateScopeUnknownLineLocked(const char* line, StateDef& st, bool& handled); ///< Handle unrecognized lines at state scope (buzzer fallthrough + unmatched).
     bool parsePulseChannelLineLocked(const char* line);                       ///< AMS-4.18: parse "pulse.channel A/B/C/D [as LABEL]".
     bool parsePulseArmLineLocked(const char* line, StateDef& st);                   ///< AMS-4.19.1: parse "PULSE.arm A/B/C/D/ALIAS".
     bool parsePulseRequireContinuityLineLocked(const char* line);                   ///< AMS-4.19.4: parse "pulse.require_continuity A/B/C/D".
@@ -493,6 +504,7 @@ private:
     void sendOnEnterEventLocked(uint64_t nowMs);
     void executeSetActionsLocked(StateDef& st, uint64_t nowMs);
     void executePulseActionsLocked(const StateDef& st, uint64_t nowMs);    ///< AMS-4.17 + AMS-4.19: fire all PULSE.fire actions, safety-gated.
+    void executeBuzzerActionsLocked(const StateDef& st);                   ///< AMS-4.20: start all BUZZER.beep actions declared in on_enter.
     void executePulseArmActionsLocked(const StateDef& st, uint64_t nowMs); ///< AMS-4.19.1: set arm flags for PULSE.arm actions.
     void checkPulseArmTimeoutsLocked(uint64_t nowMs);                       ///< AMS-4.19.3: disarm channels whose arm_timeout has expired.
     bool checkPulseSafetyLocked(uint8_t channel, uint64_t nowMs);           ///< AMS-4.19: evaluate all safety gates; returns true if fire is allowed.
@@ -659,7 +671,8 @@ private:
     const ImuEntry*      imuDrivers_;
     uint8_t              imuCount_;
     RadioInterface*      primaryCom_ = nullptr; ///< Active COM driver for frame TX.
-    PulseInterface*      pulseIface_ = nullptr;  ///< Nullable — pulse disabled if null (AMS-4.17).
+    PulseInterface*      pulseIface_  = nullptr; ///< Nullable — pulse disabled if null (AMS-4.17).
+    BuzzerInterface*     buzzerIface_ = nullptr; ///< Nullable — buzzer disabled if null (AMS-4.20).
 
     StaticSemaphore_t mutexBuf_ = {};
     SemaphoreHandle_t mutex_ = nullptr;

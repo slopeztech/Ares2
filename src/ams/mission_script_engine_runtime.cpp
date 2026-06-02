@@ -442,7 +442,7 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
     {
         const HkSlot& sl = state.hkSlots[s];
         hkSlotDue[s] = (sl.everyMs > 0U)
-                    && (sl.fieldCount > 0U)
+                    && (sl.fieldCount > 0U || sl.hasBuzzerAction)
                     && ((nowMs - lastHkSlotMs_[s]) >= sl.everyMs);
     }
     for (uint8_t s = 0; s < state.logSlotCount; s++)

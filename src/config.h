@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.4.1"
+#define ARES_VERSION_STRING "2.5.0"
 
 namespace ares
 {
@@ -85,6 +85,19 @@ constexpr uint8_t PIN_PULSE_A_CONT = PIN_NO_CONT; ///< Channel A cont-sense GPIO
 constexpr uint8_t PIN_PULSE_B_CONT = PIN_NO_CONT; ///< Channel B cont-sense GPIO.
 constexpr uint8_t PIN_PULSE_C_CONT = PIN_NO_CONT; ///< Channel C cont-sense GPIO.
 constexpr uint8_t PIN_PULSE_D_CONT = PIN_NO_CONT; ///< Channel D cont-sense GPIO.
+
+// ── Buzzer ───────────────────────────────────────────────────
+// Set PIN_BUZZER to the GPIO connected to the buzzer control line.
+// Use 0xFFU (PIN_NO_FIRE / PIN_NO_CONT) if no buzzer is wired;
+// the driver initialises successfully but all beep() calls are no-ops.
+constexpr uint8_t  PIN_BUZZER            = 0xFFU;  ///< Buzzer GPIO; 0xFF = not wired.
+constexpr uint8_t  BUZZER_LEDC_CHANNEL   = 0U;     ///< LEDC channel for passive buzzer (0-15).
+constexpr uint32_t BUZZER_DEFAULT_FREQ_HZ = 2000U; ///< Default passive buzzer tone frequency (Hz).
+constexpr uint32_t BUZZER_MIN_DURATION_MS = 50U;   ///< Minimum BUZZER.beep duration (AMS-4.20).
+constexpr uint32_t BUZZER_MAX_DURATION_MS = 10000U;///< Maximum BUZZER.beep duration (AMS-4.20).
+constexpr uint32_t BUZZER_MIN_FREQ_HZ     = 100U;  ///< Minimum tone frequency for passive buzzer (Hz).
+constexpr uint32_t BUZZER_MAX_FREQ_HZ     = 10000U;///< Maximum tone frequency for passive buzzer (Hz).
+constexpr uint8_t  BUZZER_MAX_REPEAT_COUNT = 8U;   ///< Maximum repeat count for BUZZER.beep Nx (AMS-4.20).
 
 // ═══════════════════════════════════════════════════════════
 // Common configuration (shared across all boards)
@@ -193,6 +206,7 @@ constexpr uint8_t     AMS_MAX_SET_ACTIONS      = 4U; ///< Max set actions per on
 constexpr uint8_t     AMS_CALIBRATE_MAX_SAMPLES = 10U; ///< Maximum N for CALIBRATE(ALIAS.field, N) (AMS-4.8.2). With async one-sample-per-tick execution, worst-case per-tick mutex hold = 1 sensor read (~25 ms).
 constexpr uint8_t     AMS_MAX_PULSE_ACTIONS    = 4U; ///< Max PULSE.fire actions per on_enter block (AMS-4.17); one per channel.
 constexpr uint8_t     AMS_PULSE_LABEL_LEN      = 16U; ///< Max length of a pulse.channel label including NUL (AMS-4.18).
+constexpr uint8_t     AMS_MAX_BUZZER_ACTIONS   = 2U; ///< Max BUZZER.beep actions per on_enter block (AMS-4.20).
 constexpr uint8_t     AMS_MAX_SENSOR_RETRY     = 5U; ///< Max sensor read retries declared in include (AMS-4.9.1).
 constexpr uint8_t     AMS_MAX_ERROR_TEXT   = 96;           ///< Max internal parser/runtime error text.
 constexpr uint16_t    AMS_MAX_LINE_LEN     = 128;          ///< Parser line buffer size.

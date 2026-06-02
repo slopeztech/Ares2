@@ -72,6 +72,7 @@ docs/changelog/
     v2.3.15.md  ← Patch: hardening pass — checkpoint atomicity, parser trailing-garbage, radio.config refactor, sensor NaN guard, BMP280 suite, clang-tidy PASS
     v2.4.0.md   ← Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias`; runtime fallback LOG_W; 10 new tests
     v2.4.1.md   ← Patch: A2-4 null-iface driver detection at activation time; `validateAliasIfacesLocked()`; 1 new lifecycle test
+    v2.5.0.md   ← Minor: AMS-4.20 BUZZER.beep support (HAL, drivers, parser/runtime); P1-7 narrow bare `except Exception`; A2-6 obsolete example warning
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -114,3 +115,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.15](../changelog/v2.3.15.md) | 2026-06-01 | Patch   | Patch: checkpoint atomicity; parser trailing-garbage rejection; `radio.config` `TokenCursor` refactor; sensor NaN guard; `std::fill_n`; API/storage defensive returns; BMP280 suite; clang-tidy PASS |
 | [2.4.0](../changelog/v2.4.0.md)   | 2026-06-02 | Minor   | Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias[16]`; runtime unresolved-alias `LOG_W`; 7 parser tests + 3 integration tests |
 | [2.4.1](../changelog/v2.4.1.md)   | 2026-06-02 | Patch   | Patch: A2-4 null-iface driver detection at activation — `validateAliasIfacesLocked()`; 1 new lifecycle test |
+| [2.5.0](../changelog/v2.5.0.md)   | 2026-06-02 | Minor   | Minor: AMS-4.20 `BUZZER.beep` (HAL + drivers + engine); P1-7 narrow bare `except Exception` in 4 script sites; A2-6 `old/test.ams` non-functional warning |

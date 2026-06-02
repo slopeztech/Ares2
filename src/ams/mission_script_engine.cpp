@@ -40,13 +40,15 @@ MissionScriptEngine::MissionScriptEngine(StorageInterface&  storage,
                                          const BaroEntry*   baroDrivers, uint8_t baroCount,
                                          const ComEntry*    comDrivers,  uint8_t comCount,
                                          const ImuEntry*    imuDrivers,  uint8_t imuCount,
-                                         PulseInterface*    pulseIface)
+                                         PulseInterface*    pulseIface,
+                                         BuzzerInterface*   buzzerIface)
     : storage_(storage),
       gpsDrivers_(gpsDrivers),   gpsCount_(gpsCount),
       baroDrivers_(baroDrivers), baroCount_(baroCount),
       comDrivers_(comDrivers),   comCount_(comCount),
       imuDrivers_(imuDrivers),   imuCount_(imuCount),
-      pulseIface_(pulseIface)
+      pulseIface_(pulseIface),
+      buzzerIface_(buzzerIface)
 {
 }
 

@@ -610,6 +610,12 @@ void MissionScriptEngine::sendOnEnterEventLocked(uint64_t nowMs)
         executePulseActionsLocked(st, nowMs);
     }
 
+    // AMS-4.20: start buzzer beeps declared in on_enter: block.
+    if (st.buzzerActionCount > 0U)
+    {
+        executeBuzzerActionsLocked(st);
+    }
+
     if (!st.hasOnEnterEvent)
     {
         return;
@@ -712,6 +718,49 @@ void MissionScriptEngine::executePulseArmActionsLocked(const StateDef& st, uint6
         const char* label = program_.pulseDecls[ch].declared
                             ? program_.pulseDecls[ch].label : "?";
         LOG_I(TAG, "PULSE ch=%u ('%s') armed", static_cast<uint32_t>(ch), label);
+    }
+}
+
+// ── executeBuzzerActionsLocked ────────────────────────────────────────────────
+
+/**
+ * @brief Start all BUZZER.beep actions declared in a state's on_enter: block.
+ *
+ * If @c buzzerIface_ is null (SITL / no buzzer hardware) all calls are silently
+ * skipped.  When multiple beep actions are present, only the last one that the
+ * driver accepts actually sounds (subsequent beep() calls on the same driver
+ * restart the beep and override the previous one).
+ *
+ * @param[in] st  State definition containing buzzerActions[].
+ * @pre  Caller holds the engine mutex.
+ */
+void MissionScriptEngine::executeBuzzerActionsLocked(const StateDef& st)
+{
+    if (buzzerIface_ == nullptr
+        || !executionEnabled_
+        || status_ != EngineStatus::RUNNING)
+    {
+        return;
+    }
+
+    for (uint8_t i = 0U; i < st.buzzerActionCount; i++)
+    {
+        const BuzzerAction& act = st.buzzerActions[i];
+        const bool ok = buzzerIface_->beep(act.durationMs, act.freqHz, act.repeatCount);
+        if (ok)
+        {
+            LOG_I(TAG, "BUZZER.beep: %u ms @ %u hz x%u",
+                  static_cast<unsigned>(act.durationMs),
+                  static_cast<unsigned>(act.freqHz),
+                  static_cast<unsigned>(act.repeatCount));
+        }
+        else
+        {
+            LOG_W(TAG, "BUZZER.beep: driver declined beep (%u ms, %u hz, x%u)",
+                  static_cast<unsigned>(act.durationMs),
+                  static_cast<unsigned>(act.freqHz),
+                  static_cast<unsigned>(act.repeatCount));
+        }
     }
 }
 

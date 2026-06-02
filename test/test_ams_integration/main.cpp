@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 187
+ * Test count: 196
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -265,6 +265,25 @@ extern void test_via_slot_routes_to_named_com();
 extern void test_no_via_slot_routes_to_primary_com();
 extern void test_two_slots_two_radios_independent_counts();
 
+// ── test_ams_buzzer.cpp ───────────────────────────────────────────────────────
+
+extern void test_buzzer_beep_fires_on_enter();
+extern void test_buzzer_beep_default_freq_zero();
+extern void test_buzzer_beep_custom_freq();
+extern void test_buzzer_null_driver_skipped();
+extern void test_buzzer_duration_too_short_rejected();
+extern void test_buzzer_freq_below_min_rejected();
+extern void test_buzzer_freq_above_max_rejected();
+extern void test_buzzer_multiple_beeps_same_state();
+extern void test_buzzer_no_fire_when_engine_disabled();
+extern void test_buzzer_repeat_count_stored();
+extern void test_buzzer_repeat_with_freq();
+extern void test_buzzer_default_repeat_is_one();
+extern void test_buzzer_repeat_too_high_rejected();
+extern void test_buzzer_fires_in_every_slot();
+extern void test_buzzer_every_repeat_count();
+extern void test_buzzer_every_no_fire_when_disabled();
+
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -506,6 +525,24 @@ int main()
     RUN_TEST(test_via_slot_routes_to_named_com);
     RUN_TEST(test_no_via_slot_routes_to_primary_com);
     RUN_TEST(test_two_slots_two_radios_independent_counts);
+
+    // ams_buzzer (AMS-4.20)
+    RUN_TEST(test_buzzer_beep_fires_on_enter);
+    RUN_TEST(test_buzzer_beep_default_freq_zero);
+    RUN_TEST(test_buzzer_beep_custom_freq);
+    RUN_TEST(test_buzzer_null_driver_skipped);
+    RUN_TEST(test_buzzer_duration_too_short_rejected);
+    RUN_TEST(test_buzzer_freq_below_min_rejected);
+    RUN_TEST(test_buzzer_freq_above_max_rejected);
+    RUN_TEST(test_buzzer_multiple_beeps_same_state);
+    RUN_TEST(test_buzzer_no_fire_when_engine_disabled);
+    RUN_TEST(test_buzzer_repeat_count_stored);
+    RUN_TEST(test_buzzer_repeat_with_freq);
+    RUN_TEST(test_buzzer_default_repeat_is_one);
+    RUN_TEST(test_buzzer_repeat_too_high_rejected);
+    RUN_TEST(test_buzzer_fires_in_every_slot);
+    RUN_TEST(test_buzzer_every_repeat_count);
+    RUN_TEST(test_buzzer_every_no_fire_when_disabled);
 
     return UNITY_END();
 }

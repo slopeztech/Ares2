@@ -912,5 +912,283 @@ static const char kScriptVarFieldInLog[] =
     "\n"
     "state END:\n";
 
+// ── AMS Feature: BUZZER.beep (AMS-4.20) ──────────────────────────────────────
+
+/**
+ * Script that fires one BUZZER.beep on DEPLOY entry (default frequency).
+ *
+ * Flow: WAIT --(TC LAUNCH)--> DEPLOY
+ * DEPLOY on_enter: BUZZER.beep 500ms
+ */
+static const char kScriptBuzzerBeep[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 500ms\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script that fires BUZZER.beep with an explicit frequency.
+ *
+ * DEPLOY on_enter: BUZZER.beep 1000ms 3000hz
+ */
+static const char kScriptBuzzerBeepFreq[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 1000ms 3000hz\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script with two BUZZER.beep actions in one on_enter block.
+ */
+static const char kScriptBuzzerMultiple[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 200ms 1000hz\n"
+    "    BUZZER.beep 400ms 2000hz\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script with a duration below BUZZER_MIN_DURATION_MS to trigger a parse error.
+ */
+static const char kScriptBuzzerDurationTooShort[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 1ms\n"
+    "    EVENT.info \"WAIT\"\n";
+
+/**
+ * Script with a frequency below BUZZER_MIN_FREQ_HZ.
+ */
+static const char kScriptBuzzerFreqTooLow[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 200ms 50hz\n"
+    "    EVENT.info \"WAIT\"\n";
+
+/**
+ * Script with a frequency above BUZZER_MAX_FREQ_HZ.
+ */
+static const char kScriptBuzzerFreqTooHigh[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 200ms 20000hz\n"
+    "    EVENT.info \"WAIT\"\n";
+
+/**
+ * Script that fires BUZZER.beep with a repeat count (no frequency).
+ *
+ * DEPLOY on_enter: BUZZER.beep 300ms 3x
+ */
+static const char kScriptBuzzerRepeat[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 300ms 3x\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script that fires BUZZER.beep with a frequency AND repeat count.
+ *
+ * DEPLOY on_enter: BUZZER.beep 200ms 2000hz 5x
+ */
+static const char kScriptBuzzerRepeatFreq[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 200ms 2000hz 5x\n"
+    "    EVENT.info \"DEPLOYED\"\n";
+
+/**
+ * Script with a repeat count above BUZZER_MAX_REPEAT_COUNT.
+ */
+static const char kScriptBuzzerRepeatTooHigh[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    BUZZER.beep 200ms 99x\n"
+    "    EVENT.info \"WAIT\"\n";
+
+/**
+ * Script with BUZZER.beep inside an every: slot (alongside HK fields).
+ *
+ * DEPLOY every 100ms: HK.report { baro_alt: BARO.alt }
+ *                     BUZZER.beep 150ms
+ */
+static const char kScriptBuzzerInEvery[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"DEPLOYED\"\n"
+    "  every 100ms:\n"
+    "    HK.report {\n"
+    "      baro_alt: BARO.alt\n"
+    "    }\n"
+    "    BUZZER.beep 150ms\n";
+
+/**
+ * Script with BUZZER.beep inside an every: slot with repeat count.
+ *
+ * DEPLOY every 200ms:
+ *    BUZZER.beep 100ms 2x    (buzzer-only, no HK fields)
+ */
+static const char kScriptBuzzerEveryRepeat[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "\n"
+    "pus.service 3 as HK\n"
+    "pus.service 5 as EVENT\n"
+    "pus.service 1 as TC\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"WAIT\"\n"
+    "  transition to DEPLOY when TC.command == LAUNCH\n"
+    "\n"
+    "state DEPLOY:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"DEPLOYED\"\n"
+    "  every 200ms:\n"
+    "    BUZZER.beep 100ms 2x\n";
+
 } // namespace sim
 } // namespace ares

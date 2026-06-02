@@ -26,6 +26,7 @@ Source: [src/config.h](../../src/config.h)
 | 15   | Pulse B        | Output    | Pulse channel B (`PIN_PULSE_B`) |
 | 16   | Pulse C/Cont A | Out/In    | Channel C fire **or** cont-sense for A (see below) |
 | 17   | Pulse D/Cont B | Out/In    | Channel D fire **or** cont-sense for B (see below) |
+| —    | Buzzer         | Output    | `PIN_BUZZER` (default `0xFF` = not wired); any free GPIO. Passive buzzer uses LEDC channel `BUZZER_LEDC_CHANNEL` (default 0). |
 
 I2C assignments:
 - **I2C0 (Wire)**: BMP280 on GPIO 1/2

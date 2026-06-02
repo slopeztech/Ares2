@@ -415,6 +415,65 @@ REFS: docs/standards/ams_standard.md AMS-4.10.3
 [[/SECTION]]
 
 [[SECTION]]
+TITLE: 3.10 Buzzer Output (AMS-4.20)
+
+[REQUIREMENT]
+UID: SRS-2900
+STATUS: Active
+TAGS: AMS, Buzzer, OnEnter
+STATEMENT: A state on_enter: block may contain at most AMS_MAX_BUZZER_ACTIONS (2) "BUZZER.beep Nms [Fhz] [Rx]" directives. When the engine enters the state, all declared BUZZER.beep actions shall be dispatched in declaration order via BuzzerInterface::beep(durationMs, freqHz, repeatCount). Each call shall be non-blocking; the buzzer stops automatically after the declared duration via an internal timer.
+VERIFICATION: Test
+RATIONALE: AMS-4.20. Provides deterministic, script-controlled audio feedback at state entry without blocking the AMS tick or requiring a dedicated RTOS task.
+REFS: docs/standards/ams_standard.md AMS-4.20, src/config.h AMS_MAX_BUZZER_ACTIONS
+
+[REQUIREMENT]
+UID: SRS-2901
+STATUS: Active
+TAGS: AMS, Buzzer, Parser, Validation
+STATEMENT: The parser shall reject a BUZZER.beep directive if: (a) the duration field is absent or not terminated with "ms"; (b) the duration value is outside [BUZZER_MIN_DURATION_MS, BUZZER_MAX_DURATION_MS] (50–10 000 ms); (c) a frequency suffix is present and the value is outside [BUZZER_MIN_FREQ_HZ, BUZZER_MAX_FREQ_HZ] (100–10 000 Hz); (d) more than AMS_MAX_BUZZER_ACTIONS (2) BUZZER.beep lines appear in the same on_enter: block; (e) a repeat count suffix is present and the value exceeds BUZZER_MAX_REPEAT_COUNT (8) or is zero. Any rejection shall set engine status to ERROR and store a descriptive error message.
+VERIFICATION: Test
+RATIONALE: AMS-4.20. Bounding duration and frequency prevents driver misuse on hardware (LEDC range, timer saturation). Limiting actions per state bounds StateDef memory.
+REFS: src/config.h BUZZER_MIN_DURATION_MS, BUZZER_MAX_DURATION_MS, BUZZER_MIN_FREQ_HZ, BUZZER_MAX_FREQ_HZ, AMS_MAX_BUZZER_ACTIONS, BUZZER_MAX_REPEAT_COUNT
+
+[REQUIREMENT]
+UID: SRS-2902
+STATUS: Active
+TAGS: AMS, Buzzer, NullDriver
+STATEMENT: If the BuzzerInterface pointer registered with the engine is null, all BUZZER.beep directives shall be silently skipped at runtime. The script shall parse, activate, and run normally. No error or warning status shall be set solely because the buzzer driver is null.
+VERIFICATION: Test
+RATIONALE: AMS-4.20. Allows buzzer-less hardware configurations to execute the same mission scripts without modification. Null-driver tolerance follows the same pattern as PulseInterface.
+REFS: src/hal/buzzer/buzzer_interface.h
+
+[REQUIREMENT]
+UID: SRS-2903
+STATUS: Active
+TAGS: AMS, Buzzer, ExecutionGuard
+STATEMENT: BUZZER.beep actions shall be dispatched only when the engine execution is enabled (executionEnabled_ == true) and the engine status is RUNNING. If execution is disabled via setExecutionEnabled(false) after arm(), no BUZZER.beep actions shall fire on subsequent state entries or cadence ticks until execution is re-enabled.
+VERIFICATION: Test
+RATIONALE: AMS-4.20 / AMS-5.1. Consistent with the execution-enabled guard applied to PULSE.fire and EVENT actions. Prevents buzzer activation during ground-test or inhibited-flight modes.
+REFS: docs/standards/ams_standard.md AMS-5.1
+
+[REQUIREMENT]
+UID: SRS-2904
+STATUS: Active
+TAGS: AMS, Buzzer, RepeatCount
+STATEMENT: The BUZZER.beep directive shall accept an optional repeat-count suffix of the form "Rx" (e.g. "3x"), where R is an integer in the range [1, BUZZER_MAX_REPEAT_COUNT] (1–8). When count > 1, the driver shall play R beeps each of the declared duration, separated by silent gaps of the same duration, via a single non-blocking timer state machine (TONE/GAP phases). Omitting the suffix is equivalent to "1x".
+VERIFICATION: Test
+RATIONALE: AMS-4.20. Multi-beep patterns (e.g. three short beeps at deployment) are a common acoustic signal convention in rocketry. A timer-based approach keeps the AMS tick unblocked.
+REFS: src/config.h BUZZER_MAX_REPEAT_COUNT
+
+[REQUIREMENT]
+UID: SRS-2905
+STATUS: Active
+TAGS: AMS, Buzzer, Every, Cadence
+STATEMENT: A BUZZER.beep directive may appear at state scope immediately after an "every Nms:" header or after a "HK.report {}" block within that cadence scope. At most one BUZZER.beep directive is allowed per every: slot; a second occurrence in the same slot is a parse error. On each cadence tick the buzzer shall be fired before any HK telemetry frame is built and transmitted. A cadence slot containing only a BUZZER.beep directive (no HK.report fields) is valid; no HK radio packet is sent for that slot, only the buzzer fires.
+VERIFICATION: Test
+RATIONALE: AMS-4.20. Periodic audio feedback (e.g. descent beep every 500 ms) is useful for recovery operations. Reusing the existing every: cadence mechanism avoids adding a new timer primitive.
+REFS: src/ams/mission_script_engine_types.h HkSlot.hasBuzzerAction
+
+[[/SECTION]]
+
+[[SECTION]]
 TITLE: 3.10 Background Task Blocks
 
 [REQUIREMENT]
