@@ -300,3 +300,54 @@ void test_checkpoint_resume_exec_disabled_discarded_engine_idle()
     TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
         "exec-disabled checkpoint must be discarded — engine must remain IDLE");
 }
+
+// ── A2-4: null iface detection ───────────────────────────────────────────────
+
+void test_activate_null_baro_iface_rejected()
+{
+    // Build an engine where the BARO driver has iface=nullptr (mimics the real
+    // BMP280 state before setup() patches it).  activate() must return false
+    // and leave the engine IDLE instead of silently degrading at runtime.
+    ares::sim::SimStorageDriver storage;
+    ares::sim::SimGpsDriver     gps{kRestProfile};
+    // iface intentionally left as nullptr — not yet patched.
+    BaroEntry nullBaroEntry = { "NULL_BARO", nullptr };
+    ares::sim::SimImuDriver     imu{kRestProfile};
+    ares::sim::SimRadioDriver   radio;
+
+    GpsEntry gpsEntry = { "SIM_GPS", &gps  };
+    ComEntry comEntry = { "SIM_COM", &radio};
+    ImuEntry imuEntry = { "SIM_IMU", &imu  };
+
+    MissionScriptEngine engine{
+        storage,
+        &gpsEntry,       1U,
+        &nullBaroEntry,  1U,
+        &comEntry,       1U,
+        &imuEntry,       1U
+    };
+
+    (void)storage.begin();
+    // Minimal syntactically-valid script that includes the null-iface driver.
+    // Uses the same PUS / state structure as kScriptLifecycle so the parser
+    // succeeds.  validateAliasIfacesLocked() must then reject the null iface
+    // before the engine reaches LOADED.
+    storage.registerFile("/missions/null_baro.ams",
+        "include NULL_BARO as BARO\n"
+        "pus.apid = 1\n"
+        "pus.service 3 as HK\n"
+        "pus.service 5 as EVENT\n"
+        "pus.service 1 as TC\n"
+        "state WAIT:\n"
+        "  priorities event=4 hk=1 log=1 budget=1\n");
+    (void)engine.begin();
+
+    const bool ok = engine.activate("null_baro.ams");
+    TEST_ASSERT_FALSE_MESSAGE(ok,
+        "activate() must reject a script whose included driver has iface=null");
+
+    EngineSnapshot snap{};
+    engine.getSnapshot(snap);
+    TEST_ASSERT_EQUAL_MESSAGE(EngineStatus::IDLE, snap.status,
+        "engine must remain IDLE after activate() rejects a null-iface driver");
+}

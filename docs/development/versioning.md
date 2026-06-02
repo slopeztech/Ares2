@@ -71,6 +71,7 @@ docs/changelog/
     v2.3.14.md  ← Patch: checkpoint timing markers committed only after confirmed writeFile(); 1 new SITL retry test
     v2.3.15.md  ← Patch: hardening pass — checkpoint atomicity, parser trailing-garbage, radio.config refactor, sensor NaN guard, BMP280 suite, clang-tidy PASS
     v2.4.0.md   ← Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias`; runtime fallback LOG_W; 10 new tests
+    v2.4.1.md   ← Patch: A2-4 null-iface driver detection at activation time; `validateAliasIfacesLocked()`; 1 new lifecycle test
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -112,3 +113,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.3.14](../changelog/v2.3.14.md) | 2026-05-31 | Patch   | Patch: checkpoint timing markers deferred to confirmed `writeFile()`; re-arm dirty on failure; 1 new SITL retry test |
 | [2.3.15](../changelog/v2.3.15.md) | 2026-06-01 | Patch   | Patch: checkpoint atomicity; parser trailing-garbage rejection; `radio.config` `TokenCursor` refactor; sensor NaN guard; `std::fill_n`; API/storage defensive returns; BMP280 suite; clang-tidy PASS |
 | [2.4.0](../changelog/v2.4.0.md)   | 2026-06-02 | Minor   | Minor: A2-3 `every Nms via ALIAS:` per-slot COM routing; `HkSlot.comAlias[16]`; runtime unresolved-alias `LOG_W`; 7 parser tests + 3 integration tests |
+| [2.4.1](../changelog/v2.4.1.md)   | 2026-06-02 | Patch   | Patch: A2-4 null-iface driver detection at activation — `validateAliasIfacesLocked()`; 1 new lifecycle test |

@@ -89,6 +89,53 @@ bool MissionScriptEngine::begin()
     return true;
 }
 
+// ── validateAliasIfacesLocked ──────────────────────────────────────────────────
+// Checks every alias registered by the script against the live driver
+// registry.  Called from activate() after loadFromStorageLocked() so that
+// setup() has already patched any late-bound interface pointers (e.g. the
+// BMP280 BarometerInterface is nullptr at construction and patched in
+// setup()).  Returns false and sets a descriptive error if any driver that
+// a script alias references has iface == nullptr.
+bool MissionScriptEngine::validateAliasIfacesLocked()
+{
+    for (uint8_t i = 0U; i < program_.aliasCount; i++)
+    {
+        const AliasEntry& ae = program_.aliases[i];
+        bool ifaceNull = false;
+        switch (ae.kind)
+        {
+        case PeripheralKind::GPS:
+            ifaceNull = (ae.driverIdx < gpsCount_
+                         && gpsDrivers_[ae.driverIdx].iface == nullptr);
+            break;
+        case PeripheralKind::BARO:
+            ifaceNull = (ae.driverIdx < baroCount_
+                         && baroDrivers_[ae.driverIdx].iface == nullptr);
+            break;
+        case PeripheralKind::COM:
+            ifaceNull = (ae.driverIdx < comCount_
+                         && comDrivers_[ae.driverIdx].iface == nullptr);
+            break;
+        case PeripheralKind::IMU:
+            ifaceNull = (ae.driverIdx < imuCount_
+                         && imuDrivers_[ae.driverIdx].iface == nullptr);
+            break;
+        default:
+            break;
+        }
+        if (ifaceNull)
+        {
+            char msg[64] = {};
+            snprintf(msg, sizeof(msg),
+                     "driver for alias '%s' has no interface (iface=null)",
+                     ae.alias);
+            setErrorLocked(msg);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool MissionScriptEngine::activate(const char* fileName)
 {
     ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
@@ -99,6 +146,16 @@ bool MissionScriptEngine::activate(const char* fileName)
 
     if (!loadFromStorageLocked(fileName))
     {
+        return false;
+    }
+
+    // check that every driver referenced by the script has a live
+    // interface pointer.  This catches late-bound drivers whose iface is
+    // patched after construction (e.g. BMP280 in setup()) but were not
+    // ready in time, or misconfigured driver registries.
+    if (!validateAliasIfacesLocked())
+    {
+        deactivateLocked();
         return false;
     }
 

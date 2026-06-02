@@ -5,7 +5,7 @@
  * GENERATED FILE — do not edit manually.
  * Run: python scripts/gen_unity_runner.py test/test_ams_integration
  *
- * Test count: 186
+ * Test count: 187
  */
 #include <unity.h>
 #include "sim_clock.h"
@@ -67,6 +67,7 @@ extern void test_engine_reactivatable_after_deactivate();
 extern void test_checkpoint_resume_running_restores_state();
 extern void test_checkpoint_resume_paused_discarded_engine_idle();
 extern void test_checkpoint_resume_exec_disabled_discarded_engine_idle();
+extern void test_activate_null_baro_iface_rejected();
 
 // ── test_ams_flight_scenario.cpp ─────────────────────────────────────────────
 
@@ -321,6 +322,7 @@ int main()
     RUN_TEST(test_checkpoint_resume_running_restores_state);
     RUN_TEST(test_checkpoint_resume_paused_discarded_engine_idle);
     RUN_TEST(test_checkpoint_resume_exec_disabled_discarded_engine_idle);
+    RUN_TEST(test_activate_null_baro_iface_rejected);
 
     // ams_flight_scenario
     RUN_TEST(test_flight_script_activates_successfully);

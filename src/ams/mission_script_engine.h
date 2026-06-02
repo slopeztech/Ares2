@@ -281,6 +281,7 @@ private:
     bool parseIncludeLineLocked(const char* line);
     bool lookupModelInDriversLocked(const char* model, PeripheralKind& kind,
                                      uint8_t& driverIdx) const;
+    bool validateAliasIfacesLocked();
     bool parseIncludeOptionalsLocked(const char* line, AliasEntry& ae);
     bool parseStateScopedLineLocked(const char* line,
                                     StateDef& st,
