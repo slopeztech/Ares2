@@ -326,6 +326,9 @@ void loop()
     // yielding to the IDLE task long enough for it to reset its own WDT.
     esp_task_wdt_reset();
 
+    static uint32_t lastWifiPasswordPrintMs = 0U;
+    static uint32_t lastApiTokenPrintMs = 0U;
+
     const uint32_t now      = static_cast<uint32_t>(millis());  // radio dispatcher (stays uint32_t)
     const uint64_t nowAms   = millis64();                        // AMS engine (uint64_t)
     const uint64_t tickStart = nowAms;                           // [P2] Tick budget start.
@@ -339,6 +342,21 @@ void loop()
     // Must run before missionEngine.tick() so that injected TC commands
     // (ABORT, LAUNCH, RESET) are visible to the state machine this cycle.
     radioDispatcher.poll(now);
+
+    if (ares::WIFI_PASSWORD_SERIAL_LOG_ENABLED
+        && (now - lastWifiPasswordPrintMs) >= ares::WIFI_PASSWORD_SERIAL_LOG_INTERVAL_MS)
+    {
+        Serial.printf("WiFi AP password: %s\n", deviceConfig.wifiPassword());
+        lastWifiPasswordPrintMs = now;
+    }
+
+    if (ares::API_TOKEN_SERIAL_LOG_ENABLED
+        && deviceConfig.isAuthEnabled()
+        && (now - lastApiTokenPrintMs) >= ares::API_TOKEN_SERIAL_LOG_INTERVAL_MS)
+    {
+        Serial.printf("X-ARES token: %s\n", deviceConfig.apiToken());
+        lastApiTokenPrintMs = now;
+    }
 
     // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(nowAms);

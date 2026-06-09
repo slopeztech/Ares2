@@ -481,6 +481,11 @@ const char* DeviceConfig::wifiPassword() const
     return wifiPassword_;
 }
 
+const char* DeviceConfig::apiToken() const
+{
+    return apiToken_;
+}
+
 const char* DeviceConfig::corsOrigin() const
 {
     return corsOrigin_;

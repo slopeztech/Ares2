@@ -161,6 +161,10 @@ constexpr uint8_t     DEVICE_RADIO_KEY_HEX_MAX = 33U;
 
 // ── WiFi AP (ground configuration) ─────────────────────────
 constexpr const char* WIFI_AP_PASSWORD    = "ares1234"; ///< AP WPA2 factory-default password.
+constexpr bool        WIFI_PASSWORD_SERIAL_LOG_ENABLED = false; ///< Print the Wi-Fi AP password to USB serial every 30 s when true.
+constexpr uint32_t    WIFI_PASSWORD_SERIAL_LOG_INTERVAL_MS = 30000U; ///< Interval for the serial Wi-Fi password print.
+constexpr bool        API_TOKEN_SERIAL_LOG_ENABLED = false; ///< Print the current X-ARES token to USB serial every 30 s when true.
+constexpr uint32_t    API_TOKEN_SERIAL_LOG_INTERVAL_MS = 30000U; ///< Interval for the serial X-ARES token print.
 constexpr uint16_t    WIFI_API_PORT       = 80;         ///< HTTP REST API port.
 constexpr uint8_t     WIFI_AP_CHANNEL     = 1;          ///< WiFi radio channel.
 constexpr uint8_t     WIFI_AP_MAX_CLIENTS = 4;          ///< Max simultaneous clients.
