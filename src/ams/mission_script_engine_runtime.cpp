@@ -67,6 +67,12 @@ static int8_t pickBestDueActionIndex(const uint8_t priorities[3],
     return best;
 }
 
+static constexpr size_t kPrevSlotsForStateEntry()
+{
+    return static_cast<size_t>(ares::AMS_MAX_TRANSITIONS)
+         * static_cast<size_t>(ares::AMS_MAX_TRANSITION_CONDS);
+}
+
 void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-size)
 {
     // Reset staging buffers before every tick.  They are populated inside the
@@ -1045,6 +1051,58 @@ bool MissionScriptEngine::checkOnTimeoutLocked(StateDef& state, uint64_t nowMs)
  * @pre  mutex_ is held by the caller.
  * @pre  stateIndex < program_.stateCount.
  */
+void MissionScriptEngine::resetEntryStateResourcesLocked(uint64_t nowMs)
+{
+    for (uint8_t s = 0U; s < ares::AMS_MAX_HK_SLOTS; s++)
+    {
+        lastHkSlotMs_[s]  = nowMs;
+        lastLogSlotMs_[s] = nowMs;
+    }
+
+    for (uint8_t ti = 0; ti < ares::AMS_MAX_TRANSITIONS; ti++)
+    {
+        transitionCondHolding_[ti] = false;
+        transitionCondMetMs_[ti]   = 0U;
+    }
+
+    memset(tcConfirmCount_, 0U, sizeof(tcConfirmCount_));
+
+    for (size_t pi = 0U; pi < kPrevSlotsForStateEntry(); pi++)
+    {
+        transitionPrevVal_[pi]   = 0.0f;
+        transitionPrevValid_[pi] = false;
+    }
+}
+
+void MissionScriptEngine::applyStateDirectiveLocked(const StateDef& enteredState)
+{
+    if ((enteredState.wifiDirective != WifiDirective::NONE
+         || enteredState.apiDirective != ApiDirective::NONE)
+        && stateDirectiveCallback_ != nullptr)
+    {
+        const bool wifiEnabled = (enteredState.wifiDirective != WifiDirective::DISABLE);
+        const bool apiEnabled  = (enteredState.apiDirective != ApiDirective::DISABLE);
+        stateDirectiveCallback_(wifiEnabled, apiEnabled);
+    }
+}
+
+void MissionScriptEngine::resetCalibrationProgressLocked(StateDef& enteredState)
+{
+    for (uint8_t i = 0U; i < enteredState.setActionCount; i++)
+    {
+        enteredState.setActions[i].calibInProgress = false;
+        enteredState.setActions[i].calibCollected  = 0U;
+    }
+
+    for (uint8_t t = 0U; t < program_.taskCount; t++)
+    {
+        for (uint8_t r = 0U; r < program_.tasks[t].ruleCount; r++)
+        {
+            program_.tasks[t].rules[r].setAction.calibInProgress = false;
+        }
+    }
+}
+
 void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint64_t nowMs)
 {
     if (stateIndex >= program_.stateCount)
@@ -1057,52 +1115,16 @@ void MissionScriptEngine::enterStateLocked(uint8_t stateIndex, uint64_t nowMs)
     stateEnterMs_ = nowMs;
     lastHkMs_ = nowMs;
     lastLogMs_ = nowMs;
-    // AMS-4.3.1: reset per-slot HK/LOG timers so the new state's cadences start
-    // from zero, not from the previous state's last-fire timestamps.
-    for (uint8_t s = 0U; s < ares::AMS_MAX_HK_SLOTS; s++)
-    {
-        lastHkSlotMs_[s]  = nowMs;
-        lastLogSlotMs_[s] = nowMs;
-    }
-    // AMS-4.6.1: reset all per-transition hold windows on every state entry.
-    for (uint8_t ti = 0; ti < ares::AMS_MAX_TRANSITIONS; ti++)
-    {
-        transitionCondHolding_[ti] = false;
-        transitionCondMetMs_[ti]   = 0U;
-    }
-    // AMS-4.11.2: reset TC CONFIRM counters on state entry (clean slate per state).
-    memset(tcConfirmCount_, 0U, sizeof(tcConfirmCount_));
-    // AMS-4.6.2: reset flat prev-value table so no delta baseline carries over between states.
-    constexpr size_t kPrevSlots =
-        static_cast<size_t>(ares::AMS_MAX_TRANSITIONS) * static_cast<size_t>(ares::AMS_MAX_TRANSITION_CONDS);
-    for (size_t pi = 0U; pi < kPrevSlots; pi++)
-    {
-        transitionPrevVal_[pi]   = 0.0f;
-        transitionPrevValid_[pi] = false;
-    }
+    resetEntryStateResourcesLocked(nowMs);
 
     LOG_I(TAG, "state -> %s", program_.states[stateIndex].name);
 
-    // AMS-4.8.2: reset async calibration progress for the entering state's set
-    // actions so that CALIBRATE always starts fresh on every state entry (including
-    // re-entries).  Also clear task-rule calibration progress so that a task firing
-    // in the new state does not resume a stale accumulator from a prior state.
     StateDef& enteredState = program_.states[stateIndex];
-    for (uint8_t i = 0U; i < enteredState.setActionCount; i++)
-    {
-        enteredState.setActions[i].calibInProgress = false;
-        enteredState.setActions[i].calibCollected  = 0U;
-    }
-    for (uint8_t t = 0U; t < program_.taskCount; t++)
-    {
-        for (uint8_t r = 0U; r < program_.tasks[t].ruleCount; r++)
-        {
-            program_.tasks[t].rules[r].setAction.calibInProgress = false;
-        }
-    }
+    applyStateDirectiveLocked(enteredState);
+    resetCalibrationProgressLocked(enteredState);
 
     sendOnEnterEventLocked(nowMs);
-    checkpointDirty_ = true; // state change is material — write checkpoint soon
+    checkpointDirty_ = true;
     (void)saveResumePointLocked(nowMs, true);
 }
 } // namespace ams

@@ -127,6 +127,18 @@ bool MissionScriptEngine::parseStateRateDirectivesLocked(const char* line,
         matched   = true;
         return parsePrioritiesLineLocked(line, st);
     }
+    if (startsWith(line, "wifi.disable") || startsWith(line, "wifi.enable"))
+    {
+        blockType = BlockType::NONE;
+        matched   = true;
+        return parseWifiDirectiveLineLocked(line, st);
+    }
+    if (startsWith(line, "api.disable") || startsWith(line, "api.enable"))
+    {
+        blockType = BlockType::NONE;
+        matched   = true;
+        return parseApiDirectiveLineLocked(line, st);
+    }
     return true;
 }
 
@@ -629,6 +641,58 @@ bool MissionScriptEngine::parseLogEveryLineLocked(const char* line, StateDef& st
  * @return @c true if valid priority values were parsed.
  * @pre  Caller holds the engine mutex.
  */
+bool MissionScriptEngine::parseWifiDirectiveLineLocked(const char* line,
+                                                        StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.wifiDirective != WifiDirective::NONE)
+    {
+        setErrorLocked("duplicate wifi directive in state");
+        return false;
+    }
+
+    if (startsWith(line, "wifi.disable"))
+    {
+        st.wifiDirective = WifiDirective::DISABLE;
+        return true;
+    }
+    if (startsWith(line, "wifi.enable"))
+    {
+        st.wifiDirective = WifiDirective::ENABLE;
+        return true;
+    }
+
+    setErrorLocked("invalid wifi directive syntax");
+    return false;
+}
+
+bool MissionScriptEngine::parseApiDirectiveLineLocked(const char* line,
+                                                       StateDef&   st)
+{
+    ARES_ASSERT(line != nullptr);
+
+    if (st.apiDirective != ApiDirective::NONE)
+    {
+        setErrorLocked("duplicate api directive in state");
+        return false;
+    }
+
+    if (startsWith(line, "api.disable"))
+    {
+        st.apiDirective = ApiDirective::DISABLE;
+        return true;
+    }
+    if (startsWith(line, "api.enable"))
+    {
+        st.apiDirective = ApiDirective::ENABLE;
+        return true;
+    }
+
+    setErrorLocked("invalid api directive syntax");
+    return false;
+}
+
 bool MissionScriptEngine::parsePrioritiesLineLocked(const char* line,
                                                     StateDef&   st)
 {

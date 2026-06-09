@@ -198,6 +198,23 @@ bool ApiServer::begin()
     return true;
 }
 
+void ApiServer::setWifiEnabled(bool enabled)
+{
+    if (enabled)
+    {
+        if (!wifi_.isReady() && !wifi_.begin(devCfg_))
+        {
+            LOG_W(TAG, "WiFi AP start failed");
+        }
+        return;
+    }
+
+    if (wifi_.isReady())
+    {
+        wifi_.end();
+    }
+}
+
 void ApiServer::setMode(ares::OperatingMode mode)
 {
     mode_.store(static_cast<uint8_t>(mode));
@@ -213,17 +230,14 @@ void ApiServer::setMode(ares::OperatingMode mode)
     {
         if (mode == ares::OperatingMode::FLIGHT)
         {
-            wifi_.end();
+            setWifiEnabled(false);
         }
-        else if (!wifi_.isReady())
+        else
         {
             // Returning from FLIGHT — restart the AP so the operator regains
             // REST access.  Failure is non-fatal: the device keeps operating;
             // the operator must power-cycle to recover WiFi access.
-            if (!wifi_.begin(devCfg_))
-            {
-                LOG_W(TAG, "WiFi AP restart after flight failed");
-            }
+            setWifiEnabled(true);
         }
     }
 }

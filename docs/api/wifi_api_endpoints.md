@@ -520,7 +520,9 @@ If any of those steps fails — engine not loaded, injection rejected, engine en
 
 ### In-flight
 
-WiFi may be disabled automatically when transitioning to `FLIGHT` mode (`WIFI_DISABLE_IN_FLIGHT = true` in `config.h`). If it remains enabled, only monitoring endpoints are available. All configuration and mission structure endpoints are flight-locked.
+The global flight-time WiFi policy is controlled by `WIFI_DISABLE_IN_FLIGHT` in `config.h`. The current default is `false`, so the soft-AP stays up during mission unless you explicitly opt into a hard shutdown on `FLIGHT` mode. AMS states can still override that policy per state with `wifi.enable`, `wifi.disable`, `api.enable`, and `api.disable`. If a state omits these directives, the global `config.h` setting remains the default.
+
+When the AP is kept alive during `FLIGHT`, only monitoring endpoints remain available; configuration and mission-structure endpoints are still flight-locked.
 
 ---
 

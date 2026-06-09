@@ -748,13 +748,19 @@ setup()
 
 ### REST-13.3 — WiFi lifecycle
 
-WiFi is enabled during IDLE, TEST, and ERROR modes. Upon entering
-FLIGHT mode, the WiFi AP **may** be disabled to save power and
-eliminate RF interference. This is configurable:
+WiFi is enabled during IDLE, TEST, and ERROR modes. The default
+flight-time policy is now controlled by `WIFI_DISABLE_IN_FLIGHT`
+in `config.h`:
 
 ```cpp
-constexpr bool WIFI_DISABLE_IN_FLIGHT = true;  ///< Kill AP on launch.
+constexpr bool WIFI_DISABLE_IN_FLIGHT = false;  ///< Keep AP alive in FLIGHT by default.
 ```
+
+Set this flag to `true` if you want the AP to shut down on launch.
+AMS states can still override the live policy on a per-state basis via
+`wifi.enable`, `wifi.disable`, `api.enable`, and `api.disable`. If a
+state does not specify any directive, the global `config.h` policy
+remains in effect.
 
 ### Rules
 

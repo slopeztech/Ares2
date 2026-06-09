@@ -229,7 +229,35 @@ Rules:
   to `false`, keeping the engine in the current state.
 - Both fields support variable RHS: `GPS.sats > min_sats` (AMS-4.8).
 
-### 2.7 on_timeout Handler
+### 2.7 Wi-Fi / API directives in a state
+
+Use `wifi.enable`, `wifi.disable`, `api.enable`, and `api.disable` as
+simple state lines to control the live Wi-Fi/AP and REST API policy when the
+engine enters that state.
+
+```ams
+state PAD:
+  wifi.enable
+  api.enable
+  EVENT.info "Ground ops — Wi-Fi and API enabled"
+
+state FLIGHT:
+  wifi.disable
+  api.disable
+  EVENT.info "Flight — Wi-Fi and API off"
+```
+
+Behavior:
+- The directive is applied when the engine enters the state.
+- If a state omits these lines, the global policy from `src/config.h`
+  (`WIFI_DISABLE_IN_FLIGHT`) remains in effect.
+- The compact probe example lives in `ams_examples/radio/wifi_directive_probe.ams`.
+
+This is useful when you want the mission to keep the AP alive for a specific
+phase, or to shut it down only in the states where you want to reduce RF
+activity.
+
+### 2.8 on_timeout Handler
 
 Use `on_timeout Nms:` to force a transition out of a state if no regular
 transition fires within `N` milliseconds.  Unlike `fallback transition`, which

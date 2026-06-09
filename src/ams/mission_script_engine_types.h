@@ -444,6 +444,20 @@ struct PulseArmAction
     uint8_t channel;  ///< PulseChannel::CH_A (0) … CH_D (3).
 };
 
+enum class WifiDirective : uint8_t
+{
+    NONE    = 0U,
+    ENABLE  = 1U,
+    DISABLE = 2U,
+};
+
+enum class ApiDirective : uint8_t
+{
+    NONE    = 0U,
+    ENABLE  = 1U,
+    DISABLE = 2U,
+};
+
 /**
  * A single parsed AMS state definition: name, on_enter event, scheduled
  * reports, transitions, set actions, and fallback configuration.
@@ -478,6 +492,8 @@ struct StateDef
 
     uint8_t hkPriority    = 2;  ///< Higher value = higher priority.
     uint8_t logPriority   = 1;  ///< Keep local log below PUS HK by default.
+    WifiDirective wifiDirective = WifiDirective::NONE;
+    ApiDirective  apiDirective  = ApiDirective::NONE;
     uint8_t eventPriority = 4;  ///< PUS event reporting has highest default priority.
     uint8_t actionBudget  = 2;  ///< Max actions per tick (EVENT/HK/LOG arbitration).
     bool    prioritiesSet = false; ///< True once a priorities directive has been parsed.

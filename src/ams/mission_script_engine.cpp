@@ -368,6 +368,11 @@ bool MissionScriptEngine::arm()
     return true;
 }
 
+void MissionScriptEngine::setStateDirectiveCallback(StateDirectiveCallback callback)
+{
+    stateDirectiveCallback_ = callback;
+}
+
 void MissionScriptEngine::setExecutionEnabled(bool enabled)
 {
     {

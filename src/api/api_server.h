@@ -127,6 +127,13 @@ public:
     void setMode(ares::OperatingMode mode);
 
     /**
+     * Enable or disable the WiFi AP independently of the operating mode.
+     * Intended for AMS state directives that want to override the default
+     * flight-time WiFi policy for a specific state.
+     */
+    void setWifiEnabled(bool enabled);
+
+    /**
      * @return Current operating mode.
      */
     ares::OperatingMode getMode() const;

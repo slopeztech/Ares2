@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.5.0"
+#define ARES_VERSION_STRING "2.6.0"
 
 namespace ares
 {
@@ -161,15 +161,15 @@ constexpr uint8_t     DEVICE_RADIO_KEY_HEX_MAX = 33U;
 
 // ── WiFi AP (ground configuration) ─────────────────────────
 constexpr const char* WIFI_AP_PASSWORD    = "ares1234"; ///< AP WPA2 factory-default password.
-constexpr bool        WIFI_PASSWORD_SERIAL_LOG_ENABLED = false; ///< Print the Wi-Fi AP password to USB serial every 30 s when true.
+constexpr bool        WIFI_PASSWORD_SERIAL_LOG_ENABLED = true; ///< Print the Wi-Fi AP password to USB serial every 30 s when true.
 constexpr uint32_t    WIFI_PASSWORD_SERIAL_LOG_INTERVAL_MS = 30000U; ///< Interval for the serial Wi-Fi password print.
-constexpr bool        API_TOKEN_SERIAL_LOG_ENABLED = false; ///< Print the current X-ARES token to USB serial every 30 s when true.
+constexpr bool        API_TOKEN_SERIAL_LOG_ENABLED = true; ///< Print the current X-ARES token to USB serial every 30 s when true.
 constexpr uint32_t    API_TOKEN_SERIAL_LOG_INTERVAL_MS = 30000U; ///< Interval for the serial X-ARES token print.
 constexpr uint16_t    WIFI_API_PORT       = 80;         ///< HTTP REST API port.
 constexpr uint8_t     WIFI_AP_CHANNEL     = 1;          ///< WiFi radio channel.
 constexpr uint8_t     WIFI_AP_MAX_CLIENTS = 4;          ///< Max simultaneous clients.
 constexpr int8_t      WIFI_TX_POWER_DBM   = 8;          ///< ~6 mW — enough for ground ops.
-constexpr bool        WIFI_DISABLE_IN_FLIGHT = true;    ///< Kill AP on launch (REST-13.3).
+constexpr bool        WIFI_DISABLE_IN_FLIGHT = false;   ///< Set true to kill the AP on FLIGHT; false keeps Wi-Fi alive during mission and lets AMS directives override per state.
 constexpr uint16_t    WIFI_CONN_TIMEOUT_MS   = 5000;    ///< Stale connection timeout (REST-10).
 
 // ── REST API limits (REST-3) ────────────────────────────────

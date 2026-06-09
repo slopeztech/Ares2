@@ -388,6 +388,10 @@ class AmsParser:
             self._parse_priorities(line, ln)
             return
 
+        if re.match(r"^(wifi|api)\.(enable|disable)\b", line):
+            self._block = None
+            return
+
         if line.startswith(self._hk_alias + ".report"):
             self._block = None
             if not self._current.has_hk_every:
