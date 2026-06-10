@@ -197,12 +197,18 @@ static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dis
 }
 
 // ═════════════════════════════════════════════════════════
-/// Placement-new-constructs ApiServer into its static aligned storage and
-/// calls begin().  Extracted from setup() to keep it within the
-/// readability-function-size threshold (clang-tidy).
-/// Pre-condition: s_baroIfaces[0] and missionEngine must be live.
-/// pApiServer is only published on success so that the loop() null-guard
-/// reliably detects a failed init (TWDT is never registered on failure paths).
+/// Apply state-level AMS directives to the live WiFi/API runtime.
+/// Each directive is applied independently so AMS can disable the AP, the
+/// REST listener, or both for a given mission state.
+static void applyMissionStateDirective(bool wifiEnabled, bool apiEnabled)
+{
+    if (pApiServer != nullptr)
+    {
+        pApiServer->setWifiEnabled(wifiEnabled);
+        pApiServer->setApiEnabled(apiEnabled);
+    }
+}
+
 static bool startApiServer()
 {
     ApiServer* const p = new (s_apiBuf) ApiServer(
@@ -218,6 +224,57 @@ static bool startApiServer()
     if (!p->begin()) { return false; }
     pApiServer = p;
     return true;
+}
+
+static void logRuntimeSecrets(uint32_t now,
+                              uint32_t& lastWifiPasswordPrintMs,
+                              uint32_t& lastApiTokenPrintMs)
+{
+    if (ares::WIFI_PASSWORD_SERIAL_LOG_ENABLED
+        && (now - lastWifiPasswordPrintMs) >= ares::WIFI_PASSWORD_SERIAL_LOG_INTERVAL_MS)
+    {
+        Serial.printf("WiFi AP password: %s\n", deviceConfig.wifiPassword());
+        lastWifiPasswordPrintMs = now;
+    }
+
+    if (ares::API_TOKEN_SERIAL_LOG_ENABLED
+        && deviceConfig.isAuthEnabled()
+        && (now - lastApiTokenPrintMs) >= ares::API_TOKEN_SERIAL_LOG_INTERVAL_MS)
+    {
+        Serial.printf("X-ARES token: %s\n", deviceConfig.apiToken());
+        lastApiTokenPrintMs = now;
+    }
+}
+
+static void updateMissionCompletionStatus(ApiServer& api,
+                                          const ares::ams::MissionScriptEngine& engine,
+                                          ares::ams::EngineStatus& lastNotifiedStatus)
+{
+    if (api.getMode() != ares::OperatingMode::FLIGHT)
+    {
+        lastNotifiedStatus = ares::ams::EngineStatus::IDLE;
+        return;
+    }
+
+    ares::ams::EngineSnapshot snap = {};
+    engine.getSnapshot(snap);
+    if ((snap.status == ares::ams::EngineStatus::COMPLETE
+         || snap.status == ares::ams::EngineStatus::ERROR)
+        && snap.status != lastNotifiedStatus)
+    {
+        api.notifyMissionComplete();
+        lastNotifiedStatus = snap.status;
+    }
+}
+
+static uint32_t computeSleepMs(uint64_t nowAms,
+                               const ares::ams::MissionScriptEngine& engine)
+{
+    const uint64_t wakeupMs  = engine.nextWakeupMs(nowAms);
+    const uint64_t sleepMs64 = (wakeupMs > nowAms) ? (wakeupMs - nowAms) : 1ULL;
+    return static_cast<uint32_t>(sleepMs64 > static_cast<uint64_t>(ares::LOOP_SLEEP_MAX_MS)
+                                 ? ares::LOOP_SLEEP_MAX_MS
+                                 : sleepMs64);
 }
 
 // ═════════════════════════════════════════════════════════
@@ -292,6 +349,8 @@ void setup() // NOLINT(readability-function-size)
         return;
     }
 
+    missionEngine.setStateDirectiveCallback(applyMissionStateDirective);
+
     // REST API server — construct + start after AMS is ready to avoid init race
     if (!startApiServer())
     {
@@ -311,61 +370,29 @@ void setup() // NOLINT(readability-function-size)
 // ═══════════════════════════════════════════════════════════
 void loop()
 {
-    // [P1-3] Guard: if setup() failed before apiServer was constructed (e.g.
-    // storage or AMS init error), idle safely.  No TWDT registration occurred
-    // in that path, so skipping esp_task_wdt_reset() here is safe.
     if (pApiServer == nullptr)
     {
         vTaskDelay(pdMS_TO_TICKS(ares::LOOP_SLEEP_MAX_MS));
         return;
     }
 
-    // [P1] Explicitly reset the TWDT for the loop task each iteration.
-    // Prevents a false WDT trip when nextWakeupMs() returns 0 and sleepMs
-    // collapses to 1 ms, which would otherwise near-busy-loop without
-    // yielding to the IDLE task long enough for it to reset its own WDT.
     esp_task_wdt_reset();
 
-    const uint32_t now      = static_cast<uint32_t>(millis());  // radio dispatcher (stays uint32_t)
-    const uint64_t nowAms   = millis64();                        // AMS engine (uint64_t)
-    const uint64_t tickStart = nowAms;                           // [P2] Tick budget start.
+    static uint32_t lastWifiPasswordPrintMs = 0U;
+    static uint32_t lastApiTokenPrintMs = 0U;
+    static ares::ams::EngineStatus lastNotifiedStatus = ares::ams::EngineStatus::IDLE;
 
-    // GPS bytes must be consumed every iteration to keep
-    // the UART FIFO from overflowing (72-byte HW FIFO).
+    const uint32_t now      = static_cast<uint32_t>(millis());
+    const uint64_t nowAms   = millis64();
+    const uint64_t tickStart = nowAms;
+
     for (GpsInterface* iface : kGpsIfaces) { iface->update(); }
-
-    // Radio receive path — poll LoRa FIFO, decode APUS frames, dispatch
-    // commands, and send ACK/NACK responses (APUS-4.4, APUS-9, APUS-14).
-    // Must run before missionEngine.tick() so that injected TC commands
-    // (ABORT, LAUNCH, RESET) are visible to the state machine this cycle.
     radioDispatcher.poll(now);
+    logRuntimeSecrets(now, lastWifiPasswordPrintMs, lastApiTokenPrintMs);
 
-    // AMS script runtime tick (state machine + PUS emission).
     missionEngine.tick(nowAms);
+    updateMissionCompletionStatus(*pApiServer, missionEngine, lastNotifiedStatus);
 
-    // [P3] Auto-return to IDLE when the AMS mission finishes or faults.
-    // Cache the last-notified status so notifyMissionComplete() is only
-    // invoked once per status transition (COMPLETE/ERROR), not every tick.
-    static ares::ams::EngineStatus lastNotifiedStatus_ = ares::ams::EngineStatus::IDLE;
-    if (pApiServer->getMode() == ares::OperatingMode::FLIGHT)
-    {
-        ares::ams::EngineSnapshot snap = {};
-        missionEngine.getSnapshot(snap);
-        if ((snap.status == ares::ams::EngineStatus::COMPLETE
-             || snap.status == ares::ams::EngineStatus::ERROR)
-            && snap.status != lastNotifiedStatus_)
-        {
-            pApiServer->notifyMissionComplete();
-            lastNotifiedStatus_ = snap.status;
-        }
-    }
-    else
-    {
-        // Mode left FLIGHT — reset cache so the next mission can notify again.
-        lastNotifiedStatus_ = ares::ams::EngineStatus::IDLE;
-    }
-
-    // [P2] Warn if the tick work budget was exceeded.
     const uint32_t tickMs = static_cast<uint32_t>(millis64() - tickStart);
     if (tickMs > ares::LOOP_TICK_WARN_MS)
     {
@@ -373,19 +400,6 @@ void loop()
               tickMs, ares::LOOP_TICK_WARN_MS);
     }
 
-    // Adaptive sleep: wake up exactly when the next engine event is due.
-    // Falls back to SENSOR_RATE_MS for states with active conditions.
-    // The sleep is capped at LOOP_SLEEP_MAX_MS so esp_task_wdt_reset() at
-    // the top of the next iteration is always reached before the TWDT
-    // timeout (CONFIG_ESP_TASK_WDT_TIMEOUT_S = 5 s).
-    const uint64_t wakeupMs  = missionEngine.nextWakeupMs(nowAms);
-    const uint64_t sleepMs64 = (wakeupMs > nowAms) ? (wakeupMs - nowAms) : 1ULL;
-    const uint32_t sleepMs   = static_cast<uint32_t>(
-        sleepMs64 > static_cast<uint64_t>(ares::LOOP_SLEEP_MAX_MS)
-        ? ares::LOOP_SLEEP_MAX_MS
-        : sleepMs64);
-    // pdMS_TO_TICKS truncates to tick resolution (1000/configTICK_RATE_HZ ms/tick); TickType_t
-    // (uint32_t) saturates at (0xFFFFFFFF/configTICK_RATE_HZ)*1000 ms — ~49.7 days at 1000 Hz,
-    // well above LOOP_SLEEP_MAX_MS, so no overflow occurs at the default tick rate.
+    const uint32_t sleepMs = computeSleepMs(nowAms, missionEngine);
     vTaskDelay(pdMS_TO_TICKS(sleepMs));
 }

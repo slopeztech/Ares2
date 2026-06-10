@@ -56,6 +56,7 @@ namespace ams
 class MissionScriptEngine
 {
 public:
+    using StateDirectiveCallback = void (*)(bool wifiEnabled, bool apiEnabled);
     /**
      * Construct the mission script engine.
      *
@@ -160,6 +161,7 @@ public:
      * @param[in] enabled  true to enable; false to pause without deactivating.
      */
     void setExecutionEnabled(bool enabled);
+    void setStateDirectiveCallback(StateDirectiveCallback callback);
 
     /**
      * Immediately transmit all active HK telemetry slots for the current state.
@@ -329,6 +331,8 @@ private:
                                             uint32_t& budget,
                                             const StateDef& st);
     bool parsePrioritiesLineLocked(const char* line, StateDef& st);
+    bool parseWifiDirectiveLineLocked(const char* line, StateDef& st);
+    bool parseApiDirectiveLineLocked(const char* line, StateDef& st);
     bool parseFieldLineLocked(const char* line,
                               HkField* fields,
                               uint8_t& count,
@@ -487,6 +491,9 @@ private:
     void setErrorLocked(const char* reason);
     void exitStateLocked(uint8_t stateIndex, uint64_t nowMs);
     void enterStateLocked(uint8_t stateIndex, uint64_t nowMs);
+    void resetEntryStateResourcesLocked(uint64_t nowMs);
+    void applyStateDirectiveLocked(const StateDef& enteredState);
+    void resetCalibrationProgressLocked(StateDef& enteredState);
     bool checkOnTimeoutLocked(StateDef& state, uint64_t nowMs);
     bool evaluateTransitionAndMaybeEnterLocked(StateDef& state, uint64_t nowMs);
     bool evaluateOneTransitionConditionLocked(const CondExpr& cond,
@@ -685,6 +692,7 @@ private:
 
     bool running_ = false;
     bool executionEnabled_ = false;
+    StateDirectiveCallback stateDirectiveCallback_ = nullptr;
     uint8_t currentState_ = 0;
     uint64_t stateEnterMs_ = 0;
     uint64_t lastHkMs_ = 0;

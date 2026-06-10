@@ -15,6 +15,7 @@
 #include "api/http_parse_pure.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
+#include "rtos_guard.h"
 #include "sys/led/status_led.h"
 
 #include <Arduino.h>
@@ -167,6 +168,11 @@ bool ApiServer::begin()
         return false;
     }
 
+    desiredWifiEnabled_.store(true);
+    desiredApiEnabled_.store(true);
+    wifiRuntimeStarted_ = wifi_.isReady();
+    apiRuntimeListening_ = true;
+
     httpServer.begin();
     httpServer.setNoDelay(true);
 
@@ -198,6 +204,73 @@ bool ApiServer::begin()
     return true;
 }
 
+void ApiServer::applyWifiRuntimeState(bool enabled)
+{
+    if (enabled)
+    {
+        if (!wifi_.isReady() && !wifi_.begin(devCfg_))
+        {
+            LOG_W(TAG, "WiFi AP start failed");
+            wifiRuntimeStarted_ = false;
+            return;
+        }
+    }
+    else if (wifi_.isReady())
+    {
+        wifi_.end();
+    }
+
+    wifiRuntimeStarted_ = wifi_.isReady();
+}
+
+void ApiServer::applyApiRuntimeState(bool enabled)
+{
+    if (enabled)
+    {
+        httpServer.begin();
+        httpServer.setNoDelay(true);
+    }
+    else
+    {
+        httpServer.stop();
+    }
+
+    apiRuntimeListening_ = enabled;
+}
+
+void ApiServer::syncRuntimeState()
+{
+    const bool wantWifi = desiredWifiEnabled_.load();
+    if (wantWifi != wifiRuntimeStarted_)
+    {
+        applyWifiRuntimeState(wantWifi);
+    }
+
+    const bool wantApi = desiredApiEnabled_.load();
+    if (wantApi != apiRuntimeListening_)
+    {
+        applyApiRuntimeState(wantApi);
+    }
+}
+
+void ApiServer::setWifiEnabled(bool enabled)
+{
+    desiredWifiEnabled_.store(enabled);
+    if (xTaskGetCurrentTaskHandle() == taskHandle_)
+    {
+        applyWifiRuntimeState(enabled);
+    }
+}
+
+void ApiServer::setApiEnabled(bool enabled)
+{
+    desiredApiEnabled_.store(enabled);
+    if (xTaskGetCurrentTaskHandle() == taskHandle_)
+    {
+        applyApiRuntimeState(enabled);
+    }
+}
+
 void ApiServer::setMode(ares::OperatingMode mode)
 {
     mode_.store(static_cast<uint8_t>(mode));
@@ -213,17 +286,14 @@ void ApiServer::setMode(ares::OperatingMode mode)
     {
         if (mode == ares::OperatingMode::FLIGHT)
         {
-            wifi_.end();
+            setWifiEnabled(false);
         }
-        else if (!wifi_.isReady())
+        else
         {
             // Returning from FLIGHT — restart the AP so the operator regains
             // REST access.  Failure is non-fatal: the device keeps operating;
             // the operator must power-cycle to recover WiFi access.
-            if (!wifi_.begin(devCfg_))
-            {
-                LOG_W(TAG, "WiFi AP restart after flight failed");
-            }
+            setWifiEnabled(true);
         }
     }
 }
@@ -284,6 +354,8 @@ void ApiServer::run()
 
     while (true)  // RTOS task loop — blocks on vTaskDelay (RTOS-1.3)
     {
+        syncRuntimeState();
+
         // Feed watchdog unconditionally at the top of every iteration so
         // handleClient() has a full WDT window and the reset is not
         // gated on vTaskDelay returning (P1-6).

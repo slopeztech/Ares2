@@ -21,6 +21,7 @@ AMS supports:
 - State declaration and transition evaluation
 - Per-state guard conditions (`conditions:`)
 - Per-state failure handler (`on_error:` + `EVENT.*`)
+- Per-state Wi-Fi/API directives (`wifi.enable`, `wifi.disable`, `api.enable`, `api.disable`)
 - PUS ST[3] telemetry emission (HK.report)
 - PUS ST[5] event emission (EVENT.*)
 - TC token gating from API commands (TC.command)
@@ -210,6 +211,7 @@ Allowed statements inside a state:
 - `log_every Nms:`
 - `LOG.report { ... }`
 - `priorities ...`
+- `wifi.enable`, `wifi.disable`, `api.enable`, `api.disable`
 - `transition to <STATE> when <COND>`
 
 ### AMS-4.3 Independent HK/LOG Cadence
@@ -256,6 +258,33 @@ Rules:
 - `HK.report` requires a preceding `every` block
 - `LOG.report` requires a preceding `log_every` block
 - HK and LOG slots use independent per-slot per-state timers
+
+#### AMS-4.2.1 State-level Wi-Fi / API directives
+
+The AMS language accepts four simple state directives that affect the live
+Wi-Fi/AP and REST API policy when entering a state:
+
+- `wifi.enable`
+- `wifi.disable`
+- `api.enable`
+- `api.disable`
+
+These directives are evaluated on state entry. They are intended to override
+or refine the global policy defined in `src/config.h` (`WIFI_DISABLE_IN_FLIGHT`)
+for a specific mission phase. If a state does not specify any of these lines,
+then the global default remains in force.
+
+Example:
+
+```ams
+state GROUND:
+  wifi.enable
+  api.enable
+
+state FLIGHT:
+  wifi.disable
+  api.disable
+```
 
 #### AMS-4.3.2 Per-slot COM routing (`via ALIAS`)
 

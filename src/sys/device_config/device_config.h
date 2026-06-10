@@ -145,6 +145,11 @@ public:
     const char* wifiPassword() const;
 
     /**
+     * @return Current X-ARES API token (empty when auth is disabled).
+     */
+    const char* apiToken() const;
+
+    /**
      * @return CORS Access-Control-Allow-Origin value (e.g. "*").
      */
     const char* corsOrigin() const;

@@ -127,6 +127,20 @@ public:
     void setMode(ares::OperatingMode mode);
 
     /**
+     * Enable or disable the WiFi AP independently of the operating mode.
+     * Intended for AMS state directives that want to override the default
+     * flight-time WiFi policy for a specific state.
+     */
+    void setWifiEnabled(bool enabled);
+
+    /**
+     * Enable or disable the REST API listener independently of the AP.
+     * AMS state directives can use this to stop API access without forcing
+     * a WiFi AP shutdown.
+     */
+    void setApiEnabled(bool enabled);
+
+    /**
      * @return Current operating mode.
      */
     ares::OperatingMode getMode() const;
@@ -171,6 +185,15 @@ private:
 
     /// Main task loop.
     void run();
+
+    /// Apply the current desired WiFi/AP runtime state from the API task.
+    void applyWifiRuntimeState(bool enabled);
+
+    /// Apply the current desired API-listener runtime state from the API task.
+    void applyApiRuntimeState(bool enabled);
+
+    /// Sync desired runtime policy with the live AP/server state.
+    void syncRuntimeState();
 
     // ── Route handlers (implemented in subdirectories) ─────
     // status/
@@ -345,6 +368,14 @@ private:
 
     /// Armed flag.
     std::atomic<bool> armed_{false};
+
+    /// Desired runtime policy set by AMS state directives.
+    std::atomic<bool> desiredWifiEnabled_{true};
+    std::atomic<bool> desiredApiEnabled_{true};
+
+    /// Runtime state currently applied by the API task.
+    bool wifiRuntimeStarted_{false};
+    bool apiRuntimeListening_{true};
 
     // ── RTOS task (static allocation) ───────────────────────
     StackType_t  stack_[ares::TASK_STACK_SIZE_API / sizeof(StackType_t)] = {};
