@@ -198,13 +198,14 @@ static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dis
 
 // ═════════════════════════════════════════════════════════
 /// Apply state-level AMS directives to the live WiFi/API runtime.
-/// The API directive is treated as a gate on the same WiFi AP path used by
-/// the REST interface, so both flags must be enabled for the AP to remain up.
+/// Each directive is applied independently so AMS can disable the AP, the
+/// REST listener, or both for a given mission state.
 static void applyMissionStateDirective(bool wifiEnabled, bool apiEnabled)
 {
     if (pApiServer != nullptr)
     {
-        pApiServer->setWifiEnabled(wifiEnabled && apiEnabled);
+        pApiServer->setWifiEnabled(wifiEnabled);
+        pApiServer->setApiEnabled(apiEnabled);
     }
 }
 
