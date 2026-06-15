@@ -90,7 +90,7 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
             return;
         }
 
-        if (!running_ || status_ != EngineStatus::RUNNING || !executionEnabled_)
+        if (!running_)
         {
             return;
         }
@@ -100,103 +100,114 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
             setErrorLocked("state index out of range");
             return;
         }
+        StateDef& state = program_.states[currentState_];
 
-    StateDef& state = program_.states[currentState_];
+        // AMS-4.8.2: advance CALIBRATE even while execution is disabled so
+        // scripts can finish bootstrap calibration before arm().
+        stepPendingCalibrationsLocked(state, nowMs);
 
-    // AMS-4.8.2: advance any in-progress CALIBRATE actions by one sample before
-    // evaluating transitions, so that calibrated variables are current when
-    // conditions are checked this tick.
-    stepPendingCalibrationsLocked(state, nowMs);
-
-    // AMS-4.19.3: disarm channels whose arm_timeout has expired (proactive clear).
-    checkPulseArmTimeoutsLocked(nowMs);
-
-    // Evaluate all event-driven exit paths.  Every branch that calls
-    // enterStateLocked / deactivateLocked may stage a checkpoint or an append
-    // row via saveResumePointLocked / queueAppendLocked.  We must NOT return
-    // early here; all paths fall through so that flushPendingIoUnlocked() always
-    // runs after the mutex is released (AMS-8).
-    const bool transitioned = evaluateTransitionAndMaybeEnterLocked(state, nowMs)
-                           || checkOnTimeoutLocked(state, nowMs);
-
-    if (!transitioned)
-    {
-        bool didFallback = false;
-        if (state.hasFallback && state.fallbackTargetResolved)
+        if (!executionEnabled_)
         {
-            const uint64_t elapsed = nowMs - stateEnterMs_;
-            if (elapsed >= state.fallbackAfterMs)
+            if (status_ == EngineStatus::LOADED)
             {
-                LOG_I(TAG, "Fallback: '%s' -> '%s' (timeout %" PRIu64 "ms)",
-                      state.name,
-                      program_.states[state.fallbackTargetIdx].name,
-                      elapsed);
-                exitStateLocked(currentState_, nowMs);
-                enterStateLocked(state.fallbackTargetIdx, nowMs);
-                didFallback = true;
+                // Pre-arm bootstrap: keep advancing CALIBRATE actions so
+                // calibration variables can settle before arm().
+                stepPendingCalibrationsLocked(state, nowMs);
+                (void)saveResumePointLocked(nowMs, false);
             }
         }
-
-        if (!didFallback)
+        else
         {
-            if (pendingTc_ == TcCommand::ABORT)
-            {
-                LOG_W(TAG, "ABORT TC not consumed by state=%s: force-deactivating",
-                      state.name);
-                // Emit an auditable ERROR event so the ground station knows which
-                // state was active when the unhandled ABORT triggered the
-                // force-deactivation.
-                static char abortMsg[80] = {};
-                snprintf(abortMsg, sizeof(abortMsg),
-                         "ABORT: forced in state=%s", state.name);
-                sendEventLocked(EventVerb::ERROR,
-                                ares::proto::EventId::FPL_VIOLATION,
-                                abortMsg, nowMs);
-                // Stage a final "abort" row in the mission log; flushed
-                // unconditionally by flushPendingIoUnlocked() below.
-                writeAbortMarkerLocked(state.name, nowMs);
-                deactivateLocked();
-                // Fall through: flush persists the abort row.
-            }
-            else if (!evaluateConditionsLocked(state, nowMs))
-            {
-                // AMS-5.2: guard conditions passed; execute state actions.
-                executeDueActionsLocked(state, nowMs);
+            // AMS-4.19.3: disarm channels whose arm_timeout has expired (proactive clear).
+            checkPulseArmTimeoutsLocked(nowMs);
 
-                // AMS-11: evaluate background tasks (run after main state actions).
-                if (program_.taskCount > 0U)
+            // Evaluate all event-driven exit paths.  Every branch that calls
+            // enterStateLocked / deactivateLocked may stage a checkpoint or an append
+            // row via saveResumePointLocked / queueAppendLocked.  We must NOT return
+            // early here; all paths fall through so that flushPendingIoUnlocked() always
+            // runs after the mutex is released (AMS-8).
+            const bool transitioned = evaluateTransitionAndMaybeEnterLocked(state, nowMs)
+                                   || checkOnTimeoutLocked(state, nowMs);
+
+            if (!transitioned)
+            {
+                bool didFallback = false;
+                if (state.hasFallback && state.fallbackTargetResolved)
                 {
-                    runTasksLocked(nowMs);
+                    const uint64_t elapsed = nowMs - stateEnterMs_;
+                    if (elapsed >= state.fallbackAfterMs)
+                    {
+                        LOG_I(TAG, "Fallback: '%s' -> '%s' (timeout %" PRIu64 "ms)",
+                              state.name,
+                              program_.states[state.fallbackTargetIdx].name,
+                              elapsed);
+                        exitStateLocked(currentState_, nowMs);
+                        enterStateLocked(state.fallbackTargetIdx, nowMs);
+                        didFallback = true;
+                    }
                 }
 
-                (void)saveResumePointLocked(nowMs, false);
-
-                const bool hasActiveHk = (state.hkSlotCount > 0U)
-                                      || (state.hasHkEvery
-                                          && state.hkEveryMs > 0U
-                                          && state.hkFieldCount > 0U);
-                const bool hasActiveLog = (state.logSlotCount > 0U)
-                                       || (state.hasLogEvery
-                                           && state.logEveryMs > 0U
-                                           && state.logFieldCount > 0U);
-                if (state.transitionCount == 0U
-                    && !state.hasFallback
-                    && !state.hasOnTimeout
-                    && !pendingOnEnterEvent_
-                    && !hasActiveHk
-                    && !hasActiveLog)
+                if (!didFallback)
                 {
-                    if (status_ == EngineStatus::RUNNING)
+                    if (pendingTc_ == TcCommand::ABORT)
                     {
-                        LOG_I(TAG, "mission complete: terminal state=%s", state.name);
-                        running_ = false;
-                        status_  = EngineStatus::COMPLETE;
-                        clearResumePointLocked();
+                        LOG_W(TAG, "ABORT TC not consumed by state=%s: force-deactivating",
+                              state.name);
+                        // Emit an auditable ERROR event so the ground station knows which
+                        // state was active when the unhandled ABORT triggered the
+                        // force-deactivation.
+                        static char abortMsg[80] = {};
+                        snprintf(abortMsg, sizeof(abortMsg),
+                                 "ABORT: forced in state=%s", state.name);
+                        sendEventLocked(EventVerb::ERROR,
+                                        ares::proto::EventId::FPL_VIOLATION,
+                                        abortMsg, nowMs);
+                        // Stage a final "abort" row in the mission log; flushed
+                        // unconditionally by flushPendingIoUnlocked() below.
+                        writeAbortMarkerLocked(state.name, nowMs);
+                        deactivateLocked();
+                        // Fall through: flush persists the abort row.
+                    }
+                    else if (!evaluateConditionsLocked(state, nowMs))
+                    {
+                        // AMS-5.2: guard conditions passed; execute state actions.
+                        executeDueActionsLocked(state, nowMs);
+
+                        // AMS-11: evaluate background tasks (run after main state actions).
+                        if (program_.taskCount > 0U)
+                        {
+                            runTasksLocked(nowMs);
+                        }
+
+                        (void)saveResumePointLocked(nowMs, false);
+
+                        const bool hasActiveHk = (state.hkSlotCount > 0U)
+                                              || (state.hasHkEvery
+                                                  && state.hkEveryMs > 0U
+                                                  && state.hkFieldCount > 0U);
+                        const bool hasActiveLog = (state.logSlotCount > 0U)
+                                               || (state.hasLogEvery
+                                                   && state.logEveryMs > 0U
+                                                   && state.logFieldCount > 0U);
+                        if (state.transitionCount == 0U
+                            && !state.hasFallback
+                            && !state.hasOnTimeout
+                            && !pendingOnEnterEvent_
+                            && !hasActiveHk
+                            && !hasActiveLog)
+                        {
+                            if (status_ == EngineStatus::RUNNING)
+                            {
+                                LOG_I(TAG, "mission complete: terminal state=%s", state.name);
+                                running_ = false;
+                                status_  = EngineStatus::COMPLETE;
+                                clearResumePointLocked();
+                            }
+                        }
                     }
                 }
             }
         }
-    }
     } // Mutex released; all staging complete.
 
     // Perform deferred LittleFS writes (log appends + checkpoint) outside the
