@@ -105,6 +105,19 @@ bool MissionScriptEngine::parseSensorField(PeripheralKind kind,
     }
 }
 
+bool MissionScriptEngine::parseRuntimeSensorField(const char* fieldStr, SensorField& out)
+{
+    if (fieldStr == nullptr) { return false; }
+    if (strcmp(fieldStr, "uptime_ms") == 0)         { out = SensorField::RUNTIME_UPTIME_MS;         return true; }
+    if (strcmp(fieldStr, "state_idx") == 0)         { out = SensorField::RUNTIME_STATE_IDX;         return true; }
+    if (strcmp(fieldStr, "state_elapsed_ms") == 0)  { out = SensorField::RUNTIME_STATE_ELAPSED_MS;  return true; }
+    if (strcmp(fieldStr, "script_elapsed_ms") == 0) { out = SensorField::RUNTIME_SCRIPT_ELAPSED_MS; return true; }
+    if (strcmp(fieldStr, "status_bits") == 0)       { out = SensorField::RUNTIME_STATUS_BITS;       return true; }
+    if (strcmp(fieldStr, "engine_status") == 0)     { out = SensorField::RUNTIME_ENGINE_STATUS;     return true; }
+    if (strcmp(fieldStr, "exec_enabled") == 0)      { out = SensorField::RUNTIME_EXEC_ENABLED;      return true; }
+    return false;
+}
+
 bool MissionScriptEngine::parseGpsSensorField(const char* fieldStr, SensorField& out)
 {
     if (strcmp(fieldStr, "lat") == 0)   { out = SensorField::LAT;   return true; }
@@ -183,6 +196,11 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
                                                 SensorField  field,
                                                 float&       outVal) const
 {
+    if (strcmp(alias, "RUNTIME") == 0)
+    {
+        return readRuntimeFieldLocked(field, outVal);
+    }
+
     const AliasEntry* ae = findAliasLocked(alias);
     if (ae == nullptr || ae->driverIdx == 0xFFU) { return false; }
 
@@ -192,6 +210,38 @@ bool MissionScriptEngine::readSensorFloatLocked(const char*  alias,
     case PeripheralKind::BARO: return readBaroFieldLocked(*ae, field, outVal);
     case PeripheralKind::IMU:  return readImuFieldLocked(*ae, field, outVal);
     case PeripheralKind::COM:
+    default:
+        return false;
+    }
+}
+
+bool MissionScriptEngine::readRuntimeFieldLocked(SensorField field,
+                                                 float&      outVal) const
+{
+    const uint64_t nowMs = millis64();
+    switch (field)
+    {
+    case SensorField::RUNTIME_UPTIME_MS:
+        outVal = static_cast<float>(nowMs);
+        return true;
+    case SensorField::RUNTIME_STATE_IDX:
+        outVal = static_cast<float>(currentState_);
+        return true;
+    case SensorField::RUNTIME_STATE_ELAPSED_MS:
+        outVal = static_cast<float>(nowMs - stateEnterMs_);
+        return true;
+    case SensorField::RUNTIME_SCRIPT_ELAPSED_MS:
+        outVal = static_cast<float>((activationMs_ > 0U) ? (nowMs - activationMs_) : 0U);
+        return true;
+    case SensorField::RUNTIME_STATUS_BITS:
+        outVal = static_cast<float>(buildStatusBitsLocked());
+        return true;
+    case SensorField::RUNTIME_ENGINE_STATUS:
+        outVal = static_cast<float>(static_cast<uint8_t>(status_));
+        return true;
+    case SensorField::RUNTIME_EXEC_ENABLED:
+        outVal = executionEnabled_ ? 1.0f : 0.0f;
+        return true;
     default:
         return false;
     }
@@ -480,23 +530,36 @@ bool MissionScriptEngine::parseSensorCondExprLocked(const char* lhs,
         return false;
     }
 
-    const AliasEntry* ae = findAliasLocked(aliasStr);
-    if (ae == nullptr)
-    {
-        char msg[56] = {};
-        snprintf(msg, sizeof(msg), "unknown alias '%s' in condition", aliasStr);
-        setErrorLocked(msg);
-        return false;
-    }
-
     SensorField sf = SensorField::ALT;
-    if (!parseSensorField(ae->kind, fieldStr, sf))
+    if (strcmp(aliasStr, "RUNTIME") == 0)
     {
-        static char msg[80] = {};
-        snprintf(msg, sizeof(msg),
-                 "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-        setErrorLocked(msg);
-        return false;
+        if (!parseRuntimeSensorField(fieldStr, sf))
+        {
+            static char msg[96] = {};
+            snprintf(msg, sizeof(msg),
+                     "field '%s' not valid for alias 'RUNTIME'", fieldStr);
+            setErrorLocked(msg);
+            return false;
+        }
+    }
+    else
+    {
+        const AliasEntry* ae = findAliasLocked(aliasStr);
+        if (ae == nullptr)
+        {
+            char msg[56] = {};
+            snprintf(msg, sizeof(msg), "unknown alias '%s' in condition", aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
+        if (!parseSensorField(ae->kind, fieldStr, sf))
+        {
+            static char msg[80] = {};
+            snprintf(msg, sizeof(msg),
+                     "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
     }
 
     if (strcmp(op, "<") == 0)

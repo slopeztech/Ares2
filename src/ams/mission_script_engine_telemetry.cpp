@@ -365,8 +365,30 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(  // NOLINT(readability-fu
     const HkField&               f,
     ares::proto::TelemetryPayload& tm) const
 {
-    // Variables have no fixed TelemetryPayload slot; included in LOG CSV only.
+    // Variables and most virtual runtime fields have no fixed TelemetryPayload
+    // slot; they are still available in LOG/SERIAL formatting paths.
     if (f.field == SensorField::VAR) { return; }
+    if (strcmp(f.alias, "RUNTIME") == 0)
+    {
+        float rtVal = 0.0f;
+        if (!readRuntimeFieldLocked(f.field, rtVal)) { return; }
+        switch (f.field)
+        {
+        case SensorField::RUNTIME_UPTIME_MS:
+            tm.timestampMs = static_cast<uint32_t>(rtVal);
+            break;
+        case SensorField::RUNTIME_STATE_IDX:
+            tm.flightPhase = static_cast<uint8_t>(rtVal);
+            break;
+        case SensorField::RUNTIME_STATUS_BITS:
+            tm.statusBits = static_cast<ares::proto::StatusBits>(static_cast<uint8_t>(rtVal));
+            break;
+        default:
+            // No direct APUS payload slot for these runtime fields.
+            break;
+        }
+        return;
+    }
 
     const AliasEntry* ae = findAliasLocked(f.alias);
     float val = 0.0f;
@@ -586,6 +608,46 @@ void MissionScriptEngine::appendLogReportSlotLocked(uint64_t      nowMs, // NOLI
     }
 }
 
+void MissionScriptEngine::emitSerialReportSlotLocked(uint64_t      nowMs,
+                                                     const HkSlot& slot,
+                                                     uint8_t       slotIdx)
+{
+    if (currentState_ >= program_.stateCount) { return; }
+    ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
+    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
+
+    const StateDef& st = program_.states[currentState_];
+
+    static char line[256] = {};
+    int32_t head = static_cast<int32_t>(snprintf(
+        line, sizeof(line),
+        "SERIAL.report t_ms=%" PRIu64 " state=%s slot=%u",
+        nowMs, st.name, static_cast<unsigned>(slotIdx)));
+    if (head <= 0) { return; }
+
+    uint32_t pos = static_cast<uint32_t>(head);
+    uint8_t  di  = 0U;
+    for (; di < slot.fieldCount && pos < sizeof(line) - 2U; di++)
+    {
+        char value[32] = {};
+        char safeLabel[sizeof(HkField::label)] = {};
+        sanitiseCsvLabel(slot.fields[di].label, safeLabel, sizeof(safeLabel));
+        formatHkFieldValueLocked(slot.fields[di], value, sizeof(value));
+        const int32_t n = static_cast<int32_t>(snprintf(
+            &line[pos], sizeof(line) - pos, " %s=%s", safeLabel, value));
+        if (n <= 0) { break; }
+        pos += static_cast<uint32_t>(n);
+    }
+    if (di != slot.fieldCount)
+    {
+        LOG_W(TAG, "SERIAL.report slot %u truncated at field %u",
+              static_cast<unsigned>(slotIdx), static_cast<unsigned>(di));
+        return;
+    }
+
+    LOG_I(TAG, "%s", line);
+}
+
 // GCOV_EXCL_START — only called from dead legacy appendLogReportLocked path
 bool MissionScriptEngine::writeLogHeaderIfNeededLocked(const StateDef& st)
 {
@@ -792,6 +854,15 @@ bool MissionScriptEngine::formatHkFieldValueLocked(const HkField& f,
     uint8_t decimals = 2U;
     switch (f.field)
     {
+    case SensorField::RUNTIME_UPTIME_MS:
+    case SensorField::RUNTIME_STATE_IDX:
+    case SensorField::RUNTIME_STATE_ELAPSED_MS:
+    case SensorField::RUNTIME_SCRIPT_ELAPSED_MS:
+    case SensorField::RUNTIME_STATUS_BITS:
+    case SensorField::RUNTIME_ENGINE_STATUS:
+    case SensorField::RUNTIME_EXEC_ENABLED:
+        decimals = 0U;
+        break;
     case SensorField::LAT:
     case SensorField::LON:
         decimals = 7U; break;
