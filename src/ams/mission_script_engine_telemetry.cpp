@@ -370,18 +370,18 @@ void MissionScriptEngine::applyHkFieldToPayloadLocked(  // NOLINT(readability-fu
     if (f.field == SensorField::VAR) { return; }
     if (strcmp(f.alias, "RUNTIME") == 0)
     {
-        float rtVal = 0.0f;
-        if (!readRuntimeFieldLocked(f.field, rtVal)) { return; }
+        // Map integer-backed runtime fields directly to avoid float precision
+        // loss on long uptimes (e.g. uptime_ms beyond 2^24).
         switch (f.field)
         {
         case SensorField::RUNTIME_UPTIME_MS:
-            tm.timestampMs = static_cast<uint32_t>(rtVal);
+            tm.timestampMs = millis();
             break;
         case SensorField::RUNTIME_STATE_IDX:
-            tm.flightPhase = static_cast<uint8_t>(rtVal);
+            tm.flightPhase = currentState_;
             break;
         case SensorField::RUNTIME_STATUS_BITS:
-            tm.statusBits = static_cast<ares::proto::StatusBits>(static_cast<uint8_t>(rtVal));
+            tm.statusBits = buildStatusBitsLocked();
             break;
         default:
             // No direct APUS payload slot for these runtime fields.
