@@ -110,9 +110,8 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
         {
             if (status_ == EngineStatus::LOADED)
             {
-                // Pre-arm bootstrap: keep advancing CALIBRATE actions so
-                // calibration variables can settle before arm().
-                stepPendingCalibrationsLocked(state, nowMs);
+                // Pre-arm bootstrap: persist calibration progress while
+                // transitions and periodic dispatch stay disabled until arm().
                 (void)saveResumePointLocked(nowMs, false);
             }
         }
