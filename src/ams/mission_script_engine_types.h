@@ -133,6 +133,13 @@ enum class SensorField : uint8_t
     HDOP      = 15, ///< GPS: horizontal dilution of precision (dimensionless)
     GYRO_MAG  = 16, ///< IMU: ||gyro|| (deg/s) — angular rate magnitude √(gx²+gy²+gz²)
     VAR       = 17, ///< AMS variable — alias holds the variable name (AMS-4.8)
+    RUNTIME_UPTIME_MS        = 18, ///< Runtime: board uptime in milliseconds.
+    RUNTIME_STATE_IDX        = 19, ///< Runtime: current AMS state index.
+    RUNTIME_STATE_ELAPSED_MS = 20, ///< Runtime: elapsed milliseconds since current state entry.
+    RUNTIME_SCRIPT_ELAPSED_MS = 21, ///< Runtime: elapsed milliseconds since arm()/RUNNING activation.
+    RUNTIME_STATUS_BITS      = 22, ///< Runtime: current protocol StatusBits bitmask.
+    RUNTIME_ENGINE_STATUS    = 23, ///< Runtime: EngineStatus numeric value.
+    RUNTIME_EXEC_ENABLED     = 24, ///< Runtime: executionEnabled flag (1.0 enabled, 0.0 disabled).
 };
 
 // ── Unified condition kind ─────────────────────────────────────────────
@@ -388,6 +395,7 @@ struct HkSlot
     uint32_t     everyMs            = 0U;                         ///< Report interval (ms); 0 = unused.
     uint8_t      fieldCount         = 0U;                         ///< Number of populated fields.
     char         comAlias[16]       = {};                         ///< Target COM alias; empty = use primaryCom_.
+    bool         serialReport       = false;                      ///< LOG slot output selector: false=CSV file (LOG.report), true=serial monitor (SERIAL.report).
     HkField      fields[ares::AMS_MAX_HK_FIELDS] = {};            ///< Field descriptors.
     BuzzerAction buzzerAction       = {};                         ///< BUZZER.beep to fire on each cadence tick (AMS-4.20).
     bool         hasBuzzerAction    = false;                      ///< True if a BUZZER.beep was declared for this slot.

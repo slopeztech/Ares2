@@ -574,7 +574,14 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
                 {
                     if (logSlotDue[s])
                     {
-                        appendLogReportSlotLocked(nowMs, state.logSlots[s], s);
+                        if (state.logSlots[s].serialReport)
+                        {
+                            emitSerialReportSlotLocked(nowMs, state.logSlots[s], s);
+                        }
+                        else
+                        {
+                            appendLogReportSlotLocked(nowMs, state.logSlots[s], s);
+                        }
                         lastLogSlotMs_[s] += state.logSlots[s].everyMs;
                         // Starvation guard (AMS-4.4).
                         if ((nowMs - lastLogSlotMs_[s]) >= state.logSlots[s].everyMs)

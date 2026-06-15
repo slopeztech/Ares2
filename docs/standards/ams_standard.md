@@ -210,6 +210,7 @@ Allowed statements inside a state:
 - `HK.report { ... }`
 - `log_every Nms:`
 - `LOG.report { ... }`
+- `SERIAL.report { ... }`
 - `priorities ...`
 - `wifi.enable`, `wifi.disable`, `api.enable`, `api.disable`
 - `transition to <STATE> when <COND>`
@@ -224,6 +225,9 @@ every 1000ms:
 
 log_every 200ms:
   LOG.report { ... }
+
+log_every 250ms:
+  SERIAL.report { ... }
 ```
 
 #### AMS-4.3.1 Multiple cadences per state
@@ -246,7 +250,9 @@ state FLIGHT:
 
 Normative constraints:
 - Each `every` block generates an independent PUS-3 HK frame at its declared cadence.
-- Each `log_every` block appends independent rows to the mission CSV file.
+- Each `log_every` block is an independent slot and may output to either:
+  - `LOG.report`   → append row to mission CSV file.
+  - `SERIAL.report` → emit one formatted line to serial monitor.
 - Slot timers reset to zero on state activation (`activate()`).
 - The minimum allowed cadence is `TELEMETRY_INTERVAL_MIN` (100 ms).
 - All slot arrays are statically allocated; no heap allocation (PO10-3).
@@ -257,6 +263,7 @@ Normative constraints:
 Rules:
 - `HK.report` requires a preceding `every` block
 - `LOG.report` requires a preceding `log_every` block
+- `SERIAL.report` requires a preceding `log_every` block
 - HK and LOG slots use independent per-slot per-state timers
 
 #### AMS-4.2.1 State-level Wi-Fi / API directives
@@ -311,7 +318,9 @@ Normative constraints:
 - The minimum interval is `TELEMETRY_INTERVAL_MIN` (100 ms), same as a plain `every` block.
 - Omitting `via ALIAS` is equivalent to routing through `primaryCom_` (unchanged behaviour).
 - At runtime, if the alias cannot be resolved (e.g. the driver was registered with a different index), a `LOG_W` is emitted and the frame falls back to `primaryCom_`.
-- `via` routing applies only to `HK.report` slots; `log_every` and `LOG.report` blocks always write to the local filesystem and are unaffected.
+- `via` routing applies only to `HK.report` slots; `log_every` slots are unaffected.
+  - `LOG.report` writes to local filesystem.
+  - `SERIAL.report` writes to serial monitor.
 - Multiple `every` blocks in the same state may target different COM aliases:
 
 ```ams
@@ -2375,3 +2384,33 @@ state RECOVERY:
 | `BUZZER_MAX_FREQ_HZ` | `10000U` | Maximum accepted frequency. |
 | `BUZZER_MAX_REPEAT_COUNT` | `8U` | Maximum repeat count for `Nx` syntax. |
 | `AMS_MAX_BUZZER_ACTIONS` | `2U` | Maximum `BUZZER.beep` lines per `on_enter:` block. |
+
+---
+
+## AMS-4.21 Runtime Data Alias (`RUNTIME`)
+
+`RUNTIME` is a reserved virtual alias that can be used wherever `ALIAS.field`
+expressions are accepted (report fields, guards/conditions, transition
+conditions, and `set` expressions).
+
+### AMS-4.21.1 Supported fields
+
+- `RUNTIME.uptime_ms`
+- `RUNTIME.state_idx`
+- `RUNTIME.state_elapsed_ms`
+- `RUNTIME.script_elapsed_ms`
+- `RUNTIME.status_bits`
+- `RUNTIME.engine_status`
+- `RUNTIME.exec_enabled`
+
+### AMS-4.21.2 Reporting semantics
+
+- In `LOG.report` and `SERIAL.report`, all `RUNTIME.*` fields are emitted as
+  numeric values.
+- In `HK.report` (binary APUS frame), only fields with native
+  `TelemetryPayload` slots are serialized directly:
+  - `RUNTIME.uptime_ms` -> `timestampMs`
+  - `RUNTIME.state_idx` -> `flightPhase`
+  - `RUNTIME.status_bits` -> `statusBits`
+- Remaining runtime fields are valid in script grammar but have no dedicated
+  slot in fixed `TelemetryPayload` v2 (78 bytes).

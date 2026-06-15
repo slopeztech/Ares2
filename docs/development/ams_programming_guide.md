@@ -105,9 +105,9 @@ state FLIGHT:
 - If the alias cannot be resolved at dispatch time a `LOG_W` is emitted and `primaryCom_` is used.
 - See §20 for a full multi-radio example and operational guidance.
 
-### 2.4 Local Sensor Logging (File)
+### 2.4 Local Sensor Logging (File) and Serial Logging
 
-Use `log_every` + `LOG.report` for local text logs.
+Use `log_every` + `LOG.report` for local text logs in LittleFS.
 
 ```ams
 log_every 200ms:
@@ -118,9 +118,23 @@ log_every 200ms:
   }
 ```
 
+Use `log_every` + `SERIAL.report` when you want live lines in the serial monitor
+without writing CSV rows to storage for that slot.
+
+```ams
+log_every 250ms:
+  SERIAL.report {
+    baro_alt: BARO.alt
+    ref_alt: zero_alt
+  }
+```
+
+`SERIAL.report` and `LOG.report` share the same field grammar (`label: ALIAS.field`
+or `label: varname`) and both require a preceding `log_every Nms:` block.
+
 **Multiple `log_every` blocks per state (AMS-4.3.1):** Similarly, up to `AMS_MAX_HK_SLOTS` (4) log cadences
-can coexist per state. Each slot appends its own rows to the same CSV file. The CSV includes a `slot` column
-(0-based index) to distinguish cadences in post-flight analysis:
+can coexist per state. Each slot can target either CSV (`LOG.report`) or serial output (`SERIAL.report`).
+CSV slots append rows to the mission file and include a `slot` column (0-based index) to distinguish cadences:
 
 ```ams
 state FLIGHT:
@@ -157,6 +171,39 @@ has not yet been set (`nan` state), the placeholder `nan` is written to keep CSV
 columns aligned.  Note: variable fields are **omitted from binary HK TM frames**
 (`HK.report`) since `TelemetryPayload` has no generic variable slot; use
 `LOG.report` when variable values must be persisted.
+
+**Runtime execution fields (`RUNTIME.*`):** AMS exposes execution context as a
+reserved virtual alias that can be used in `HK.report`, `LOG.report`,
+`SERIAL.report`, guards, transitions and `set` expressions.
+
+Available runtime fields:
+
+- `RUNTIME.uptime_ms`
+- `RUNTIME.state_idx`
+- `RUNTIME.state_elapsed_ms`
+- `RUNTIME.script_elapsed_ms`
+- `RUNTIME.status_bits`
+- `RUNTIME.engine_status`
+- `RUNTIME.exec_enabled`
+
+Example:
+
+```ams
+state FLIGHT:
+  log_every 250ms:
+    SERIAL.report {
+      uptime: RUNTIME.uptime_ms
+      state: RUNTIME.state_idx
+      state_ms: RUNTIME.state_elapsed_ms
+      enabled: RUNTIME.exec_enabled
+    }
+
+  transition to RECOVERY when RUNTIME.state_elapsed_ms > 120000
+```
+
+`HK.report` can carry runtime fields that map to fixed APUS payload slots
+(`uptime_ms`, `state_idx`, `status_bits`). Runtime fields without a fixed slot
+remain available for `LOG.report`/`SERIAL.report` and conditions.
 
 ### 2.5 conditions + on_error
 
@@ -965,7 +1012,7 @@ Checkpoint cadence details:
 Check:
 - State names and `transition to` target names
 - Missing `every` before `HK.report`
-- Missing `log_every` before `LOG.report`
+- Missing `log_every` before `LOG.report` or `SERIAL.report`
 - Invalid `priorities` values
 - Invalid `conditions:` syntax or unsupported guard expression
 - `TC.command` used inside `conditions:` (not supported)

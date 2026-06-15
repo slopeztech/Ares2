@@ -582,6 +582,82 @@ bool MissionScriptEngine::parseSimpleSensorSetActionLocked(const char* rhsBuf,
 
 // ── parseExprTermLocked ───────────────────────────────────────────────────────
 
+bool MissionScriptEngine::parseExprSensorTermLocked(const char* token, ExprOperand& out)
+{
+    char aliasStr[16] = {};
+    char fieldStr[20] = {};
+    if (!splitAliasDotField(token, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
+    {
+        return false;
+    }
+
+    if (strcmp(aliasStr, "RUNTIME") == 0)
+    {
+        SensorField sf = SensorField::ALT;
+        if (!parseRuntimeSensorField(fieldStr, sf))
+        {
+            static char msg[80] = {};
+            snprintf(msg, sizeof(msg),
+                     "set expr: field '%s' not valid for alias '%s'",
+                     fieldStr, aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
+        out.kind  = ExprOperand::Kind::SENSOR;
+        ares::util::copyZ(out.name, aliasStr, sizeof(out.name));
+        out.field = sf;
+        return true;
+    }
+
+    const AliasEntry* ae = findAliasLocked(aliasStr);
+    if (ae == nullptr)
+    {
+        return false;
+    }
+
+    SensorField sf = SensorField::ALT;
+    if (!parseSensorField(ae->kind, fieldStr, sf))
+    {
+        static char msg[80] = {};
+        snprintf(msg, sizeof(msg),
+                 "set expr: field '%s' not valid for alias '%s'",
+                 fieldStr, aliasStr);
+        setErrorLocked(msg);
+        return false;
+    }
+
+    out.kind  = ExprOperand::Kind::SENSOR;
+    ares::util::copyZ(out.name, aliasStr, sizeof(out.name));
+    out.field = sf;
+    return true;
+}
+
+bool MissionScriptEngine::parseExprLiteralOrVariableTermLocked(const char* token,
+                                                               ExprOperand& out)
+{
+    float val = 0.0f;
+    if (parseFloatValue(token, val))
+    {
+        out.kind    = ExprOperand::Kind::LITERAL;
+        out.literal = val;
+        return true;
+    }
+
+    const VarEntry* v = findVarLocked(token);
+    if (v != nullptr)
+    {
+        out.kind = ExprOperand::Kind::VARIABLE;
+        ares::util::copyZ(out.name, token, sizeof(out.name));
+        return true;
+    }
+
+    static char msg[72] = {};
+    snprintf(msg, sizeof(msg),
+             "set expr: '%s' is not a sensor, variable, or literal", token);
+    setErrorLocked(msg);
+    return false;
+}
+
 /**
  * @brief Resolve a single expression token to an @c ExprOperand (AMS-4.8.8).
  *
@@ -603,55 +679,11 @@ bool MissionScriptEngine::parseExprTermLocked(const char* token, ExprOperand& ou
     // SENSOR: token contains '.' — try ALIAS.field first.
     if (strchr(token, '.') != nullptr)
     {
-        char aliasStr[16] = {};
-        char fieldStr[20] = {};
-        if (splitAliasDotField(token, aliasStr, sizeof(aliasStr), fieldStr, sizeof(fieldStr)))
-        {
-            const AliasEntry* ae = findAliasLocked(aliasStr);
-            if (ae != nullptr)
-            {
-                SensorField sf = SensorField::ALT;
-                if (parseSensorField(ae->kind, fieldStr, sf))
-                {
-                    out.kind  = ExprOperand::Kind::SENSOR;
-                    ares::util::copyZ(out.name, aliasStr, sizeof(out.name));
-                    out.field = sf;
-                    return true;
-                }
-                static char msg[80] = {};
-                snprintf(msg, sizeof(msg),
-                         "set expr: field '%s' not valid for alias '%s'",
-                         fieldStr, aliasStr);
-                setErrorLocked(msg);
-                return false;
-            }
-        }
+        if (parseExprSensorTermLocked(token, out)) { return true; }
         // Dot present but not a recognised alias — fall through to float/var.
     }
 
-    // LITERAL: token parses as a floating-point constant.
-    float val = 0.0f;
-    if (parseFloatValue(token, val))
-    {
-        out.kind    = ExprOperand::Kind::LITERAL;
-        out.literal = val;
-        return true;
-    }
-
-    // VARIABLE: token matches a declared variable name.
-    const VarEntry* v = findVarLocked(token);
-    if (v != nullptr)
-    {
-        out.kind = ExprOperand::Kind::VARIABLE;
-        ares::util::copyZ(out.name, token, sizeof(out.name));
-        return true;
-    }
-
-    static char msg[72] = {};
-    snprintf(msg, sizeof(msg),
-             "set expr: '%s' is not a sensor, variable, or literal", token);
-    setErrorLocked(msg);
-    return false;
+    return parseExprLiteralOrVariableTermLocked(token, out);
 }
 
 // ── stripAndTokenizeExpr (file-local helper) ────────────────────────────────

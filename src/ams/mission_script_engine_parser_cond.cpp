@@ -50,20 +50,33 @@ bool MissionScriptEngine::parseDeltaCondLocked(
         return false;
     }
     const AliasEntry* ae = findAliasLocked(aliasStr);
-    if (ae == nullptr)
-    {
-        char msg[56] = {};
-        snprintf(msg, sizeof(msg), "unknown alias '%s' in delta condition", aliasStr);
-        setErrorLocked(msg);
-        return false;
-    }
     SensorField sf = SensorField::ALT;
-    if (!parseSensorField(ae->kind, fieldStr, sf))
+    if (strcmp(aliasStr, "RUNTIME") == 0)
     {
-        static char msg[80] = {};
-        snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-        setErrorLocked(msg);
-        return false;
+        if (!parseRuntimeSensorField(fieldStr, sf))
+        {
+            static char msg[96] = {};
+            snprintf(msg, sizeof(msg), "field '%s' not valid for alias 'RUNTIME'", fieldStr);
+            setErrorLocked(msg);
+            return false;
+        }
+    }
+    else
+    {
+        if (ae == nullptr)
+        {
+            char msg[56] = {};
+            snprintf(msg, sizeof(msg), "unknown alias '%s' in delta condition", aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
+        if (!parseSensorField(ae->kind, fieldStr, sf))
+        {
+            static char msg[80] = {};
+            snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
     }
     float thr = 0.0f;
     if (!parseFloatValue(tok4, thr))
@@ -95,20 +108,33 @@ bool MissionScriptEngine::parseFallingRisingCondLocked(
         return false;
     }
     const AliasEntry* ae = findAliasLocked(aliasStr);
-    if (ae == nullptr)
-    {
-        static char msg[72] = {};
-        snprintf(msg, sizeof(msg), "unknown alias '%s' in falling/rising condition", aliasStr);
-        setErrorLocked(msg);
-        return false;
-    }
     SensorField sf = SensorField::ALT;
-    if (!parseSensorField(ae->kind, fieldStr, sf))
+    if (strcmp(aliasStr, "RUNTIME") == 0)
     {
-        static char msg[80] = {};
-        snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-        setErrorLocked(msg);
-        return false;
+        if (!parseRuntimeSensorField(fieldStr, sf))
+        {
+            static char msg[96] = {};
+            snprintf(msg, sizeof(msg), "field '%s' not valid for alias 'RUNTIME'", fieldStr);
+            setErrorLocked(msg);
+            return false;
+        }
+    }
+    else
+    {
+        if (ae == nullptr)
+        {
+            static char msg[72] = {};
+            snprintf(msg, sizeof(msg), "unknown alias '%s' in falling/rising condition", aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
+        if (!parseSensorField(ae->kind, fieldStr, sf))
+        {
+            static char msg[80] = {};
+            snprintf(msg, sizeof(msg), "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
     }
     out.kind = (strcmp(tok2, "falling") == 0) ? CondKind::SENSOR_DELTA_LT
                                                : CondKind::SENSOR_DELTA_GT;

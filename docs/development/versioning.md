@@ -74,6 +74,7 @@ docs/changelog/
     v2.4.1.md   ← Patch: A2-4 null-iface driver detection at activation time; `validateAliasIfacesLocked()`; 1 new lifecycle test
     v2.5.0.md   ← Minor: AMS-4.20 BUZZER.beep support (HAL, drivers, parser/runtime); P1-7 narrow bare `except Exception`; A2-6 obsolete example warning
     v2.6.0.md   ← Minor: AMS state directives for WiFi/API control; runtime callback wiring; offline parser + diagnostics support
+    v2.6.1.md   ← Minor: AMS SERIAL.report in log_every for serial-monitor telemetry output per slot
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -118,3 +119,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.4.1](../changelog/v2.4.1.md)   | 2026-06-02 | Patch   | Patch: A2-4 null-iface driver detection at activation — `validateAliasIfacesLocked()`; 1 new lifecycle test |
 | [2.5.0](../changelog/v2.5.0.md)   | 2026-06-02 | Minor   | Minor: AMS-4.20 `BUZZER.beep` (HAL + drivers + engine); P1-7 narrow bare `except Exception` in 4 script sites; A2-6 `old/test.ams` non-functional warning |
 | [2.6.0](../changelog/v2.6.0.md)   | 2026-06-09 | Minor   | Minor: AMS state directives for WiFi/API control; runtime callback wiring; offline parser + diagnostics support |
+| [2.6.1](../changelog/v2.6.1.md)   | 2026-06-15 | Minor   | Minor: AMS `SERIAL.report` support inside `log_every`; slot-selectable serial vs CSV output; offline parser support |

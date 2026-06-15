@@ -298,7 +298,7 @@ private:
                                      bool& handled);
     bool parseStateRateDirectivesLocked(const char* line, StateDef& st,
                                         BlockType& blockType, bool& matched);
-    bool parseStateReportDirectivesLocked(const char* line, const StateDef& st,
+    bool parseStateReportDirectivesLocked(const char* line, StateDef& st,
                                           BlockType& blockType, bool& matched);
     bool parseStateBlockContentLocked(const char* line,
                                       StateDef& st,
@@ -396,6 +396,8 @@ private:
                                     SetAction&  out);
     bool parseDeltaSetActionLocked(const char* rhsBuf, SetAction& out);
     bool parseExprSetActionLocked(const char* rhsBuf, SetAction& out);      ///< AMS-4.8.8: parse arithmetic expression RHS.
+    bool parseExprSensorTermLocked(const char* token, ExprOperand& out);
+    bool parseExprLiteralOrVariableTermLocked(const char* token, ExprOperand& out);
     bool parseExprTermLocked(const char* token, ExprOperand& out);          ///< Resolve one expression token to an ExprOperand.
     bool buildExprOpsLocked(const char tokens[][32], uint8_t termCount, const ExprOperand terms[], ExprOp ops[]); ///< AMS-4.8.8: map operator tokens → ExprOp[]; guard literal ÷0.
     bool parseSimpleSensorSetActionLocked(const char* rhsBuf, SetAction& out);
@@ -444,6 +446,7 @@ private:
     static bool parseGpsSensorField(const char* fieldStr, SensorField& out);
     static bool parseBaroSensorField(const char* fieldStr, SensorField& out);
     static bool parseImuSensorField(const char* fieldStr, SensorField& out);
+    static bool parseRuntimeSensorField(const char* fieldStr, SensorField& out);
     static bool splitAliasDotField(const char* expr,
                                    char*       aliasOut, uint8_t aliasSize,
                                    char*       fieldOut,  uint8_t fieldSize);
@@ -452,6 +455,8 @@ private:
     bool readSensorFloatLocked(const char*  alias,
                                SensorField  field,
                                float&       outVal) const;
+    bool readRuntimeFieldLocked(SensorField field,
+                  float&      outVal) const;
     bool readGpsFieldLocked(const AliasEntry& ae,
                             SensorField       field,
                             float&            outVal) const;
@@ -552,6 +557,9 @@ private:
     void appendLogReportSlotLocked(uint64_t nowMs,
                                    const HkSlot& slot,
                                    uint8_t slotIdx);                       ///< AMS-4.3.1: single slot variant.
+    void emitSerialReportSlotLocked(uint64_t nowMs,
+                    const HkSlot& slot,
+                    uint8_t slotIdx);                      ///< AMS-4.3.x: SERIAL.report output for log slot.
     bool writeLogHeaderIfNeededLocked(const StateDef& st);
     bool buildLogDataRowLocked(const StateDef& st,
                                uint64_t        nowMs,

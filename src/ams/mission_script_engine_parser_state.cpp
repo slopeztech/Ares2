@@ -69,7 +69,7 @@ bool MissionScriptEngine::parseStateScopedLineLocked(const char* line,
 }
 
 bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
-                                                            const StateDef& st,
+                                                            StateDef& st,
                                                             BlockType&  blockType,
                                                             bool&       matched)
 {
@@ -96,6 +96,29 @@ bool MissionScriptEngine::parseStateReportDirectivesLocked(const char* line,
             setErrorLocked("LOG.report requires log_every block");
             return false;
         }
+        if (parseCurrentLogSlot_ >= st.logSlotCount)
+        {
+            setErrorLocked("LOG.report requires an active log_every slot");
+            return false;
+        }
+        st.logSlots[parseCurrentLogSlot_].serialReport = false;
+        blockType = BlockType::LOG;
+        matched   = true;
+        return true;
+    }
+    if (startsWith(line, "SERIAL.report"))
+    {
+        if (!st.hasLogEvery)
+        {
+            setErrorLocked("SERIAL.report requires log_every block");
+            return false;
+        }
+        if (parseCurrentLogSlot_ >= st.logSlotCount)
+        {
+            setErrorLocked("SERIAL.report requires an active log_every slot");
+            return false;
+        }
+        st.logSlots[parseCurrentLogSlot_].serialReport = true;
         blockType = BlockType::LOG;
         matched   = true;
         return true;
@@ -826,22 +849,36 @@ bool MissionScriptEngine::storeAliasFieldLocked(const char* aliasStr,
                                                  uint8_t&    count,
                                                  const char* ctxName)
 {
-    const AliasEntry* ae = findAliasLocked(aliasStr);
-    if (ae == nullptr)
-    {
-        char msg[56] = {};
-        snprintf(msg, sizeof(msg), "unknown alias '%s'", aliasStr);
-        setErrorLocked(msg);
-        return false;
-    }
     SensorField sf = SensorField::ALT;
-    if (!parseSensorField(ae->kind, fieldStr, sf))
+    if (strcmp(aliasStr, "RUNTIME") == 0)
     {
-        static char msg[80] = {};
-        snprintf(msg, sizeof(msg),
-                 "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
-        setErrorLocked(msg);
-        return false;
+        if (!parseRuntimeSensorField(fieldStr, sf))
+        {
+            static char msg[96] = {};
+            snprintf(msg, sizeof(msg),
+                     "field '%s' not valid for alias 'RUNTIME'", fieldStr);
+            setErrorLocked(msg);
+            return false;
+        }
+    }
+    else
+    {
+        const AliasEntry* ae = findAliasLocked(aliasStr);
+        if (ae == nullptr)
+        {
+            char msg[56] = {};
+            snprintf(msg, sizeof(msg), "unknown alias '%s'", aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
+        if (!parseSensorField(ae->kind, fieldStr, sf))
+        {
+            static char msg[80] = {};
+            snprintf(msg, sizeof(msg),
+                     "field '%s' not valid for alias '%s'", fieldStr, aliasStr);
+            setErrorLocked(msg);
+            return false;
+        }
     }
     if (count >= ares::AMS_MAX_HK_FIELDS)
     {

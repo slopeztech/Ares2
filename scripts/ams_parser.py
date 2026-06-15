@@ -58,6 +58,16 @@ SENSOR_FIELDS: dict[str, set[str]] = {
              "gyro_x", "gyro_y", "gyro_z", "gyro_mag", "temp"},
 }
 
+RUNTIME_FIELDS: set[str] = {
+    "uptime_ms",
+    "state_idx",
+    "state_elapsed_ms",
+    "script_elapsed_ms",
+    "status_bits",
+    "engine_status",
+    "exec_enabled",
+}
+
 # ── APID → node mapping (mapApidToNode) ──────────────────────────────────────
 VALID_APIDS = {0, 1, 2, 3}
 
@@ -116,7 +126,7 @@ class AmsParser:
         self._result = ParseResult(file=path)
         self._states: list[StateSummary] = []
         self._current: Optional[StateSummary] = None
-        self._block: Optional[str] = None   # "HK" | "LOG" | None
+        self._block: Optional[str] = None   # "HK" | "LOG" | "SERIAL" | None
         self._apid: Optional[int] = None
         self._aliases: dict[str, str] = {}  # alias -> peripheral kind
         self._declared_vars: set[str] = set()  # AMS variable names declared with 'var'
@@ -415,12 +425,24 @@ class AmsParser:
             self._block = "LOG"
             return
 
+        if line.startswith("SERIAL.report"):
+            self._block = None
+            if not self._current.has_log_every:
+                self._error(ln, "SERIAL.report requires a 'log_every NNNms:' block above it")
+                return
+            self._block = "SERIAL"
+            return
+
         if self._block == "HK":
             self._parse_field(line, ln, "HK")
             return
 
         if self._block == "LOG":
             self._parse_field(line, ln, "LOG")
+            return
+
+        if self._block == "SERIAL":
+            self._parse_field(line, ln, "SERIAL")
             return
 
         if self._block == "CONDITIONS":
@@ -454,6 +476,14 @@ class AmsParser:
             return
         alias = lhs[:dot]
         field = lhs[dot + 1:]
+        if alias == "RUNTIME":
+            if field not in RUNTIME_FIELDS:
+                self._error(
+                    ln,
+                    f"field '{field}' not valid for alias 'RUNTIME' "
+                    f"(valid: {sorted(RUNTIME_FIELDS)})",
+                )
+            return
         if alias not in self._aliases:
             self._error(ln, f"unknown alias '{alias}' in condition — add 'include MODEL as {alias}'")
             return
@@ -644,19 +674,28 @@ class AmsParser:
         alias = lhs[:dot]
         field = lhs[dot + 1:]
 
-        if alias not in self._aliases:
+        if alias == "RUNTIME":
+            if field not in RUNTIME_FIELDS:
+                self._error(
+                    ln,
+                    f"field '{field}' not valid for alias 'RUNTIME' "
+                    f"(valid: {sorted(RUNTIME_FIELDS)})",
+                )
+                return
+        elif alias not in self._aliases:
             self._error(ln, f"unknown alias '{alias}' in transition condition — add 'include MODEL as {alias}'")
             return
 
-        kind = self._aliases[alias]
-        valid_fields = SENSOR_FIELDS.get(kind, set())
-        if field not in valid_fields:
-            self._error(
-                ln,
-                f"field '{field}' not valid for alias '{alias}' (kind={kind}, "
-                f"valid: {sorted(valid_fields)})",
-            )
-            return
+        if alias != "RUNTIME":
+            kind = self._aliases[alias]
+            valid_fields = SENSOR_FIELDS.get(kind, set())
+            if field not in valid_fields:
+                self._error(
+                    ln,
+                    f"field '{field}' not valid for alias '{alias}' (kind={kind}, "
+                    f"valid: {sorted(valid_fields)})",
+                )
+                return
 
         if op not in ("<", ">"):
             self._error(
@@ -771,6 +810,15 @@ class AmsParser:
 
         alias = expr[:dot]
         field = expr[dot + 1:]
+
+        if alias == "RUNTIME":
+            if field not in RUNTIME_FIELDS:
+                self._error(
+                    ln,
+                    f"field '{field}' not valid for alias 'RUNTIME' "
+                    f"(valid: {sorted(RUNTIME_FIELDS)})",
+                )
+            return
 
         if alias not in self._aliases:
             self._error(

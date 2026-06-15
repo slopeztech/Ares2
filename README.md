@@ -4,7 +4,7 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
-[![Version](https://img.shields.io/badge/version-2.6.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-2.6.1-blue)](#)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
@@ -592,8 +592,8 @@ Current memory usage:
 
 | Resource | Usage  | Total  |
 |----------|--------|--------|
-| Flash    | 27.1%  | 3 MB   |
-| RAM      | 24.0%  | 320 KB |
+| Flash    | 74.4%  | 3 MB   |
+| RAM      | 33.9%  | 320 KB |
 
 ### Flash
 
