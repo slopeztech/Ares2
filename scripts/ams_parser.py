@@ -119,7 +119,7 @@ class AmsParser:
         self._block: Optional[str] = None   # "HK" | "LOG" | None
         self._apid: Optional[int] = None
         self._aliases: dict[str, str] = {}  # alias -> peripheral kind
-        self._declared_vars: set[str] = {}  # AMS variable names declared with 'var'
+        self._declared_vars: set[str] = set()  # AMS variable names declared with 'var'
         self._hk_alias: str = "HK"
         self._event_alias: str = "EVENT"
         self._tc_alias: str = "TC"
@@ -206,6 +206,12 @@ class AmsParser:
                 m = re.match(r"var\s+(\w{1,15})\s*=", line)
                 if m:
                     self._declared_vars.add(m.group(1))
+                else:
+                    self._error(
+                        ln,
+                        "invalid variable declaration "
+                        "(expected: var name = value)"
+                    )
             return
 
         # State header
@@ -371,6 +377,7 @@ class AmsParser:
 
         if line.startswith("set "):
             self._block = None
+            self._parse_set(line, ln)
             return
 
         if line.startswith("every "):
@@ -577,7 +584,7 @@ class AmsParser:
     def _parse_transition(self, line: str, ln: int) -> None:
         # transition to TARGET when LHS OP RHS
         m = re.match(
-            r"transition\s+to\s+(\S{1,15})\s+when\s+(\S+)\s+(\S+)\s+(\S+)",
+            r"transition\s+to\s+(\S{1,15})\s+when\s+(\S+)\s+(\S+)\s+(.+)$",
             line,
         )
         if not m:
@@ -652,17 +659,68 @@ class AmsParser:
             return
 
         if op not in ("<", ">"):
-            self._error(ln, f"sensor condition only supports '<' or '>' operators, got '{op}'")
+            self._error(
+                ln,
+                f"sensor condition only supports '<' or '>' operators, got '{op}'"
+            )
             return
 
-        # Numeric threshold
+        # Expresiones AMS: (var + num) o (var - num)
+        expr = re.match(
+            r"\(\s*(\w+)\s*([+-])\s*([0-9]+(?:\.[0-9]+)?)\s*\)$",
+            rhs
+        )
+
+        if expr:
+            var_name = expr.group(1)
+
+            if var_name not in self._declared_vars:
+                self._error(
+                    ln,
+                    f"unknown variable '{var_name}' "
+                    "in threshold expression"
+                )
+                return
+
+            return
+
+        # Variable AMS
+        if rhs in self._declared_vars:
+            return
+
+        # Número literal
         try:
             val = float(rhs)
         except ValueError:
-            self._error(ln, f"invalid sensor threshold '{rhs}': not a number")
+            self._error(
+                ln,
+                f"invalid sensor threshold '{rhs}': "
+                "not a number or declared variable"
+            )
             return
-        if not math.isfinite(val):
-            self._error(ln, f"invalid sensor threshold '{rhs}': must be finite")
+
+
+    def _parse_set(self, line: str, ln: int) -> None:
+        m = re.match(
+            r"set\s+(\w+)\s*=\s*CALIBRATE\s*\(\s*([^)]+)\s*,\s*(\d+)\s*\)",
+            line,
+            re.IGNORECASE,
+        )
+
+        if not m:
+            return
+
+        expr = m.group(2).strip()
+        samples = int(m.group(3))
+
+        self._validate_sensor_expr(expr, ln, "CALIBRATE")
+
+        if samples < 1 or samples > 10:
+            self._error(
+                ln,
+                f"CALIBRATE sample count must be 1-10 "
+                f"(got {samples})"
+            )
 
     # ── Post-parse cross-checks ───────────────────────────────────────────────
 
