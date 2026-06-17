@@ -23,6 +23,8 @@
 
 #include <WiFiClient.h>
 #include <cinttypes>
+#include <cstdio>
+#include <cstring>
 
 static constexpr const char* TAG = "API.DCFG";
 
@@ -75,6 +77,12 @@ uint16_t buildDeviceConfigResponse(const DeviceConfig& devCfg,
                                    uint32_t outBufSize,
                                    uint32_t& outLen)
 {
+    if (outBuf == nullptr || outBufSize == 0U)
+    {
+        outLen = 0U;
+        return 200U;
+    }
+
     char resBuf[ares::API_MAX_RESPONSE_BODY] = {};
     const uint32_t resLen = devCfg.toPublicJson(resBuf,
                                 static_cast<uint32_t>(sizeof(resBuf)));
@@ -85,13 +93,24 @@ uint16_t buildDeviceConfigResponse(const DeviceConfig& devCfg,
         const int n = snprintf(outBuf, outBufSize,
                                "%.*s,\"reboot_required\":true}",
                                static_cast<int>(baseLen), resBuf);
-        outLen = (n > 0) ? static_cast<uint32_t>(n) : 0U;
+        if (n <= 0)
+        {
+            outLen = 0U;
+        }
+        else if (static_cast<uint32_t>(n) >= outBufSize)
+        {
+            outLen = outBufSize - 1U;
+        }
+        else
+        {
+            outLen = static_cast<uint32_t>(n);
+        }
         return 202U;
     }
 
     (void)strncpy(outBuf, resBuf, outBufSize - 1U);
     outBuf[outBufSize - 1U] = '\0';
-    outLen = resLen;
+    outLen = static_cast<uint32_t>(strlen(outBuf));
     return 200U;
 }
 
