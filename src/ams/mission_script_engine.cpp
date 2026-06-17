@@ -100,6 +100,11 @@ bool MissionScriptEngine::begin()
 // a script alias references has iface == nullptr.
 bool MissionScriptEngine::validateAliasIfacesLocked()
 {
+    auto isIfaceNull = [](auto drivers, uint8_t count, uint8_t idx) -> bool
+    {
+        return (idx < count) && (drivers[idx].iface == nullptr);
+    };
+
     for (uint8_t i = 0U; i < program_.aliasCount; i++)
     {
         const AliasEntry& ae = program_.aliases[i];
@@ -107,20 +112,16 @@ bool MissionScriptEngine::validateAliasIfacesLocked()
         switch (ae.kind)
         {
         case PeripheralKind::GPS:
-            ifaceNull = (ae.driverIdx < gpsCount_
-                         && gpsDrivers_[ae.driverIdx].iface == nullptr);
+            ifaceNull = isIfaceNull(gpsDrivers_, gpsCount_, ae.driverIdx);
             break;
         case PeripheralKind::BARO:
-            ifaceNull = (ae.driverIdx < baroCount_
-                         && baroDrivers_[ae.driverIdx].iface == nullptr);
+            ifaceNull = isIfaceNull(baroDrivers_, baroCount_, ae.driverIdx);
             break;
         case PeripheralKind::COM:
-            ifaceNull = (ae.driverIdx < comCount_
-                         && comDrivers_[ae.driverIdx].iface == nullptr);
+            ifaceNull = isIfaceNull(comDrivers_, comCount_, ae.driverIdx);
             break;
         case PeripheralKind::IMU:
-            ifaceNull = (ae.driverIdx < imuCount_
-                         && imuDrivers_[ae.driverIdx].iface == nullptr);
+            ifaceNull = isIfaceNull(imuDrivers_, imuCount_, ae.driverIdx);
             break;
         default:
             break;

@@ -30,7 +30,7 @@ Source: [src/config.h](../../src/config.h)
 
 I2C assignments:
 - **I2C0 (Wire)**: BMP280 on GPIO 1/2
-- **I2C1 (TwoWire(1))**: ADXL375 (0x53, primary IMU) and MPU-6050 (0x68, secondary IMU) on GPIO 12/13 — shared bus, distinct addresses
+- **I2C1 (TwoWire(1))**: ADXL375 (0x53) and MPU-6050 (0x68) on GPIO 12/13 — shared bus, distinct addresses. API default IMU source is selected at runtime via `PUT /api/device/config` (`default_imu_driver`).
 
 UART assignments:
 - **UART0**: USB CDC (Serial monitor)

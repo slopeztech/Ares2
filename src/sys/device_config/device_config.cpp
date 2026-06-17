@@ -19,6 +19,7 @@
 
 #include "sys/device_config/device_config.h"
 #include "debug/ares_log.h"
+#include "sys/hardware/installed_driver_registry.h"
 
 #include <ArduinoJson.h>
 #include <cstring>
@@ -28,7 +29,7 @@ static constexpr const char* TAG = "DEVCFG";
 
 /// JSON schema version — increment when the field set changes in a way
 /// that requires migration logic in load().
-static constexpr uint8_t SCHEMA_VERSION = 1U;
+static constexpr uint8_t SCHEMA_VERSION = 3U;
 
 /// Maximum raw JSON file size accepted from storage.
 static constexpr uint32_t JSON_READ_MAX = 512U;
@@ -56,6 +57,23 @@ void DeviceConfig::setDefaults()
 
     // Radio MAC key: empty → open mode (no MAC required).
     radioKeyHex_[0] = '\0';
+
+    (void)strncpy(defaultGpsDriver_, ares::hardware::defaultGpsDriverModel(),
+                  sizeof(defaultGpsDriver_) - 1U);
+    defaultGpsDriver_[sizeof(defaultGpsDriver_) - 1U] = '\0';
+
+    (void)strncpy(defaultBaroDriver_, ares::hardware::defaultBaroDriverModel(),
+                  sizeof(defaultBaroDriver_) - 1U);
+    defaultBaroDriver_[sizeof(defaultBaroDriver_) - 1U] = '\0';
+
+    (void)strncpy(defaultComDriver_, ares::hardware::defaultComDriverModel(),
+                  sizeof(defaultComDriver_) - 1U);
+    defaultComDriver_[sizeof(defaultComDriver_) - 1U] = '\0';
+
+    // Default IMU model for API status/imu endpoints.
+    (void)strncpy(defaultImuDriver_, ares::hardware::defaultImuDriverModel(),
+                  sizeof(defaultImuDriver_) - 1U);
+    defaultImuDriver_[sizeof(defaultImuDriver_) - 1U] = '\0';
 }
 
 // ── Persistence ───────────────────────────────────────────────
@@ -120,6 +138,10 @@ bool DeviceConfig::save(StorageInterface* storage) const
     doc["api_token"]     = apiToken_;
     doc["cors_origin"]   = corsOrigin_;
     doc["radio_key"]     = radioKeyHex_;
+    doc["default_gps_driver"] = defaultGpsDriver_;
+    doc["default_baro_driver"] = defaultBaroDriver_;
+    doc["default_com_driver"] = defaultComDriver_;
+    doc["default_imu_driver"] = defaultImuDriver_;
 
     char buf[JSON_READ_MAX] = {};
     const size_t len = serializeJson(doc, buf, sizeof(buf) - 1U);
@@ -275,7 +297,7 @@ static bool setFieldErr(char* errOut, uint8_t errLen, const char* msg)
  * Validate and copy the wifi_password field from a JSON variant.
  * Absent field is a no-op (returns true without setting @p changed).
  */
-static bool validateWifiPass(JsonVariant v,
+static bool validateWifiPass(JsonVariantConst v,
                               char* out, size_t outSize, bool& changed,
                               char* errOut, uint8_t errLen)
 {
@@ -312,7 +334,7 @@ static bool validateWifiPass(JsonVariant v,
  * Validate and copy the api_token field from a JSON variant.
  * Empty string is accepted (disables auth).
  */
-static bool validateToken(JsonVariant v,
+static bool validateToken(JsonVariantConst v,
                            char* out, size_t outSize, bool& changed,
                            char* errOut, uint8_t errLen)
 {
@@ -340,7 +362,7 @@ static bool validateToken(JsonVariant v,
 }
 
 /** Validate and copy the cors_origin field from a JSON variant. */
-static bool validateCors(JsonVariant v,
+static bool validateCors(JsonVariantConst v,
                           char* out, size_t outSize, bool& changed,
                           char* errOut, uint8_t errLen)
 {
@@ -369,7 +391,7 @@ static bool validateCors(JsonVariant v,
  * Validate and copy the radio_key field from a JSON variant.
  * Must be empty (disables MAC) or exactly 32 lowercase hex characters.
  */
-static bool validateRadioKey(JsonVariant v,
+static bool validateRadioKey(JsonVariantConst v,
                               char* out, size_t outSize, bool& changed,
                               char* errOut, uint8_t errLen)
 {
@@ -403,6 +425,186 @@ static bool validateRadioKey(JsonVariant v,
     return true;
 }
 
+static bool validateDefaultGpsDriver(JsonVariantConst v,
+                                     char* out, size_t outSize, bool& changed,
+                                     char* errOut, uint8_t errLen)
+{
+    if (v.isNull())           { return true; }
+    if (!v.is<const char*>()) { return setFieldErr(errOut, errLen, "default_gps_driver must be a string"); }
+
+    const char* val = v.as<const char*>();
+    if (val == nullptr) { val = ""; }
+
+    const size_t vlen = strlen(val);
+    if (vlen == 0U || vlen >= outSize)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_gps_driver must be a non-empty supported model");
+    }
+
+    const bool supported = ares::hardware::isSupportedModel(ares::hardware::DriverKind::GPS,
+                                                            val);
+    if (!supported)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_gps_driver must name an installed GPS driver");
+    }
+
+    (void)strncpy(out, val, outSize - 1U);
+    out[outSize - 1U] = '\0';
+    changed = true;
+    return true;
+}
+
+static bool validateDefaultBaroDriver(JsonVariantConst v,
+                                      char* out, size_t outSize, bool& changed,
+                                      char* errOut, uint8_t errLen)
+{
+    if (v.isNull())           { return true; }
+    if (!v.is<const char*>()) { return setFieldErr(errOut, errLen, "default_baro_driver must be a string"); }
+
+    const char* val = v.as<const char*>();
+    if (val == nullptr) { val = ""; }
+
+    const size_t vlen = strlen(val);
+    if (vlen == 0U || vlen >= outSize)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_baro_driver must be a non-empty supported model");
+    }
+
+    const bool supported = ares::hardware::isSupportedModel(ares::hardware::DriverKind::BARO,
+                                                            val);
+    if (!supported)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_baro_driver must name an installed BARO driver");
+    }
+
+    (void)strncpy(out, val, outSize - 1U);
+    out[outSize - 1U] = '\0';
+    changed = true;
+    return true;
+}
+
+static bool validateDefaultComDriver(JsonVariantConst v,
+                                     char* out, size_t outSize, bool& changed,
+                                     char* errOut, uint8_t errLen)
+{
+    if (v.isNull())           { return true; }
+    if (!v.is<const char*>()) { return setFieldErr(errOut, errLen, "default_com_driver must be a string"); }
+
+    const char* val = v.as<const char*>();
+    if (val == nullptr) { val = ""; }
+
+    const size_t vlen = strlen(val);
+    if (vlen == 0U || vlen >= outSize)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_com_driver must be a non-empty supported model");
+    }
+
+    const bool supported = ares::hardware::isSupportedModel(ares::hardware::DriverKind::COM,
+                                                            val);
+    if (!supported)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_com_driver must name an installed COM driver");
+    }
+
+    (void)strncpy(out, val, outSize - 1U);
+    out[outSize - 1U] = '\0';
+    changed = true;
+    return true;
+}
+
+/** Validate and copy the default_imu_driver field from a JSON variant. */
+static bool validateDefaultImuDriver(JsonVariantConst v,
+                                     char* out, size_t outSize, bool& changed,
+                                     char* errOut, uint8_t errLen)
+{
+    if (v.isNull())           { return true; }
+    if (!v.is<const char*>()) { return setFieldErr(errOut, errLen, "default_imu_driver must be a string"); }
+
+    const char* val = nullptr;
+    val = v.as<const char*>();
+    if (val == nullptr) { val = ""; }
+
+    const size_t vlen = strlen(val);
+    if (vlen == 0U || vlen >= outSize)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_imu_driver must be a non-empty supported model");
+    }
+
+    const bool supported = ares::hardware::isSupportedModel(ares::hardware::DriverKind::IMU,
+                                                            val);
+    if (!supported)
+    {
+        return setFieldErr(errOut, errLen,
+            "default_imu_driver must name an installed IMU driver");
+    }
+
+    (void)strncpy(out, val, outSize - 1U);
+    out[outSize - 1U] = '\0';
+    changed = true;
+    return true;
+}
+
+struct PendingDeviceConfigPatch
+{
+    char newWifiPass[ares::DEVICE_WIFI_PASS_MAX]     = {};
+    char newToken[ares::DEVICE_TOKEN_MAX]            = {};
+    char newCors[ares::DEVICE_CORS_ORIGIN_MAX]       = {};
+    char newRadioKey[ares::DEVICE_RADIO_KEY_HEX_MAX] = {};
+    char newDefaultGps[ares::DEVICE_IMU_DRIVER_MAX]  = {};
+    char newDefaultBaro[ares::DEVICE_IMU_DRIVER_MAX] = {};
+    char newDefaultCom[ares::DEVICE_IMU_DRIVER_MAX]  = {};
+    char newDefaultImu[ares::DEVICE_IMU_DRIVER_MAX]  = {};
+
+    bool wifiPassChanged   = false;
+    bool tokenChanged      = false;
+    bool corsChanged       = false;
+    bool radioKeyChanged   = false;
+    bool defaultGpsChanged = false;
+    bool defaultBaroChanged = false;
+    bool defaultComChanged = false;
+    bool defaultImuChanged = false;
+};
+
+static bool validatePatchDocument(const JsonDocument& doc,
+                                  PendingDeviceConfigPatch& patch,
+                                  char* errOut,
+                                  uint8_t errLen)
+{
+    if (!validateWifiPass(doc["wifi_password"],
+                          patch.newWifiPass, sizeof(patch.newWifiPass),
+                          patch.wifiPassChanged, errOut, errLen)) { return false; }
+    if (!validateToken(doc["api_token"],
+                       patch.newToken, sizeof(patch.newToken),
+                       patch.tokenChanged, errOut, errLen)) { return false; }
+    if (!validateCors(doc["cors_origin"],
+                      patch.newCors, sizeof(patch.newCors),
+                      patch.corsChanged, errOut, errLen)) { return false; }
+    if (!validateRadioKey(doc["radio_key"],
+                          patch.newRadioKey, sizeof(patch.newRadioKey),
+                          patch.radioKeyChanged, errOut, errLen)) { return false; }
+    if (!validateDefaultGpsDriver(doc["default_gps_driver"],
+                                  patch.newDefaultGps, sizeof(patch.newDefaultGps),
+                                  patch.defaultGpsChanged, errOut, errLen)) { return false; }
+    if (!validateDefaultBaroDriver(doc["default_baro_driver"],
+                                   patch.newDefaultBaro, sizeof(patch.newDefaultBaro),
+                                   patch.defaultBaroChanged, errOut, errLen)) { return false; }
+    if (!validateDefaultComDriver(doc["default_com_driver"],
+                                  patch.newDefaultCom, sizeof(patch.newDefaultCom),
+                                  patch.defaultComChanged, errOut, errLen)) { return false; }
+    if (!validateDefaultImuDriver(doc["default_imu_driver"],
+                                  patch.newDefaultImu, sizeof(patch.newDefaultImu),
+                                  patch.defaultImuChanged, errOut, errLen)) { return false; }
+
+    return true;
+}
+
 // ── applyJson ─────────────────────────────────────────────────
 
 bool DeviceConfig::applyJson(const char* json, uint32_t len,
@@ -422,34 +624,44 @@ bool DeviceConfig::applyJson(const char* json, uint32_t len,
         return setFieldErr(errOut, errLen, tmp);
     }
 
-    // ── Phase 1: validate all present fields into local temporaries ──────
-    char newWifiPass[ares::DEVICE_WIFI_PASS_MAX]    = {};
-    char newToken   [ares::DEVICE_TOKEN_MAX]         = {};
-    char newCors    [ares::DEVICE_CORS_ORIGIN_MAX]   = {};
-    char newRadioKey[ares::DEVICE_RADIO_KEY_HEX_MAX] = {};
-    bool wifiPassChanged  = false;
-    bool tokenChanged     = false;
-    bool corsChanged      = false;
-    bool radioKeyChanged  = false;
+    PendingDeviceConfigPatch patch = {};
+    if (!validatePatchDocument(doc, patch, errOut, errLen))
+    {
+        return false;
+    }
 
-    if (!validateWifiPass(doc["wifi_password"],
-                          newWifiPass, sizeof(newWifiPass),
-                          wifiPassChanged, errOut, errLen)) { return false; }
-    if (!validateToken(doc["api_token"],
-                       newToken, sizeof(newToken),
-                       tokenChanged, errOut, errLen))       { return false; }
-    if (!validateCors(doc["cors_origin"],
-                      newCors, sizeof(newCors),
-                      corsChanged, errOut, errLen))         { return false; }
-    if (!validateRadioKey(doc["radio_key"],
-                          newRadioKey, sizeof(newRadioKey),
-                          radioKeyChanged, errOut, errLen)) { return false; }
-
-    // ── Phase 2: commit all validated fields atomically ──────────────────
-    if (wifiPassChanged)  { (void)memcpy(wifiPassword_, newWifiPass,  sizeof(wifiPassword_)); }
-    if (tokenChanged)     { (void)memcpy(apiToken_,     newToken,     sizeof(apiToken_));     }
-    if (corsChanged)      { (void)memcpy(corsOrigin_,   newCors,      sizeof(corsOrigin_));   }
-    if (radioKeyChanged)  { (void)memcpy(radioKeyHex_,  newRadioKey,  sizeof(radioKeyHex_));  }
+    if (patch.wifiPassChanged)
+    {
+        (void)memcpy(wifiPassword_, patch.newWifiPass, sizeof(wifiPassword_));
+    }
+    if (patch.tokenChanged)
+    {
+        (void)memcpy(apiToken_, patch.newToken, sizeof(apiToken_));
+    }
+    if (patch.corsChanged)
+    {
+        (void)memcpy(corsOrigin_, patch.newCors, sizeof(corsOrigin_));
+    }
+    if (patch.radioKeyChanged)
+    {
+        (void)memcpy(radioKeyHex_, patch.newRadioKey, sizeof(radioKeyHex_));
+    }
+    if (patch.defaultGpsChanged)
+    {
+        (void)memcpy(defaultGpsDriver_, patch.newDefaultGps, sizeof(defaultGpsDriver_));
+    }
+    if (patch.defaultBaroChanged)
+    {
+        (void)memcpy(defaultBaroDriver_, patch.newDefaultBaro, sizeof(defaultBaroDriver_));
+    }
+    if (patch.defaultComChanged)
+    {
+        (void)memcpy(defaultComDriver_, patch.newDefaultCom, sizeof(defaultComDriver_));
+    }
+    if (patch.defaultImuChanged)
+    {
+        (void)memcpy(defaultImuDriver_, patch.newDefaultImu, sizeof(defaultImuDriver_));
+    }
 
     return true;
 }
@@ -467,6 +679,10 @@ uint32_t DeviceConfig::toPublicJson(char* buf, uint32_t bufSize) const
     // api_token intentionally omitted — write-only through this interface.
     doc["cors_origin"]  = corsOrigin_;
     doc["auth_enabled"] = isAuthEnabled();
+    doc["default_gps_driver"] = defaultGpsDriver_;
+    doc["default_baro_driver"] = defaultBaroDriver_;
+    doc["default_com_driver"] = defaultComDriver_;
+    doc["default_imu_driver"] = defaultImuDriver_;
     // radio_key intentionally omitted — secret, write-only (same policy as api_token).
 
     const size_t len = serializeJson(doc, buf, bufSize - 1U);
@@ -494,6 +710,26 @@ const char* DeviceConfig::corsOrigin() const
 bool DeviceConfig::isAuthEnabled() const
 {
     return apiToken_[0] != '\0';
+}
+
+const char* DeviceConfig::defaultImuDriver() const
+{
+    return defaultImuDriver_;
+}
+
+const char* DeviceConfig::defaultGpsDriver() const
+{
+    return defaultGpsDriver_;
+}
+
+const char* DeviceConfig::defaultBaroDriver() const
+{
+    return defaultBaroDriver_;
+}
+
+const char* DeviceConfig::defaultComDriver() const
+{
+    return defaultComDriver_;
 }
 
 bool DeviceConfig::checkToken(const char* provided) const

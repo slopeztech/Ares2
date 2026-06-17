@@ -252,7 +252,8 @@ bool MissionScriptEngine::readGpsFieldLocked(const AliasEntry& ae,
                                              float&            outVal) const
 {
     if (ae.driverIdx >= gpsCount_) { return false; }
-    GpsInterface* gps = gpsDrivers_[ae.driverIdx].iface;
+    GpsInterface* gps = nullptr;
+    gps = gpsDrivers_[ae.driverIdx].iface;
     if (gps == nullptr) { return false; }
 
     const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
@@ -299,7 +300,8 @@ bool MissionScriptEngine::readBaroFieldLocked(const AliasEntry& ae,
                                               float&            outVal) const
 {
     if (ae.driverIdx >= baroCount_) { return false; }
-    BarometerInterface* baro = baroDrivers_[ae.driverIdx].iface;
+    BarometerInterface* baro = nullptr;
+    baro = baroDrivers_[ae.driverIdx].iface;
     if (baro == nullptr) { return false; }
 
     const uint8_t  aliasIdx = static_cast<uint8_t>(&ae - &program_.aliases[0]);
@@ -374,7 +376,8 @@ bool MissionScriptEngine::readImuFieldLocked(const AliasEntry& ae,
                                              float&            outVal) const
 {
     if (ae.driverIdx >= imuCount_) { return false; }
-    ImuInterface* imu = imuDrivers_[ae.driverIdx].iface;
+    ImuInterface* imu = nullptr;
+    imu = imuDrivers_[ae.driverIdx].iface;
     if (imu == nullptr) { return false; }
 
     const uint8_t aliasIdx    = static_cast<uint8_t>(&ae - &program_.aliases[0]);

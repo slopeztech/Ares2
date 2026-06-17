@@ -40,6 +40,8 @@
 #include "hal/baro/barometer_interface.h"
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
+#include "hal/imu/imu_selection_interface.h"
+#include "hal/driver_selection_interface.h"
 #include "hal/pulse/pulse_interface.h"
 #include "hal/radio/radio_interface.h"
 #include "hal/storage/storage_interface.h"
@@ -105,7 +107,11 @@ public:
               HardwareSerial* loraUart = nullptr,
               RadioInterface* radio = nullptr,
               PulseInterface* pulse = nullptr,
-              ares::RadioDispatcher* dispatcher = nullptr);
+              ares::RadioDispatcher* dispatcher = nullptr,
+              ImuSelectionInterface* imuSelector = nullptr,
+              DriverSelectionInterface* gpsSelector = nullptr,
+              DriverSelectionInterface* baroSelector = nullptr,
+              DriverSelectionInterface* comSelector = nullptr);
 
     // Non-copyable, non-movable (CERT-18.3)
     ApiServer(const ApiServer&)            = delete;
@@ -354,6 +360,10 @@ private:
     RadioInterface*      radio_;      ///< Nullable — radio health probe.
     PulseInterface*      pulse_;      ///< Nullable — pulse status disabled if null.
     ares::RadioDispatcher* dispatcher_; ///< Nullable — retry_drops counter source.
+    ImuSelectionInterface* imuSelector_; ///< Nullable — runtime IMU selector.
+    DriverSelectionInterface* gpsSelector_;  ///< Nullable — runtime GPS selector.
+    DriverSelectionInterface* baroSelector_; ///< Nullable — runtime BARO selector.
+    DriverSelectionInterface* comSelector_;  ///< Nullable — runtime COM selector.
 
     // ── Shared state ────────────────────────────────────────
     RuntimeConfig config_ = {};

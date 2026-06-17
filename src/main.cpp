@@ -22,6 +22,11 @@
 #include "drivers/imu/adxl375_driver.h"
 #include "drivers/radio/dxlr03_driver.h"
 #include "drivers/pulse/pulse_driver.h"
+#include "sys/baro/baro_selector.h"
+#include "sys/com/com_selector.h"
+#include "sys/gps/gps_selector.h"
+#include "sys/imu/imu_selector.h"
+#include "sys/hardware/installed_driver_registry.h"
 #include "sys/led/neopixel_driver.h"
 #include "sys/led/status_led.h"
 #include "sys/wifi/wifi_ap.h"
@@ -61,6 +66,48 @@ static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
                              ares::LORA_UART_BAUD);
 static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
 static Adxl375Driver  imu2(imuWire, ares::ADXL375_I2C_ADDR);
+
+static void bindInstalledDrivers(BarometerInterface* barometer)
+{
+    const ares::hardware::InstalledHardwareRefs refs = {
+        barometer,
+        &gps,
+        &radio,
+        &imu,
+        &imu2
+    };
+    ares::hardware::bindInstalledHardware(refs);
+}
+
+struct InstalledDriversBootstrap
+{
+    InstalledDriversBootstrap()
+    {
+        bindInstalledDrivers(nullptr);
+    }
+};
+
+static InstalledDriversBootstrap s_installedDriversBootstrap;
+
+static BaroSelector apiBaroSelector(ares::hardware::baroDrivers().entries,
+                                    ares::hardware::baroDrivers().count,
+                                    0U);
+static BaroSelectorControl apiBaroSelectorControl(apiBaroSelector);
+
+static GpsSelector apiGpsSelector(ares::hardware::gpsDrivers().entries,
+                                  ares::hardware::gpsDrivers().count,
+                                  0U);
+static GpsSelectorControl apiGpsSelectorControl(apiGpsSelector);
+
+static ComSelector apiComSelector(ares::hardware::comDrivers().entries,
+                                  ares::hardware::comDrivers().count,
+                                  0U);
+static ComSelectorControl apiComSelectorControl(apiComSelector);
+
+static ImuSelector apiImuSelector(ares::hardware::imuDrivers().entries,
+                                  ares::hardware::imuDrivers().count,
+                                  0U);
+static ImuSelectorControl apiImuSelectorControl(apiImuSelector);
 static NeopixelDriver led(ares::PIN_LED_RGB);
 static StatusLed      statusLed(led);
 // Pulse channel configuration.  Fire and continuity-sense GPIOs come from
@@ -88,27 +135,15 @@ static LittleFsStorage storage;
 // Interface references — all downstream code uses these.
 static LedInterface&       ledIf     = led;
 static StorageInterface&   storageIf = storage;
-static RadioInterface&     radioIf   = radio;
-// Driver registries — enumerate every physical peripheral available to AMS scripts.
-// Scripts select which driver to use via: include MODEL as ALIAS
-// s_baroIfaces[0] and s_baroDrivers[0].iface are nullptr until setup() patches
-// them after pBaro is placement-new-constructed (P1-3).
-static BarometerInterface*        s_baroIfaces[]   = { nullptr };
-static GpsInterface* const        kGpsIfaces[]    = { &gps  };
-static const ares::ams::GpsEntry  kGpsDrivers[]   = { { "BN220",  kGpsIfaces[0]  } };
-static ares::ams::BaroEntry       s_baroDrivers[]  = { { "BMP280", nullptr } };
-static const ares::ams::ComEntry  kComDrivers[]   = { { "DXLR03", &radioIf } };
-static ImuInterface* const        kImuIfaces[]    = { &imu, &imu2 };
-static const ares::ams::ImuEntry  kImuDrivers[]   = { { "MPU6050", kImuIfaces[0] },
-                                                       { "ADXL375", kImuIfaces[1] } };
+static RadioInterface&     radioIf   = apiComSelector;
 
 // REST API server — receives references to interfaces.
 static ares::ams::MissionScriptEngine missionEngine(
     storageIf,
-    kGpsDrivers,  static_cast<uint8_t>(1),
-    s_baroDrivers, static_cast<uint8_t>(1),
-    kComDrivers,  static_cast<uint8_t>(1),
-    kImuDrivers,  static_cast<uint8_t>(2),
+    ares::hardware::gpsDrivers().entries,  ares::hardware::gpsDrivers().count,
+    ares::hardware::baroDrivers().entries, ares::hardware::baroDrivers().count,
+    ares::hardware::comDrivers().entries,  ares::hardware::comDrivers().count,
+    ares::hardware::imuDrivers().entries,  ares::hardware::imuDrivers().count,
     &pulse);
 // Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
 // frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
@@ -211,8 +246,12 @@ static void applyMissionStateDirective(bool wifiEnabled, bool apiEnabled)
 
 static bool startApiServer()
 {
-    ApiServer* const p = new (s_apiBuf) ApiServer(
-        wifiAp, *s_baroIfaces[0], *kGpsIfaces[0], *kImuIfaces[0],
+    ApiServer* p = nullptr;
+    p = new (s_apiBuf) ApiServer(
+        wifiAp,
+        apiBaroSelector,
+        apiGpsSelector,
+        apiImuSelector,
         deviceConfig,
         &storageIf, &missionEngine,
         &statusLed,
@@ -220,7 +259,11 @@ static bool startApiServer()
         &gpsSerial, &loraSerial,
         &radioIf,
         &pulse,
-        &radioDispatcher);
+        &radioDispatcher,
+        &apiImuSelectorControl,
+        &apiGpsSelectorControl,
+        &apiBaroSelectorControl,
+        &apiComSelectorControl);
     if (!p->begin()) { return false; }
     pApiServer = p;
     return true;
@@ -289,24 +332,37 @@ void setup() // NOLINT(readability-function-size)
     Wire.begin(ares::PIN_I2C_SDA, ares::PIN_I2C_SCL, ares::I2C_FREQ);
     Wire.setTimeOut(ares::I2C_TIMEOUT_MS);
     // [P1-3] Construct baro here — Wire is now initialised (SIOF fix).
-    pBaro               = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
-    s_baroIfaces[0]      = pBaro;
-    s_baroDrivers[0].iface = pBaro;
+    pBaro = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
+    bindInstalledDrivers(pBaro);
     // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
     // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
     imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
 
-    for (BarometerInterface* iface : s_baroIfaces)
+    const ares::hardware::DriverList<ares::hardware::BaroDriverEntry>& baroDrivers =
+        ares::hardware::baroDrivers();
+    for (uint8_t i = 0U; i < baroDrivers.count; i++)
     {
+        BarometerInterface* const iface = baroDrivers.entries[i].iface;
+        if (iface == nullptr) { continue; }
         if (!iface->begin()) { LOG_W("BOOT", "baro begin() failed"); }
     }
-    for (ImuInterface* iface : kImuIfaces)
+
+    const ares::hardware::DriverList<ares::hardware::ImuDriverEntry>& imuDrivers =
+        ares::hardware::imuDrivers();
+    for (uint8_t i = 0U; i < imuDrivers.count; i++)
     {
+        ImuInterface* const iface = imuDrivers.entries[i].iface;
+        if (iface == nullptr) { continue; }
         if (!iface->begin()) { LOG_W("BOOT", "imu begin() failed"); }
     }
-    for (GpsInterface* iface : kGpsIfaces)
+
+    const ares::hardware::DriverList<ares::hardware::GpsDriverEntry>& gpsDrivers =
+        ares::hardware::gpsDrivers();
+    for (uint8_t i = 0U; i < gpsDrivers.count; i++)
     {
+        GpsInterface* const iface = gpsDrivers.entries[i].iface;
+        if (iface == nullptr) { continue; }
         if (!iface->begin()) { LOG_W("BOOT", "gps begin() failed"); }
     }
     if (!pulse.begin()) { LOG_W("BOOT", "pulse begin() failed"); }
@@ -332,10 +388,15 @@ void setup() // NOLINT(readability-function-size)
         (void)deviceConfig.provisionIfFirstBoot(&storageIf);
     }
 
+    (void)apiBaroSelector.selectDriverByName(deviceConfig.defaultBaroDriver());
+    (void)apiGpsSelector.selectDriverByName(deviceConfig.defaultGpsDriver());
+    (void)apiComSelector.selectDriverByName(deviceConfig.defaultComDriver());
+    (void)apiImuSelector.selectDriverByName(deviceConfig.defaultImuDriver());
+
     // Wire radio MAC key into the dispatcher (APUS-17).
     applyRadioMacKey(deviceConfig, radioDispatcher);
 
-    // LoRa radio transceiver (UART2)
+    // COM transceiver(s)
     (void)radioIf.begin();
 
     // WiFi AP — must be up before API server.
@@ -386,7 +447,13 @@ void loop()
     const uint64_t nowAms   = millis64();
     const uint64_t tickStart = nowAms;
 
-    for (GpsInterface* iface : kGpsIfaces) { iface->update(); }
+    const ares::hardware::DriverList<ares::hardware::GpsDriverEntry>& gpsDrivers =
+        ares::hardware::gpsDrivers();
+    for (uint8_t i = 0U; i < gpsDrivers.count; i++)
+    {
+        GpsInterface* const iface = gpsDrivers.entries[i].iface;
+        if (iface != nullptr) { iface->update(); }
+    }
     radioDispatcher.poll(now);
     logRuntimeSecrets(now, lastWifiPasswordPrintMs, lastApiTokenPrintMs);
 

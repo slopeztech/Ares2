@@ -7,7 +7,7 @@
  * parsed, all fields fall back to compile-time defaults from config.h
  * (backward-compatible open mode — no auth, factory WiFi password).
  *
- * Configurable parameters (schema v1):
+ * Configurable parameters (schema v3):
  * | Key            | Type   | Default       | Description                            |
  * |----------------|--------|---------------|----------------------------------------|
  * | wifi_password  | string | "ares1234"    | WPA2-PSK for the soft-AP.              |
@@ -16,6 +16,11 @@
  * |                |        |               | Empty = auth disabled.  8-64 chars.    |
  * | cors_origin    | string | "*"           | Access-Control-Allow-Origin value.     |
  * |                |        |               | Use "*", "null", or a specific origin. |
+ * | default_imu_driver | string | "MPU6050" | IMU model used by status/imu endpoints |
+ * |                |        |               | and other default API sensor reads.    |
+ * | default_gps_driver | string | "BN220" | GPS model used by status endpoints      |
+ * | default_baro_driver | string | "BMP280" | BARO model used by status endpoints   |
+ * | default_com_driver | string | "DXLR03" | COM/radio model used by runtime I/O    |
  *
  * Auth behaviour:
  *   - When api_token is empty: all endpoints are open (legacy behaviour).
@@ -160,6 +165,20 @@ public:
     bool isAuthEnabled() const;
 
     /**
+     * @return Model name used as default IMU for API sensor endpoints.
+     */
+    const char* defaultImuDriver() const;
+
+    /** @return Model name used as default GPS for API endpoints. */
+    const char* defaultGpsDriver() const;
+
+    /** @return Model name used as default BARO for API endpoints. */
+    const char* defaultBaroDriver() const;
+
+    /** @return Model name used as default COM/radio driver. */
+    const char* defaultComDriver() const;
+
+    /**
      * Constant-time token comparison (prevents timing side-channels).
      *
      * A byte-XOR accumulator is used so the comparison always runs the
@@ -207,6 +226,10 @@ private:
     char apiToken_    [ares::DEVICE_TOKEN_MAX]       = {};  ///< Bearer token (empty = disabled).
     char corsOrigin_  [ares::DEVICE_CORS_ORIGIN_MAX] = {};  ///< CORS origin value.
     char radioKeyHex_ [ares::DEVICE_RADIO_KEY_HEX_MAX] = {}; ///< Radio MAC key as hex (empty = open mode).
+    char defaultGpsDriver_[ares::DEVICE_IMU_DRIVER_MAX]  = {}; ///< Default API GPS model name.
+    char defaultBaroDriver_[ares::DEVICE_IMU_DRIVER_MAX] = {}; ///< Default API BARO model name.
+    char defaultComDriver_[ares::DEVICE_IMU_DRIVER_MAX]  = {}; ///< Default COM/radio model name.
+    char defaultImuDriver_[ares::DEVICE_IMU_DRIVER_MAX] = {}; ///< Default API IMU model name.
 
     /** Set by provisionIfFirstBoot() when new credentials were generated this session. */
     bool firstBootProvisioned_ = false;

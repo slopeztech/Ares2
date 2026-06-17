@@ -1,7 +1,7 @@
 [DOCUMENT]
-TITLE: Software Requirements Specification -- ARES v2.6.2
-VERSION: 2.6.2
-DATE: 2026-06-15
+TITLE: Software Requirements Specification -- ARES v2.6.3
+VERSION: 2.6.3
+DATE: 2026-06-17
 
 [GRAMMAR]
 ELEMENTS:
@@ -35,7 +35,7 @@ ARES (Amateur Rocket Embedded System) is avionics firmware for amateur rockets
 running on an ESP32-S3 (dual-core Xtensa LX7, 240 MHz, IDF FreeRTOS).  This
 document captures verifiable software requirements derived from the implemented
 coding standards (AMS, RTOS, PO10, MISRA, CERT, APUS, REST) and from the
-behaviour observable in the current firmware source (v2.6.2).
+behaviour observable in the current firmware source (v2.6.3).
 
 Requirement UIDs follow the pattern SRS-NNNN (zero-padded 4 digits, blocks of 1000):
 
