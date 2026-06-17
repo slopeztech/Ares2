@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.4.0"
+#define ARES_VERSION_STRING "2.6.3"
 ```
 
 ---
@@ -76,6 +76,7 @@ docs/changelog/
     v2.6.0.md   ← Minor: AMS state directives for WiFi/API control; runtime callback wiring; offline parser + diagnostics support
     v2.6.1.md   ← Minor: AMS SERIAL.report in log_every for serial-monitor telemetry output per slot
     v2.6.2.md   ← Patch: pre-arm CALIBRATE progression fix + integer-safe RUNTIME HK mapping
+    v2.6.3.md   ← Patch: centralized installed-driver registry + runtime driver selection/defaults (GPS/BARO/COM/IMU)
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -122,3 +123,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.6.0](../changelog/v2.6.0.md)   | 2026-06-09 | Minor   | Minor: AMS state directives for WiFi/API control; runtime callback wiring; offline parser + diagnostics support |
 | [2.6.1](../changelog/v2.6.1.md)   | 2026-06-15 | Minor   | Minor: AMS `SERIAL.report` support inside `log_every`; slot-selectable serial vs CSV output; offline parser support |
 | [2.6.2](../changelog/v2.6.2.md)   | 2026-06-15 | Patch   | Patch: pre-arm `CALIBRATE` progression in `tick()` while `LOADED`; integer-safe `RUNTIME` HK field mapping; docs/example version alignment |
+| [2.6.3](../changelog/v2.6.3.md)   | 2026-06-17 | Patch   | Patch: centralized installed-driver registry; runtime selectors/default drivers (GPS/BARO/COM/IMU) via DeviceConfig and API; docs + ADXL375 AMS example |

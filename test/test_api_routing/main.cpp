@@ -40,6 +40,9 @@ void test_i2c_scan_blocked_in_flight(void);
 void test_uart_scan_blocked_in_flight(void);
 void test_status_200_reason_phrase_ok(void);
 void test_put_device_config_202_reason_accepted(void);
+void test_applyjson_accepts_supported_default_drivers(void);
+void test_applyjson_rejects_unsupported_default_driver_model(void);
+void test_topublicjson_emits_all_default_driver_fields(void);
 
 // Test function declarations (defined in test_http_parser.cpp)
 void test_hc_empty_request_no_response(void);
@@ -101,6 +104,11 @@ int main(void)
     // ── H6: correct reason phrases in responses ───────────────
     RUN_TEST(test_status_200_reason_phrase_ok);
     RUN_TEST(test_put_device_config_202_reason_accepted);
+
+    // ── Default driver fields: validation + serialization ─────
+    RUN_TEST(test_applyjson_accepts_supported_default_drivers);
+    RUN_TEST(test_applyjson_rejects_unsupported_default_driver_model);
+    RUN_TEST(test_topublicjson_emits_all_default_driver_fields);
 
     // ── P3-4: HTTP parser robustness (handleClient fuzz layer) ───
     RUN_TEST(test_hc_empty_request_no_response);

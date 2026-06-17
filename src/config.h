@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.6.2"
+#define ARES_VERSION_STRING "2.6.3"
 
 namespace ares
 {
@@ -158,6 +158,8 @@ constexpr uint8_t     DEVICE_TOKEN_MAX       = 65U;
 constexpr uint8_t     DEVICE_CORS_ORIGIN_MAX = 128U;
 /// Radio MAC key as lowercase hex string, including NUL (16 binary bytes = 32 hex chars).
 constexpr uint8_t     DEVICE_RADIO_KEY_HEX_MAX = 33U;
+/// Default IMU model string persisted in device config (e.g. "MPU6050").
+constexpr uint8_t     DEVICE_IMU_DRIVER_MAX = 16U;
 
 // ── WiFi AP (ground configuration) ─────────────────────────
 constexpr const char* WIFI_AP_PASSWORD    = "ares1234"; ///< AP WPA2 factory-default password.

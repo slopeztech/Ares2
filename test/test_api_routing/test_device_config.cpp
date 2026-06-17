@@ -392,3 +392,62 @@ void test_put_device_config_202_reason_accepted(void)
     TEST_ASSERT_EQUAL_INT(202, c.statusCode());
     TEST_ASSERT_NOT_NULL(strstr(c.response().c_str(), "202 Accepted"));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Default driver model validation and serialization
+// ═══════════════════════════════════════════════════════════════════════════
+
+void test_applyjson_accepts_supported_default_drivers(void)
+{
+    DeviceConfig cfg;
+    const char* patch =
+        R"({"default_gps_driver":"BN220","default_baro_driver":"BMP280","default_com_driver":"DXLR03","default_imu_driver":"ADXL375"})";
+
+    char err[96] = {};
+    const bool ok = cfg.applyJson(patch,
+                                  static_cast<uint32_t>(strlen(patch)),
+                                  err,
+                                  static_cast<uint8_t>(sizeof(err)));
+
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_STRING("BN220", cfg.defaultGpsDriver());
+    TEST_ASSERT_EQUAL_STRING("BMP280", cfg.defaultBaroDriver());
+    TEST_ASSERT_EQUAL_STRING("DXLR03", cfg.defaultComDriver());
+    TEST_ASSERT_EQUAL_STRING("ADXL375", cfg.defaultImuDriver());
+}
+
+void test_applyjson_rejects_unsupported_default_driver_model(void)
+{
+    DeviceConfig cfg;
+    const char* patch = R"({"default_gps_driver":"GPS_UNKNOWN"})";
+
+    char err[96] = {};
+    const bool ok = cfg.applyJson(patch,
+                                  static_cast<uint32_t>(strlen(patch)),
+                                  err,
+                                  static_cast<uint8_t>(sizeof(err)));
+
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL_STRING("default_gps_driver must name an installed GPS driver", err);
+}
+
+void test_topublicjson_emits_all_default_driver_fields(void)
+{
+    DeviceConfig cfg;
+    const char* patch =
+        R"({"default_gps_driver":"BN220","default_baro_driver":"BMP280","default_com_driver":"DXLR03","default_imu_driver":"MPU6050"})";
+    char err[96] = {};
+    TEST_ASSERT_TRUE(cfg.applyJson(patch,
+                                   static_cast<uint32_t>(strlen(patch)),
+                                   err,
+                                   static_cast<uint8_t>(sizeof(err))));
+
+    char buf[512] = {};
+    const uint32_t len = cfg.toPublicJson(buf, static_cast<uint32_t>(sizeof(buf)));
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, len);
+
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_gps_driver\":\"BN220\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_baro_driver\":\"BMP280\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_com_driver\":\"DXLR03\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_imu_driver\":\"MPU6050\""));
+}

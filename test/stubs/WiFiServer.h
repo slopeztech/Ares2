@@ -26,6 +26,7 @@ public:
     explicit WiFiServer(uint16_t /*port*/) {}
 
     void begin()              {}
+    void stop()               {}
     void setNoDelay(bool /*flag*/) {}
 
     /** Returns a disconnected client so run() skips the handler body. */

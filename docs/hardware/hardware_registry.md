@@ -108,7 +108,7 @@ Full details: [gps_bn220.md](gps_bn220.md)
 
 ---
 
-### MPU-6050 IMU (Accelerometer + Gyroscope) — secondary
+### MPU-6050 IMU (Accelerometer + Gyroscope)
 
 | Property          | Value                                         |
 |-------------------|-----------------------------------------------|
@@ -180,7 +180,7 @@ The passive driver selects `BUZZER_DEFAULT_FREQ_HZ` when `freqHz == 0`
 ---
 
 
-### ADXL375 High-g Accelerometer — primary IMU
+### ADXL375 High-g Accelerometer
 
 | Property          | Value                                                |
 |-------------------|------------------------------------------------------|
@@ -197,6 +197,10 @@ The passive driver selects `BUZZER_DEFAULT_FREQ_HZ` when `freqHz == 0`
 
 Pins: same I2C1 SDA/SCL as MPU-6050 (GPIO 12/13) — addresses are distinct (0x53 vs 0x68),
 no bus conflict.  See [Pin Map](pin_map.md).
+
+API note: the preferred IMU source for `GET /api/status`, `GET /api/imu`, and
+`GET /api/imu/health` is runtime-selectable and persisted through
+`PUT /api/device/config` (`default_imu_driver`: `MPU6050` or `ADXL375`).
 
 **AMS sensor tokens** (via `include ADXL375 as IMU`):
 

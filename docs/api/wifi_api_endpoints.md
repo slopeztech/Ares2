@@ -137,6 +137,8 @@ Scan endpoints (`POST /api/scans/i2c`, `POST /api/scans/uart`) are blocked in fl
 
 `baro`, `gps`, and `imu` objects are **always present** in the response. Each always contains a `driver` field with the sensor model string. Measurement fields (`pressurePa`, `latitude`, `accelX`, etc.) are only included when the corresponding `health` flag is `true`.
 
+The IMU `driver` value reflects the currently active API IMU source. The preferred source is configured by `default_imu_driver` in `PUT /api/device/config` and persists across reboot. If the preferred IMU is not ready or returns read errors, the runtime selector can automatically fall back to another configured IMU driver.
+
 `health.radio_retry_drops` is the cumulative count of TX frames dropped because the retry buffer (`kMaxRetrySlots = 4`) was full.  A value of `0` is normal; a non-zero and growing value indicates that ACKs from the ground station are not arriving fast enough to free retry slots (link degradation — APUS-4.5).
 
 ---
@@ -152,6 +154,7 @@ Scan endpoints (`POST /api/scans/i2c`, `POST /api/scans/uart`) are blocked in fl
 {
   "ok": true,
   "status": "ok",
+  "driver": "ADXL375",
   "timestampMs": 4500,
   "accelX": 0.12, "accelY": -0.03, "accelZ": 9.81,
   "gyroX": 0.8, "gyroY": -0.2, "gyroZ": 0.1,
@@ -171,7 +174,7 @@ If `ok` is `false`, only `ok`, `status`, and `timestampMs` are present.
 
 **Response:**
 ```json
-{ "ok": true, "status": "ok", "timestampMs": 4500 }
+{ "ok": true, "status": "ok", "driver": "ADXL375", "timestampMs": 4500 }
 ```
 
 ---
@@ -412,11 +415,15 @@ The server validates all fields first and only applies changes if all are valid 
   "wifi_password": "ares1234",
   "cors_origin": "*",
   "auth_enabled": false,
-  "_schema": 1
+  "default_gps_driver": "BN220",
+  "default_baro_driver": "BMP280",
+  "default_com_driver": "DXLR03",
+  "default_imu_driver": "MPU6050",
+  "_schema": 3
 }
 ```
 
-`auth_enabled` is `true` when a non-empty `api_token` has been configured. The token itself is never returned.
+`auth_enabled` is `true` when a non-empty `api_token` has been configured. The token itself is never returned. The `default_*_driver` fields control the preferred runtime source used by API reads and COM runtime routing.
 
 ---
 
@@ -431,7 +438,11 @@ The server validates all fields first and only applies changes if all are valid 
 {
   "wifi_password": "MySecurePass99",
   "api_token": "AbCdEfGh1234XyZw",
-  "cors_origin": "http://192.168.4.2"
+  "cors_origin": "http://192.168.4.2",
+  "default_gps_driver": "BN220",
+  "default_baro_driver": "BMP280",
+  "default_com_driver": "DXLR03",
+  "default_imu_driver": "ADXL375"
 }
 ```
 
@@ -442,6 +453,21 @@ The server validates all fields first and only applies changes if all are valid 
 | `wifi_password`  | string | 8–63 printable ASCII chars, or `""` to keep current | **Yes — AP restart required** |
 | `api_token`      | string | 8–64 printable ASCII chars, or `""` to disable auth | No |
 | `cors_origin`    | string | 1–127 chars (`"*"`, `"null"`, or a specific origin) | No |
+| `default_gps_driver` | string | Installed GPS model from runtime registry | No |
+| `default_baro_driver` | string | Installed BARO model from runtime registry | No |
+| `default_com_driver` | string | Installed COM model from runtime registry | No |
+| `default_imu_driver` | string | Installed IMU model from runtime registry | No |
+
+**Valid models (dynamic, sourced from installed driver registry):**
+
+The accepted values are validated against the compiled-in installed registry in `src/sys/hardware/installed_driver_registry.cpp`. If this registry changes in a future build, valid values change automatically.
+
+| Field | Valid values in current build |
+|-------|-------------------------------|
+| `default_gps_driver` | `BN220` |
+| `default_baro_driver` | `BMP280` |
+| `default_com_driver` | `DXLR03` |
+| `default_imu_driver` | `MPU6050`, `ADXL375` |
 
 Omitting a field leaves it unchanged. Sending `""` for `wifi_password` is a no-op (preserves the current stored password). Sending `""` for `api_token` disables authentication.
 
@@ -452,7 +478,7 @@ Omitting a field leaves it unchanged. Sending `""` for `wifi_password` is a no-o
 | Only non-password fields changed | `200 OK` | Current device config |
 | `wifi_password` changed | `202 Accepted` | Current device config + `"reboot_required": true` |
 
-**Important:** The `wifi_password` change is applied immediately to the stored config and survives reboot, but the running soft-AP will not use the new password until the device is rebooted. The `202 Accepted` status code together with the `"reboot_required": true` field in the response body are the signals that a reboot is needed. All other fields (`api_token`, `cors_origin`) take effect immediately.
+**Important:** The `wifi_password` change is applied immediately to the stored config and survives reboot, but the running soft-AP will not use the new password until the device is rebooted. The `202 Accepted` status code together with the `"reboot_required": true` field in the response body are the signals that a reboot is needed. All other fields (`api_token`, `cors_origin`, and every `default_*_driver`) take effect immediately.
 
 > **Security note:** This endpoint itself is protected when token auth is enabled — you must supply `X-ARES-Token` to change the security configuration.
 
@@ -613,7 +639,7 @@ Run once after flashing, before any field deployment:
 
 ```
 1. GET  /api/device/config               # read current security config
-2. PUT  /api/device/config               # set wifi_password, api_token, cors_origin
+2. PUT  /api/device/config               # set wifi_password, api_token, cors_origin, default_*_driver
 3. Reboot the device                     # new wifi_password takes effect
 4. Reconnect with the new password
 5. GET  /api/device/config               # confirm auth_enabled: true
@@ -626,16 +652,17 @@ All subsequent requests must include `X-ARES-Token: <token>` in the header.
 ```
 1. GET  /api/status                      # verify sensors and mode = IDLE
 2. POST /api/scans/i2c                   # confirm BMP280 + ADXL375 (+ MPU-6050 if fitted)
-3. POST /api/scans/uart                  # confirm GPS NMEA stream + LoRa ready
-4. GET  /api/storage/health              # confirm LittleFS mounted
-5. GET  /api/missions                    # list stored scripts
-6. PUT  /api/missions/flight.ams         # upload mission script (raw AMS text)
-7. GET  /api/missions/flight.ams         # verify stored script matches source
-8. GET  /api/config                      # review config
-9. PUT  /api/config                      # adjust if needed (e.g. telemetry cadence)
-10. POST /api/mission/activate {"file":"flight.ams"}   # parse + load into engine
-11. GET  /api/mission                    # confirm status = "loaded", state = "WAIT"
-12. POST /api/arm                        # inject LAUNCH, enter FLIGHT mode
+3. PUT  /api/device/config               # select default_*_driver values if needed
+4. POST /api/scans/uart                  # confirm GPS NMEA stream + LoRa ready
+5. GET  /api/storage/health              # confirm LittleFS mounted
+6. GET  /api/missions                    # list stored scripts
+7. PUT  /api/missions/flight.ams         # upload mission script (raw AMS text)
+8. GET  /api/missions/flight.ams         # verify stored script matches source
+9. GET  /api/config                      # review config
+10. PUT  /api/config                     # adjust if needed (e.g. telemetry cadence)
+11. POST /api/mission/activate {"file":"flight.ams"}   # parse + load into engine
+12. GET  /api/mission                    # confirm status = "loaded", state = "WAIT"
+13. POST /api/arm                        # inject LAUNCH, enter FLIGHT mode
 ```
 
 ### After recovery

@@ -23,8 +23,98 @@
 
 #include <WiFiClient.h>
 #include <cinttypes>
+#include <cstdio>
+#include <cstring>
 
 static constexpr const char* TAG = "API.DCFG";
+
+namespace
+{
+
+bool persistDeviceConfig(const DeviceConfig& devCfg,
+                                StorageInterface* storage)
+{
+    const bool saved = devCfg.save(storage);
+    if (!saved && storage != nullptr)
+    {
+        LOG_E(TAG, "PUT /api/device/config: LittleFS write error");
+        return false;
+    }
+    if (!saved)
+    {
+        LOG_W(TAG, "PUT /api/device/config: no storage backend, running in-memory only");
+    }
+    return true;
+}
+
+void applyRuntimeDriverSelections(const DeviceConfig& devCfg,
+                                  ImuSelectionInterface* imuSelector,
+                                  DriverSelectionInterface* gpsSelector,
+                                  DriverSelectionInterface* baroSelector,
+                                  DriverSelectionInterface* comSelector)
+{
+    if (imuSelector != nullptr)
+    {
+        (void)imuSelector->selectDriverByName(devCfg.defaultImuDriver());
+    }
+    if (gpsSelector != nullptr)
+    {
+        (void)gpsSelector->selectDriverByName(devCfg.defaultGpsDriver());
+    }
+    if (baroSelector != nullptr)
+    {
+        (void)baroSelector->selectDriverByName(devCfg.defaultBaroDriver());
+    }
+    if (comSelector != nullptr)
+    {
+        (void)comSelector->selectDriverByName(devCfg.defaultComDriver());
+    }
+}
+
+uint16_t buildDeviceConfigResponse(const DeviceConfig& devCfg,
+                                   bool wifiPassChanged,
+                                   char* outBuf,
+                                   uint32_t outBufSize,
+                                   uint32_t& outLen)
+{
+    if (outBuf == nullptr || outBufSize == 0U)
+    {
+        outLen = 0U;
+        return 200U;
+    }
+
+    char resBuf[ares::API_MAX_RESPONSE_BODY] = {};
+    const uint32_t resLen = devCfg.toPublicJson(resBuf,
+                                static_cast<uint32_t>(sizeof(resBuf)));
+
+    if (wifiPassChanged)
+    {
+        const uint32_t baseLen = (resLen > 1U) ? resLen - 1U : 0U;
+        const int n = snprintf(outBuf, outBufSize,
+                               "%.*s,\"reboot_required\":true}",
+                               static_cast<int>(baseLen), resBuf);
+        if (n <= 0)
+        {
+            outLen = 0U;
+        }
+        else if (static_cast<uint32_t>(n) >= outBufSize)
+        {
+            outLen = outBufSize - 1U;
+        }
+        else
+        {
+            outLen = static_cast<uint32_t>(n);
+        }
+        return 202U;
+    }
+
+    (void)strncpy(outBuf, resBuf, outBufSize - 1U);
+    outBuf[outBufSize - 1U] = '\0';
+    outLen = static_cast<uint32_t>(strlen(outBuf));
+    return 200U;
+}
+
+} // namespace
 
 // ── GET /api/device/config ────────────────────────────────────
 
@@ -66,19 +156,11 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
     }
 
     // ── Phase 2: persist to LittleFS ──────────────────────────
-    const bool saved = devCfg_.save(storage_);
-    if (!saved && storage_ != nullptr)
+    if (!persistDeviceConfig(devCfg_, storage_))
     {
-        // storage_ is set but write failed — the change is in RAM only and
-        // will be lost on reboot.  Return 500 so the client knows to retry.
         sendError(client, 500, "config applied but persist failed — changes are transient");
         LOG_E(TAG, "PUT /api/device/config 500: LittleFS write error");
         return;
-    }
-    if (!saved)
-    {
-        // storage_ is null (no-storage build / test environment) — expected.
-        LOG_W(TAG, "PUT /api/device/config: no storage backend, running in-memory only");
     }
 
     // ── Phase 3: refresh runtime state ────────────────────────
@@ -86,36 +168,24 @@ void ApiServer::handleDeviceConfigPut(WiFiClient& client,
     // new Access-Control-Allow-Origin value immediately.
     refreshCorsHeaders();
 
-    // ── Phase 4: respond ──────────────────────────────────────
-    // H7: When wifi_password was changed, return 202 Accepted and inject
-    // "reboot_required":true into the response body so the client knows the
-    // change is pending a device restart (soft-AP password takes effect on
-    // next boot only).
+    applyRuntimeDriverSelections(devCfg_, imuSelector_, gpsSelector_, baroSelector_, comSelector_);
+
     const bool wifiPassChanged =
         (strcmp(oldWifiPass, devCfg_.wifiPassword()) != 0);
 
-    char resBuf[ares::API_MAX_RESPONSE_BODY] = {};
-    const uint32_t resLen = devCfg_.toPublicJson(resBuf,
-                                static_cast<uint32_t>(sizeof(resBuf)));
-
-    if (wifiPassChanged)
+    char outBuf[ares::API_MAX_RESPONSE_BODY] = {};
+    uint32_t outLen = 0U;
+    const uint16_t status = buildDeviceConfigResponse(devCfg_, wifiPassChanged,
+                                                      outBuf,
+                                                      static_cast<uint32_t>(sizeof(outBuf)),
+                                                      outLen);
+    sendJson(client, status, outBuf, outLen);
+    if (status == 202U)
     {
-        // Inject reboot_required flag: strip trailing '}' from the config JSON,
-        // append the extra field, then close.  toPublicJson always returns a
-        // valid NUL-terminated JSON object so resLen >= 2 ("{}").
-        char resp202[ares::API_MAX_RESPONSE_BODY] = {};
-        const uint32_t baseLen = (resLen > 1U) ? resLen - 1U : 0U;
-        const int n = snprintf(resp202, sizeof(resp202),
-                               "%.*s,\"reboot_required\":true}",
-                               static_cast<int>(baseLen), resBuf);
-        const uint32_t resp202Len = (n > 0) ? static_cast<uint32_t>(n) : 0U;
-        sendJson(client, 202U, resp202, resp202Len);
         LOG_I(TAG, "PUT /api/device/config 202: wifi_password changed — reboot required");
     }
     else
     {
-        sendJson(client, 200U, resBuf, resLen);
-        LOG_I(TAG, "PUT /api/device/config 200 (persisted=%s)",
-              saved ? "yes" : "no storage");
+        LOG_I(TAG, "PUT /api/device/config 200");
     }
 }
