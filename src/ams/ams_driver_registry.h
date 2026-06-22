@@ -11,6 +11,9 @@
  *   include DXLR03  as COM
  *   include MPU6050 as IMU
  *
+ * SERIAL.report output uses a SerialInterface sink wired by platform bootstrap
+ * (not by script include directives), so AMS remains transport-agnostic.
+ *
  * Multiple drivers of the same kind can be registered for multi-instance
  * use (e.g. include BN220 as GPS1 / include BN880 as GPS2).
  *
@@ -29,6 +32,7 @@ using GpsEntry  = ares::hardware::GpsDriverEntry;
 using BaroEntry = ares::hardware::BaroDriverEntry;
 using ComEntry  = ares::hardware::ComDriverEntry;
 using ImuEntry  = ares::hardware::ImuDriverEntry;
+using SerialEntry = ares::hardware::SerialDriverEntry;
 
 } // namespace ams
 } // namespace ares

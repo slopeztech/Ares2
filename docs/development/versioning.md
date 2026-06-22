@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.6.3"
+#define ARES_VERSION_STRING "2.6.4"
 ```
 
 ---
@@ -77,6 +77,7 @@ docs/changelog/
     v2.6.1.md   ← Minor: AMS SERIAL.report in log_every for serial-monitor telemetry output per slot
     v2.6.2.md   ← Patch: pre-arm CALIBRATE progression fix + integer-safe RUNTIME HK mapping
     v2.6.3.md   ← Patch: centralized installed-driver registry + runtime driver selection/defaults (GPS/BARO/COM/IMU)
+    v2.6.4.md   ← Patch: SerialInterface HAL abstraction + hardware-agnostic telemetry; removes #ifdef ARDUINO coupling; registry-based driver resolution
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -124,3 +125,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.6.1](../changelog/v2.6.1.md)   | 2026-06-15 | Minor   | Minor: AMS `SERIAL.report` support inside `log_every`; slot-selectable serial vs CSV output; offline parser support |
 | [2.6.2](../changelog/v2.6.2.md)   | 2026-06-15 | Patch   | Patch: pre-arm `CALIBRATE` progression in `tick()` while `LOADED`; integer-safe `RUNTIME` HK field mapping; docs/example version alignment |
 | [2.6.3](../changelog/v2.6.3.md)   | 2026-06-17 | Patch   | Patch: centralized installed-driver registry; runtime selectors/default drivers (GPS/BARO/COM/IMU) via DeviceConfig and API; docs + ADXL375 AMS example |
+| [2.6.4](../changelog/v2.6.4.md)   | 2026-06-22 | Patch   | Patch: SerialInterface HAL abstraction; hardware-agnostic `SERIAL.report` telemetry; removes `#ifdef ARDUINO`; registry-based driver resolution; ams_programming_guide.md backpressure docs |

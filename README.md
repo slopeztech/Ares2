@@ -4,7 +4,7 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
-[![Version](https://img.shields.io/badge/version-2.6.3-blue)](#)
+[![Version](https://img.shields.io/badge/version-2.6.4-blue)](#)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)

@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.6.3"
+#define ARES_VERSION_STRING "2.6.4"
 
 namespace ares
 {

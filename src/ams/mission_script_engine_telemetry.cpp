@@ -52,6 +52,30 @@ using detail::crc8Smbus;
 
 static constexpr const char* TAG = "AMS";
 
+bool MissionScriptEngine::canWriteSerialReportLineLocked(size_t bytesNeeded) const
+{
+    if (serialIface_ == nullptr)
+    {
+        return false;
+    }
+    const uint32_t available = serialIface_->availableForWrite();
+    return static_cast<size_t>(available) >= bytesNeeded;
+}
+
+bool MissionScriptEngine::writeSerialReportBytesLocked(const uint8_t* data, size_t len) const
+{
+    if (serialIface_ == nullptr || data == nullptr || len == 0U)
+    {
+        return false;
+    }
+    if (len > static_cast<size_t>(UINT32_MAX))
+    {
+        return false;
+    }
+    const uint32_t reqLen = static_cast<uint32_t>(len);
+    return serialIface_->write(data, reqLen) == reqLen;
+}
+
 // ── sendHkReportLocked ───────────────────────────────────────────────────────
 
 /**
@@ -614,7 +638,7 @@ void MissionScriptEngine::emitSerialReportSlotLocked(uint64_t      nowMs,
 {
     if (currentState_ >= program_.stateCount) { return; }
     ARES_ASSERT(slot.fieldCount <= ares::AMS_MAX_HK_FIELDS);
-    if (slot.everyMs == 0U || slot.fieldCount == 0U) { return; }
+    if (slot.everyMs == 0U || slot.fieldCount == 0U || serialIface_ == nullptr) { return; }
 
     const StateDef& st = program_.states[currentState_];
 
@@ -645,7 +669,18 @@ void MissionScriptEngine::emitSerialReportSlotLocked(uint64_t      nowMs,
         return;
     }
 
-    LOG_I(TAG, "%s", line);
+    const size_t lineLen = strnlen(line, sizeof(line));
+    const size_t needed = lineLen + 1U; // include trailing '\n'
+    if (!canWriteSerialReportLineLocked(needed))
+    {
+        // Drop this sample under backpressure to keep tick latency bounded.
+        // This path is intentionally silent to avoid recursive log pressure.
+        return;
+    }
+
+    (void)writeSerialReportBytesLocked(reinterpret_cast<const uint8_t*>(line), lineLen);
+    static constexpr uint8_t kNewline[] = {'\n'};
+    (void)writeSerialReportBytesLocked(kNewline, sizeof(kNewline));
 }
 
 // GCOV_EXCL_START — only called from dead legacy appendLogReportLocked path

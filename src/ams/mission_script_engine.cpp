@@ -374,6 +374,11 @@ void MissionScriptEngine::setStateDirectiveCallback(StateDirectiveCallback callb
     stateDirectiveCallback_ = callback;
 }
 
+void MissionScriptEngine::setSerialInterface(SerialInterface* serialIface)
+{
+    serialIface_ = serialIface;
+}
+
 void MissionScriptEngine::setExecutionEnabled(bool enabled)
 {
     {
