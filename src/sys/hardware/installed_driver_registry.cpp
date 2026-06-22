@@ -28,6 +28,10 @@ ImuDriverEntry g_imuEntries[] = {
     { "ADXL375", nullptr }
 };
 
+SerialDriverEntry g_serialEntries[] = {
+    { "SERIAL0", nullptr }
+};
+
 DriverList<GpsDriverEntry> g_gpsList = {
     g_gpsEntries,
     static_cast<uint8_t>(sizeof(g_gpsEntries) / sizeof(g_gpsEntries[0]))
@@ -46,6 +50,11 @@ DriverList<ComDriverEntry> g_comList = {
 DriverList<ImuDriverEntry> g_imuList = {
     g_imuEntries,
     static_cast<uint8_t>(sizeof(g_imuEntries) / sizeof(g_imuEntries[0]))
+};
+
+DriverList<SerialDriverEntry> g_serialList = {
+    g_serialEntries,
+    static_cast<uint8_t>(sizeof(g_serialEntries) / sizeof(g_serialEntries[0]))
 };
 
 bool safeModelEquals(const char* a, const char* b)
@@ -84,6 +93,7 @@ void bindInstalledHardware(const InstalledHardwareRefs& refs)
     g_comEntries[0].iface = refs.radio;
     g_imuEntries[0].iface = refs.imuPrimary;
     g_imuEntries[1].iface = refs.imuSecondary;
+    g_serialEntries[0].iface = refs.serialOut;
 }
 
 const DriverList<GpsDriverEntry>& gpsDrivers()
@@ -106,6 +116,11 @@ const DriverList<ImuDriverEntry>& imuDrivers()
     return g_imuList;
 }
 
+const DriverList<SerialDriverEntry>& serialDrivers()
+{
+    return g_serialList;
+}
+
 const char* defaultGpsDriverModel()
 {
     return (g_gpsList.count > 0U) ? g_gpsList.entries[0].model : "NONE";
@@ -126,6 +141,11 @@ const char* defaultImuDriverModel()
     return (g_imuList.count > 0U) ? g_imuList.entries[0].model : "NONE";
 }
 
+const char* defaultSerialDriverModel()
+{
+    return (g_serialList.count > 0U) ? g_serialList.entries[0].model : "NONE";
+}
+
 bool isSupportedModel(DriverKind kind, const char* model)
 {
     switch (kind)
@@ -138,6 +158,8 @@ bool isSupportedModel(DriverKind kind, const char* model)
             return listContainsModel(g_comList, model);
         case DriverKind::IMU:
             return listContainsModel(g_imuList, model);
+        case DriverKind::SERIAL_IO:
+            return listContainsModel(g_serialList, model);
         default:
             return false;
     }

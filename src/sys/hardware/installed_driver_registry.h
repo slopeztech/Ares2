@@ -8,6 +8,7 @@
 #include "hal/gps/gps_interface.h"
 #include "hal/imu/imu_interface.h"
 #include "hal/radio/radio_interface.h"
+#include "hal/serial/serial_interface.h"
 
 #include <cstdint>
 
@@ -21,7 +22,8 @@ enum class DriverKind : uint8_t
     GPS,
     BARO,
     COM,
-    IMU
+    IMU,
+    SERIAL_IO
 };
 
 template<typename InterfaceT>
@@ -42,6 +44,7 @@ using GpsDriverEntry  = DriverEntry<GpsInterface>;
 using BaroDriverEntry = DriverEntry<BarometerInterface>;
 using ComDriverEntry  = DriverEntry<RadioInterface>;
 using ImuDriverEntry  = DriverEntry<ImuInterface>;
+using SerialDriverEntry = DriverEntry<SerialInterface>;
 
 struct InstalledHardwareRefs
 {
@@ -50,6 +53,7 @@ struct InstalledHardwareRefs
     RadioInterface*     radio     = nullptr;
     ImuInterface*       imuPrimary = nullptr;
     ImuInterface*       imuSecondary = nullptr;
+    SerialInterface*    serialOut = nullptr;
 };
 
 void bindInstalledHardware(const InstalledHardwareRefs& refs);
@@ -58,11 +62,13 @@ const DriverList<GpsDriverEntry>& gpsDrivers();
 const DriverList<BaroDriverEntry>& baroDrivers();
 const DriverList<ComDriverEntry>& comDrivers();
 const DriverList<ImuDriverEntry>& imuDrivers();
+const DriverList<SerialDriverEntry>& serialDrivers();
 
 const char* defaultGpsDriverModel();
 const char* defaultBaroDriverModel();
 const char* defaultComDriverModel();
 const char* defaultImuDriverModel();
+const char* defaultSerialDriverModel();
 bool isSupportedModel(DriverKind kind, const char* model);
 
 } // namespace hardware

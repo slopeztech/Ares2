@@ -28,6 +28,7 @@
 #include "hal/imu/imu_interface.h"
 #include "hal/pulse/pulse_interface.h"
 #include "hal/radio/radio_interface.h"
+#include "hal/serial/serial_interface.h"
 #include "hal/storage/storage_interface.h"
 
 #include "ams/mission_script_engine_internal.h"
@@ -162,6 +163,14 @@ public:
      */
     void setExecutionEnabled(bool enabled);
     void setStateDirectiveCallback(StateDirectiveCallback callback);
+
+    /**
+     * Register the SERIAL.report output sink.
+     *
+     * @param[in] serialIface  Nullable serial interface implementation.
+     *                         Pass @c nullptr to disable SERIAL.report output.
+     */
+    void setSerialInterface(SerialInterface* serialIface);
 
     /**
      * Immediately transmit all active HK telemetry slots for the current state.
@@ -557,6 +566,8 @@ private:
     void appendLogReportSlotLocked(uint64_t nowMs,
                                    const HkSlot& slot,
                                    uint8_t slotIdx);                       ///< AMS-4.3.1: single slot variant.
+    bool canWriteSerialReportLineLocked(size_t bytesNeeded) const;
+    bool writeSerialReportBytesLocked(const uint8_t* data, size_t len) const;
     void emitSerialReportSlotLocked(uint64_t nowMs,
                     const HkSlot& slot,
                     uint8_t slotIdx);                      ///< AMS-4.3.x: SERIAL.report output for log slot.
@@ -686,6 +697,7 @@ private:
     const ImuEntry*      imuDrivers_;
     uint8_t              imuCount_;
     RadioInterface*      primaryCom_ = nullptr; ///< Active COM driver for frame TX.
+    SerialInterface*     serialIface_ = nullptr; ///< Nullable — SERIAL.report sink.
     PulseInterface*      pulseIface_  = nullptr; ///< Nullable — pulse disabled if null (AMS-4.17).
     BuzzerInterface*     buzzerIface_ = nullptr; ///< Nullable — buzzer disabled if null (AMS-4.20).
 

@@ -22,6 +22,7 @@
 #include "drivers/imu/adxl375_driver.h"
 #include "drivers/radio/dxlr03_driver.h"
 #include "drivers/pulse/pulse_driver.h"
+#include "drivers/serial/arduino_serial_interface.h"
 #include "sys/baro/baro_selector.h"
 #include "sys/com/com_selector.h"
 #include "sys/gps/gps_selector.h"
@@ -67,14 +68,16 @@ static DxLr03Driver   radio(loraSerial, ares::PIN_LORA_TX,
 static Mpu6050Driver  imu(imuWire, ares::MPU6050_I2C_ADDR);
 static Adxl375Driver  imu2(imuWire, ares::ADXL375_I2C_ADDR);
 
-static void bindInstalledDrivers(BarometerInterface* barometer)
+static void bindInstalledDrivers(BarometerInterface* barometer,
+                                 SerialInterface* serialOut)
 {
     const ares::hardware::InstalledHardwareRefs refs = {
         barometer,
         &gps,
         &radio,
         &imu,
-        &imu2
+        &imu2,
+        serialOut
     };
     ares::hardware::bindInstalledHardware(refs);
 }
@@ -83,7 +86,7 @@ struct InstalledDriversBootstrap
 {
     InstalledDriversBootstrap()
     {
-        bindInstalledDrivers(nullptr);
+        bindInstalledDrivers(nullptr, nullptr);
     }
 };
 
@@ -121,6 +124,18 @@ static const PulseDriver::ChannelConfig kPulseChannels[PulseChannel::COUNT] = {
     { ares::PIN_PULSE_D, ares::PIN_PULSE_D_CONT },  // CH_D
 };
 static PulseDriver pulse(kPulseChannels);
+static ArduinoSerialInterface serialOut(Serial);
+
+static SerialInterface* resolveSerialOutput()
+{
+    const ares::hardware::DriverList<ares::hardware::SerialDriverEntry>& serials =
+        ares::hardware::serialDrivers();
+    if (serials.count == 0U || serials.entries == nullptr)
+    {
+        return nullptr;
+    }
+    return serials.entries[0U].iface;
+}
 
 // WiFi Access Point (sys layer) — ground configuration link.
 static WifiAp wifiAp;
@@ -333,7 +348,7 @@ void setup() // NOLINT(readability-function-size)
     Wire.setTimeOut(ares::I2C_TIMEOUT_MS);
     // [P1-3] Construct baro here — Wire is now initialised (SIOF fix).
     pBaro = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
-    bindInstalledDrivers(pBaro);
+    bindInstalledDrivers(pBaro, &serialOut);
     // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
     // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
@@ -409,6 +424,8 @@ void setup() // NOLINT(readability-function-size)
         LOG_E("BOOT", "AMS engine init failed");
         return;
     }
+
+    missionEngine.setSerialInterface(resolveSerialOutput());
 
     missionEngine.setStateDirectiveCallback(applyMissionStateDirective);
 

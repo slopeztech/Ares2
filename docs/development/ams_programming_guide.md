@@ -205,6 +205,32 @@ state FLIGHT:
 (`uptime_ms`, `state_idx`, `status_bits`). Runtime fields without a fixed slot
 remain available for `LOG.report`/`SERIAL.report` and conditions.
 
+### 2.4.1 SERIAL.report Transport & Backpressure Handling
+
+**v2.6.4+: Hardware-Agnostic Transport**
+
+`SERIAL.report` output uses a pluggable hardware abstraction (`SerialInterface`)
+to decouple telemetry from platform-specific serial implementations. In the
+default ARES2 configuration, output routes through Arduino's `Serial` global;
+however, the architecture allows alternative transports (CDC, direct UART, or
+test stubs) without changes to script or engine code.
+
+**Backpressure & Silent Drops**
+
+When the serial TX buffer is full, the engine applies a **silent backpressure policy**:
+a `log_every` slot that cannot write in the current tick is silently skipped
+(no log message, no error event). This preserves the engine's hard real-time
+behavior: telemetry slots must never block or delay state machine ticks.
+
+**Practical implication:** If your ground station consumes telemetry slowly,
+or the serial baud rate is configured low, frames may be dropped under load.
+Observe telemetry frame counts in your ground station to detect this condition.
+
+**Recommended best practice:**
+- Use 115200 baud or higher for serial links on ARES2.
+- Monitor frame rate and latency during pre-flight testing.
+- If drops occur, either increase baud rate or reduce `log_every` cadence.
+
 ### 2.5 conditions + on_error
 
 Use `conditions:` to define guard checks that must stay true while the state is active.
