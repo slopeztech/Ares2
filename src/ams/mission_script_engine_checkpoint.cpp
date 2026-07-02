@@ -24,6 +24,9 @@
 #include <iterator>
 #include <cstdio>
 #include <cstring>
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_timer.h>
+#endif
 
 namespace ares
 {
@@ -31,6 +34,18 @@ namespace ams
 {
 static constexpr const char* TAG = "AMS";
 static constexpr uint8_t AMS_RESUME_VERSION = 4U;
+
+static inline uint64_t monotonicMicros()
+{
+#if defined(ARDUINO_ARCH_ESP32)
+    return static_cast<uint64_t>(esp_timer_get_time());
+#else
+    // On host/sim builds, Arduino's micros() provides the needed short-span
+    // timing for profiling deferred I/O flush sections.
+    return static_cast<uint64_t>(micros());
+#endif
+}
+
 static uint32_t crc32Compute(const char* data, size_t len)
 {
     uint32_t crc = 0xFFFFFFFFU;
@@ -267,7 +282,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint64_t nowMs, bool force)
     //   |hkSlotCount|hkSlotElap0|...|logSlotCount|logSlotElap0|...
     //
     // Stage the record in pendingCheckpoint_.buf; the actual writeFile call is
-    // deferred to flushPendingIoUnlocked() after the mutex is released (AMS-8.3).
+    // deferred to flushPendingCheckpointUnlocked() after the mutex is released (AMS-8.3).
     int32_t written = 0;
     if (!buildCheckpointRecordLocked(nowMs, pendingCheckpoint_.buf,
                                      sizeof(pendingCheckpoint_.buf), written))
@@ -283,7 +298,7 @@ bool MissionScriptEngine::saveResumePointLocked(uint64_t nowMs, bool force)
 
 void MissionScriptEngine::clearResumePointLocked()
 {
-    // MUTEX INVARIANT — NO RACE WITH saveResumePointLocked / flushPendingIoUnlocked
+    // MUTEX INVARIANT — NO RACE WITH saveResumePointLocked / flushPendingCheckpointUnlocked
     //
     // The `Locked` suffix on this function (and on saveResumePointLocked) is a
     // firm contract: the caller MUST hold mutex_ before entering.  FreeRTOS
@@ -291,16 +306,16 @@ void MissionScriptEngine::clearResumePointLocked()
     // functions can never execute concurrently on any task.
     //
     // The two-phase write design (stage under mutex, flush after release) adds a
-    // subtlety: flushPendingIoUnlocked() runs *without* the mutex and calls
+    // subtlety: flushPendingCheckpointUnlocked() runs *without* the mutex and calls
     // writeFile() when pendingCheckpoint_.pending == true.  The potential
     // scenario is:
     //
     //   1. Task A: saveResumePointLocked() sets pending = true, releases mutex.
     //   2. Task B: acquires mutex, calls clearResumePointLocked().
-    //   3. Task A: flushPendingIoUnlocked() — would it write a stale checkpoint?
+    //   3. Task A: flushPendingCheckpointUnlocked() — would it write a stale checkpoint?
     //
     // This is prevented by the line below.  Setting pending = false here
-    // (while still holding mutex_) happens-before flushPendingIoUnlocked()
+    // (while still holding mutex_) happens-before flushPendingCheckpointUnlocked()
     // inspects the flag, because in the current single-engine, single-ticker
     // architecture only one task drives the engine: it holds the mutex for the
     // entire tick (or API call), then flushes.  A second task that calls clear
@@ -364,7 +379,7 @@ void MissionScriptEngine::writeAbortMarkerLocked(const char* stateName, uint64_t
  * @brief Stage a LittleFS append operation for deferred execution outside the mutex.
  *
  * Copies @p data into the next free @c pendingAppends_ slot so the actual
- * @c appendFile call can be issued by @c flushPendingIoUnlocked() after the
+ * @c appendFile call can be issued by @c flushPendingAppendsUnlocked() after the
  * mutex has been released (AMS-8.3).  Drops the entry with a warning if the
  * queue is full or the payload exceeds the slot buffer.
  *
@@ -378,6 +393,25 @@ void MissionScriptEngine::queueAppendLocked(const char*    path,
                                             uint32_t       len,
                                             bool*          onSuccessFlag)
 {
+    const bool notifyWorker = (pendingAppendCount_ == 0U);
+
+    // Header rows carry a non-null success flag pointer. While that header is
+    // pending flush, avoid enqueueing duplicates for the same file/flag pair.
+    // This prevents repeated CSV headers when producer cadence is faster than
+    // deferred I/O flush cadence.
+    if (onSuccessFlag != nullptr)
+    {
+        for (uint8_t i = 0U; i < pendingAppendCount_; i++)
+        {
+            const PendingAppend& queued = pendingAppends_[i];
+            if (queued.onSuccessFlag == onSuccessFlag
+                && strcmp(queued.path, path) == 0)
+            {
+                return;
+            }
+        }
+    }
+
     if (pendingAppendCount_ >= kMaxPendingAppends)
     {
         LOG_W(TAG, "append queue full — row dropped (path=%s)", path);
@@ -395,45 +429,173 @@ void MissionScriptEngine::queueAppendLocked(const char*    path,
     e.len           = len;
     e.onSuccessFlag = onSuccessFlag; // null for data rows; set for header entries
     pendingAppendCount_++;
+
+    if (notifyWorker)
+    {
+        notifyDeferredIoWorker();
+    }
 }
 
-// ── flushPendingIoUnlocked ────────────────────────────────────────────────────
+// ── flushPendingAppendsUnlocked ──────────────────────────────────────────────
+
+bool MissionScriptEngine::stageAppendBurstLocked(uint8_t* burst,
+                                                 uint32_t burstCap,
+                                                 uint32_t& burstLen,
+                                                 uint8_t& burstRows,
+                                                 char* burstPath,
+                                                 size_t burstPathSize,
+                                                 bool** successFlags,
+                                                 uint8_t& successFlagCount)
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired())
+    {
+        LOG_W(TAG, "deferred append drain: mutex timeout");
+        // The worker consumes its notify token before attempting the drain.
+        // Re-notify so pending rows are retried even when this attempt times out.
+        notifyDeferredIoWorker();
+        return false;
+    }
+
+    if (pendingAppendCount_ == 0U)
+    {
+        return false;
+    }
+
+    ares::util::copyZ(burstPath, pendingAppends_[0U].path, burstPathSize);
+
+    while (pendingAppendCount_ > 0U)
+    {
+        const PendingAppend& head = pendingAppends_[0U];
+        if ((strcmp(head.path, burstPath) != 0) && (burstRows > 0U))
+        {
+            break;
+        }
+
+        const uint32_t freeBytes = burstCap - burstLen;
+        if ((head.len > freeBytes) && (burstRows > 0U))
+        {
+            break;
+        }
+
+        memcpy(&burst[burstLen], head.data, head.len);
+        burstLen += head.len;
+        burstRows++;
+
+        if ((head.onSuccessFlag != nullptr) && (successFlagCount < kMaxPendingAppends))
+        {
+            successFlags[successFlagCount] = head.onSuccessFlag;
+            successFlagCount++;
+        }
+
+        for (uint8_t i = 1U; i < pendingAppendCount_; i++)
+        {
+            pendingAppends_[i - 1U] = pendingAppends_[i];
+        }
+        pendingAppendCount_--;
+
+        if (burstLen >= burstCap)
+        {
+            break;
+        }
+    }
+
+    return (burstRows > 0U) && (burstLen > 0U);
+}
+
+void MissionScriptEngine::markAppendSuccessFlags(bool* const* successFlags,
+                                                 uint8_t      successFlagCount)
+{
+    for (uint8_t i = 0U; i < successFlagCount; i++)
+    {
+        if (successFlags[i] != nullptr)
+        {
+            *successFlags[i] = true;
+        }
+    }
+}
 
 /**
- * @brief Execute all file I/O staged during the previous tick or API call.
+ * @brief Drain staged CSV appends from the deferred I/O queue.
  *
- * Must be called AFTER the engine mutex has been released.  Issues all
- * @c appendFile and @c writeFile operations that were deferred by
- * @c queueAppendLocked and @c saveResumePointLocked, keeping those operations
- * outside the critical section (AMS-8.3).
- *
- * @post @c pendingAppendCount_ == 0 and @c pendingCheckpoint_.pending == false.
+ * Copies the bounded append queue while holding the engine mutex, then writes
+ * the copied rows to LittleFS after the lock is released.  This keeps the
+ * per-row flash append path off the mission tick while preserving bounded RAM
+ * staging and retry semantics.
  */
-void MissionScriptEngine::flushPendingIoUnlocked()
+void MissionScriptEngine::flushPendingAppendsUnlocked()
 {
-    // Flush staged log appends first (data rows before checkpoint update).
-    for (uint8_t i = 0U; i < pendingAppendCount_; i++)
+    const uint64_t flushStartUs = monotonicMicros();
+    uint8_t drainedCount = 0U;
+
+    static_assert(ares::AMS_IO_APPEND_BURST_BYTES >= 256U,
+                  "AMS_IO_APPEND_BURST_BYTES must fit one max CSV row");
+
+    while (true)
     {
-        const PendingAppend& e = pendingAppends_[i];
-        const StorageStatus st = storage_.appendFile(e.path, e.data, e.len);
+        uint8_t  burst[ares::AMS_IO_APPEND_BURST_BYTES] = {};
+        uint32_t burstLen = 0U;
+        uint8_t  burstRows = 0U;
+        char     burstPath[ares::STORAGE_MAX_PATH] = {};
+        bool*    successFlags[kMaxPendingAppends] = {};
+        uint8_t  successFlagCount = 0U;
+
+        if (!stageAppendBurstLocked(burst,
+                                    static_cast<uint32_t>(sizeof(burst)),
+                                    burstLen,
+                                    burstRows,
+                                    burstPath,
+                                    sizeof(burstPath),
+                                    successFlags,
+                                    successFlagCount))
+        {
+            break;
+        }
+
+        drainedCount = static_cast<uint8_t>(drainedCount + burstRows);
+
+        const StorageStatus st = storage_.appendFile(burstPath, burst, burstLen);
         if (st == StorageStatus::OK)
         {
-            // Confirm header-written flag only after a successful flush so that
-            // a NO_SPACE failure leaves the flag false and allows a retry on the
-            // next tick (AMS-4.3.2).
-            if (e.onSuccessFlag != nullptr)
-            {
-                *e.onSuccessFlag = true;
-            }
+            markAppendSuccessFlags(successFlags, successFlagCount);
         }
         else
         {
-            LOG_W(TAG, "deferred append [%u] to '%s' failed: %u",
-                  static_cast<unsigned>(i), e.path,
+            LOG_W(TAG, "deferred append batch failed: rows=%u bytes=%u path='%s' st=%u",
+                  static_cast<unsigned>(burstRows),
+                  static_cast<unsigned>(burstLen),
+                  burstPath,
                   static_cast<uint32_t>(st));
         }
     }
-    pendingAppendCount_ = 0U;
+
+    if (drainedCount == 0U)
+    {
+        return;
+    }
+
+    if (ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        const uint32_t flushElapsedUs = static_cast<uint32_t>(
+            monotonicMicros() - flushStartUs);
+        LOG_I(TAG, "append drain: %" PRIu32 " us", flushElapsedUs);
+    }
+}
+
+// ── flushPendingCheckpointUnlocked ───────────────────────────────────────────
+
+/**
+ * @brief Execute the staged checkpoint write outside the mutex.
+ *
+ * Must be called AFTER the engine mutex has been released.  Issues the
+ * checkpoint @c writeFile operation deferred by @c saveResumePointLocked,
+ * keeping that flash write outside the critical section (AMS-8.3).
+ *
+ * @post @c pendingCheckpoint_.pending == false.
+ */
+void MissionScriptEngine::flushPendingCheckpointUnlocked()
+{
+    const uint64_t flushStartUs = monotonicMicros();
 
     // Flush staged checkpoint write.
     if (pendingCheckpoint_.pending && pendingCheckpoint_.len > 0)
@@ -474,6 +636,36 @@ void MissionScriptEngine::flushPendingIoUnlocked()
             }
         }
         pendingCheckpoint_.pending = false;
+    }
+
+    if (ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        const uint32_t flushElapsedUs = static_cast<uint32_t>(monotonicMicros() - flushStartUs);
+        LOG_I(TAG, "checkpoint flush: %" PRIu32 " us", flushElapsedUs);
+    }
+}
+
+void MissionScriptEngine::deferredIoTaskFn(void* param)
+{
+    auto* self = static_cast<MissionScriptEngine*>(param);
+    ARES_ASSERT(self != nullptr);
+    self->deferredIoTaskLoop();
+}
+
+void MissionScriptEngine::deferredIoTaskLoop()
+{
+    while (true)
+    {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        flushPendingAppendsUnlocked();
+    }
+}
+
+void MissionScriptEngine::notifyDeferredIoWorker()
+{
+    if (deferredIoTaskHandle_ != nullptr)
+    {
+        (void)xTaskNotifyGive(deferredIoTaskHandle_);
     }
 }
 

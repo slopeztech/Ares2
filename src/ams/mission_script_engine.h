@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/task.h>
 
 #include "ams/ams_driver_registry.h"
 #include "comms/ares_radio_protocol.h"
@@ -57,7 +58,10 @@ namespace ams
 class MissionScriptEngine
 {
 public:
-    using StateDirectiveCallback = void (*)(bool wifiEnabled, bool apiEnabled);
+  using StateDirectiveCallback = void (*)(bool hasWifiDirective,
+                      bool wifiEnabled,
+                      bool hasApiDirective,
+                      bool apiEnabled);
     /**
      * Construct the mission script engine.
      *
@@ -644,9 +648,34 @@ private:
     /// Stage a log-file append for deferred execution outside the mutex (AMS-8.3).
     void queueAppendLocked(const char* path, const uint8_t* data, uint32_t len,
                              bool* onSuccessFlag = nullptr);
-    /// Flush all staged file I/O that was built under the mutex. Must be called
-    /// after the mutex is released. Idempotent if nothing is pending.
-    void flushPendingIoUnlocked();
+    /// Flush staged checkpoint writes outside the mutex. Idempotent if nothing is pending.
+    void flushPendingCheckpointUnlocked();
+
+    /// Flush staged append rows outside the mutex.
+    void flushPendingAppendsUnlocked();
+
+    /// Build one append burst from pending queue while holding mutex_.
+    bool stageAppendBurstLocked(uint8_t* burst,
+                  uint32_t burstCap,
+                  uint32_t& burstLen,
+                  uint8_t& burstRows,
+                  char* burstPath,
+                  size_t burstPathSize,
+                  bool** successFlags,
+                  uint8_t& successFlagCount);
+
+    /// Mark queued header rows as persisted after a successful append.
+    static void markAppendSuccessFlags(bool* const* successFlags,
+                       uint8_t successFlagCount);
+
+    /// RTOS task entry point for the deferred append worker.
+    static void deferredIoTaskFn(void* param);
+
+    /// Main deferred append worker loop — drains staged CSV rows.
+    void deferredIoTaskLoop();
+
+    /// Wake the deferred append worker when new work is staged.
+    void notifyDeferredIoWorker();
 
     bool saveResumePointLocked(uint64_t nowMs, bool force);
     bool buildCheckpointRecordLocked(uint64_t nowMs, char* record, size_t recSize, int32_t& outWritten) const;
@@ -762,6 +791,15 @@ private:
     PendingCheckpoint pendingCheckpoint_              = {};
     PendingAppend     pendingAppends_[kMaxPendingAppends] = {};
     uint8_t           pendingAppendCount_             = 0U;
+
+    /// Static task stack for the deferred append worker.
+    StackType_t       deferredIoStack_[ares::TASK_STACK_SIZE_AMS_IO / sizeof(StackType_t)] = {};
+
+    /// Static task control block for the deferred append worker.
+    StaticTask_t      deferredIoTcb_ = {};
+
+    /// Handle used to notify the deferred append worker.
+    TaskHandle_t      deferredIoTaskHandle_ = nullptr;
 
     // ── Per-alias sensor read caches ─────────────────────────────────────────
     // When a HK/LOG slot contains multiple fields from the same peripheral,

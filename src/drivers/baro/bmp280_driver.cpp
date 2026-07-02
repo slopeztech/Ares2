@@ -26,18 +26,10 @@ namespace bmp280
     constexpr uint8_t CHIP_ID_BME280 = 0x60;
     constexpr uint8_t RESET_CMD      = 0xB6;
 
-    // ctrl_meas register (0xF4):
-    //   bits [7:5] osrs_t  = 001  → temperature oversampling ×1
-    //   bits [4:2] osrs_p  = 011  → pressure oversampling ×4
-    //   bits [1:0] mode    = 11   → normal (continuous) mode
-    constexpr uint8_t CTRL_MEAS_VAL  = 0x2F;
-
-    // config register (0xF5) — must be written BEFORE ctrl_meas
-    // enters normal mode, or settings are ignored (datasheet §5.4.6).
-    //   bits [7:5] t_sb    = 100  → 500 ms standby between samples
-    //   bits [4:2] filter  = 010  → IIR filter coefficient ×4
-    //   bit  [0]   spi3w_en= 0    → SPI 3-wire disabled (I2C)
-    constexpr uint8_t CONFIG_VAL     = 0x88;
+    // Runtime register values come from config.h so sampling profile can be
+    // tuned per mission without touching driver code.
+    constexpr uint8_t CTRL_MEAS_VAL  = ares::BMP280_CTRL_MEAS_VAL;
+    constexpr uint8_t CONFIG_VAL     = ares::BMP280_CONFIG_VAL;
 
     constexpr uint8_t CALIB_LEN      = 24;
     constexpr uint8_t DATA_LEN       = 6;
@@ -111,6 +103,8 @@ bool Bmp280Driver::begin()
     {
         return false;
     }
+
+    LOG_I(TAG, "profile ctrl_meas=0x%02X config=0x%02X", bmp280::CTRL_MEAS_VAL, bmp280::CONFIG_VAL);
 
     ready_ = true;
     return true;

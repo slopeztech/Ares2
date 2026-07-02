@@ -229,6 +229,7 @@ Observe telemetry frame counts in your ground station to detect this condition.
 **Recommended best practice:**
 - Use 115200 baud or higher for serial links on ARES2.
 - Monitor frame rate and latency during pre-flight testing.
+- For lab profiling, temporarily enable `LOOP_TIMING_PROFILE_ENABLED` in `src/config.h` to log per-stage loop timings (`gps->update`, `radioDispatcher.poll`, `missionEngine.tick`, flash flush, and storage writes).
 - If drops occur, either increase baud rate or reduce `log_every` cadence.
 
 ### 2.5 conditions + on_error

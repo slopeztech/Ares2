@@ -20,6 +20,7 @@
 
 #include "ams/mission_script_engine.h"
 #include "ams/ams_driver_registry.h"
+#include "hal/serial/serial_interface.h"
 
 using ares::ams::GpsEntry;
 using ares::ams::BaroEntry;
@@ -123,6 +124,44 @@ struct CovFixture
         (void)imu.begin();
         (void)radio.begin();
         (void)engine.begin();
+    }
+};
+
+class SimSerialSink final : public SerialInterface
+{
+public:
+    uint32_t capacity = 1024U;
+    char     buffer[512] = {};
+    uint32_t used = 0U;
+
+    uint32_t availableForWrite() const override
+    {
+        const uint32_t bufAvail =
+            static_cast<uint32_t>(sizeof(buffer) - 1U) - used;
+        return (capacity < bufAvail) ? capacity : bufAvail;
+    }
+
+    uint32_t write(const uint8_t* data, uint32_t len) override
+    {
+        if (data == nullptr || len == 0U)
+        {
+            return 0U;
+        }
+        const uint32_t maxCopy = static_cast<uint32_t>(sizeof(buffer) - 1U) - used;
+        const uint32_t toCopy = (len < maxCopy) ? len : maxCopy;
+        if (toCopy > 0U)
+        {
+            memcpy(&buffer[used], data, toCopy);
+            used += toCopy;
+            buffer[used] = '\0';
+        }
+        return toCopy;
+    }
+
+    void clear()
+    {
+        used = 0U;
+        buffer[0] = '\0';
     }
 };
 
@@ -550,22 +589,83 @@ static const char kScriptGyroHk[] =
     "  on_enter:\n"
     "    EVENT.info \"DONE\"\n";
 
+static const char kScriptSerialRuntime[] =
+    "include SIM_GPS as GPS\n"
+    "include SIM_BARO as BARO\n"
+    "include SIM_COM as COM\n"
+    "include SIM_IMU as IMU\n"
+    "\n"
+    "pus.apid = 1\n"
+    "pus.service 5 as EVENT\n"
+    "\n"
+    "state WAIT:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"START\"\n"
+    "  log_every 100ms:\n"
+    "    SERIAL.report {\n"
+    "      rt_up: RUNTIME.uptime_ms\n"
+    "      rt_state: RUNTIME.state_idx\n"
+    "      rt_st_ms: RUNTIME.state_elapsed_ms\n"
+    "      rt_sc_ms: RUNTIME.script_elapsed_ms\n"
+    "      rt_bits: RUNTIME.status_bits\n"
+    "      rt_status: RUNTIME.engine_status\n"
+    "      rt_exec: RUNTIME.exec_enabled\n"
+    "      imu_ax: IMU.accel_x\n"
+    "      baro_alt: BARO.alt\n"
+    "    }\n"
+    "  transition to END when TIME.elapsed > 99999\n"
+    "\n"
+    "state END:\n"
+    "  on_enter:\n"
+    "    EVENT.info \"DONE\"\n";
+
 // ── Test 11: IMU gyro HK fields are read and emitted ─────────────────────────
 
 void test_imu_gyro_hk_fields_emitted()
 {
-    CovFixture f{kGroundProfile};
-    f.init("/missions/gyro_hk.ams", kScriptGyroHk);
-    TEST_ASSERT_TRUE(f.engine.activate("gyro_hk.ams"));
-    TEST_ASSERT_TRUE(f.engine.arm());
+    {
+        CovFixture f{kGroundProfile};
+        f.init("/missions/gyro_hk.ams", kScriptGyroHk);
+        TEST_ASSERT_TRUE(f.engine.activate("gyro_hk.ams"));
+        TEST_ASSERT_TRUE(f.engine.arm());
 
-    f.radio.resetCapture();
+        f.radio.resetCapture();
 
-    // Advance clock past 1 HK interval (200 ms) and tick.
-    ares::sim::clock::advanceMs(250U);
-    f.engine.tick(ares::sim::clock::nowMs());
+        // Advance clock past 1 HK interval (200 ms) and tick.
+        ares::sim::clock::advanceMs(250U);
+        f.engine.tick(ares::sim::clock::nowMs());
 
-    TEST_ASSERT_GREATER_OR_EQUAL(1U, f.radio.sendCount());
+        TEST_ASSERT_GREATER_OR_EQUAL(1U, f.radio.sendCount());
+    }
+
+    // Extra sensor/telemetry coverage: SERIAL.report with RUNTIME.* fields.
+    {
+        CovFixture fSerial{kGroundProfile};
+        SimSerialSink serial;
+        fSerial.init("/missions/serial_runtime.ams", kScriptSerialRuntime);
+        fSerial.engine.setSerialInterface(&serial);
+
+        TEST_ASSERT_TRUE(fSerial.engine.activate("serial_runtime.ams"));
+        TEST_ASSERT_TRUE(fSerial.engine.arm());
+
+        serial.clear();
+        ares::sim::clock::advanceMs(130U);
+        fSerial.engine.tick(ares::sim::clock::nowMs());
+
+        TEST_ASSERT_TRUE_MESSAGE(strstr(serial.buffer, "SERIAL.report") != nullptr,
+                                 "SERIAL.report line must be emitted when TX capacity is available");
+        TEST_ASSERT_TRUE_MESSAGE(strstr(serial.buffer, "rt_exec=") != nullptr,
+                                 "RUNTIME fields must be resolved in SERIAL.report");
+
+        // Backpressure branch: insufficient capacity should drop the sample.
+        serial.clear();
+        serial.capacity = 0U;
+        ares::sim::clock::advanceMs(130U);
+        fSerial.engine.tick(ares::sim::clock::nowMs());
+
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0U, serial.used,
+                                         "SERIAL.report must be dropped under TX backpressure");
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

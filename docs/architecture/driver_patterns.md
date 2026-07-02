@@ -1,6 +1,6 @@
 # Driver Architecture & Hardware Abstraction
 
-**Version:** 2.6.4+  
+**Version:** 2.6.5+  
 **Scope:** Platform-agnostic hardware interface pattern; static driver registry; extensibility framework
 
 ---
@@ -120,7 +120,7 @@ enum class DriverKind {
     BARO,      // Barometer (altitude)
     COM,       // Communication (radio)
     IMU,       // Inertial Measurement Unit
-    SERIAL_IO, // Serial output (v2.6.4+)
+    SERIAL_IO, // Serial output
 };
 
 // Entry template: (model name, interface pointer)
@@ -151,7 +151,7 @@ struct InstalledHardwareRefs {
     RadioInterface* radio;
     ImuInterface* imu1;
     ImuInterface* imu2;
-    SerialInterface* serialOut;  // v2.6.4+
+    SerialInterface* serialOut;
 };
 
 } // namespace ares::hardware
@@ -179,7 +179,7 @@ void bindInstalledHardware(const InstalledHardwareRefs& refs) {
     g_comEntries[0].iface = refs.radio;
     g_imuEntries[0].iface = refs.imu1;
     g_imuEntries[1].iface = refs.imu2;
-    g_serialEntries[0].iface = refs.serialOut;  // v2.6.4+
+    g_serialEntries[0].iface = refs.serialOut;
 }
 ```
 
@@ -193,13 +193,13 @@ const DriverList<GpsDriverEntry>& gpsDrivers();
 const DriverList<BaroDriverEntry>& baroDrivers();
 const DriverList<ComDriverEntry>& comDrivers();
 const DriverList<ImuDriverEntry>& imuDrivers();
-const DriverList<SerialDriverEntry>& serialDrivers();  // v2.6.4+
+const DriverList<SerialDriverEntry>& serialDrivers();
 
 // Query default / recommended driver for a category
 const char* defaultGpsDriverModel();
 const char* defaultBaroDriverModel();
 const char* defaultComDriverModel();
-const char* defaultSerialDriverModel();  // v2.6.4+
+const char* defaultSerialDriverModel();
 ```
 
 ---

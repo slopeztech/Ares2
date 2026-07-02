@@ -24,8 +24,11 @@
 #include <cinttypes>
 #include <cstring>
 #include <cstdio>
+#include <esp_task_wdt.h>
+#include <freertos/task.h>
 
 static constexpr const char* TAG = "API.LOG";
+static constexpr uint8_t DOWNLOAD_YIELD_EVERY_CHUNKS = 8U;
 
 // SINGLE-TASK CONTRACT (REST-13, RTOS-2):
 // All handle* methods in this file are invoked exclusively from the ApiServer
@@ -123,13 +126,21 @@ void ApiServer::sendFileChunked(WiFiClient& client,
 
     uint8_t  chunk[ares::DOWNLOAD_CHUNK_SIZE] = {};
     uint32_t offset = 0;
+    uint32_t chunksSent = 0U;
     while (offset < fileSize && client.connected())  // PO10-2: bounded
     {
+        (void)esp_task_wdt_reset();
+
         uint32_t bytesRead = 0;
         const StorageStatus st = storage_->readFileChunk(
             path, offset, chunk, ares::DOWNLOAD_CHUNK_SIZE, bytesRead);
         if (st != StorageStatus::OK || bytesRead == 0)
         {
+            if (st != StorageStatus::OK)
+            {
+                LOG_W(TAG, "download read error: path=%s offset=%" PRIu32 " st=%u",
+                      path, offset, static_cast<uint32_t>(st));
+            }
             break;
         }
         if (bytesRead > ares::DOWNLOAD_CHUNK_SIZE)
@@ -143,8 +154,26 @@ void ApiServer::sendFileChunked(WiFiClient& client,
                   offset, bytesRead, fileSize);
             bytesRead = fileSize - offset;
         }
-        client.write(chunk, bytesRead);
+        const size_t written = client.write(chunk, bytesRead);
+        if (written != static_cast<size_t>(bytesRead))
+        {
+            LOG_W(TAG, "download short write: path=%s offset=%" PRIu32 " req=%u wrote=%u",
+                  path,
+                  offset,
+                  static_cast<unsigned>(bytesRead),
+                  static_cast<unsigned>(written));
+            break;
+        }
+
         offset += bytesRead;
+        chunksSent++;
+
+        // Keep API task responsive and regularly feed TWDT during large transfers.
+        if ((chunksSent % DOWNLOAD_YIELD_EVERY_CHUNKS) == 0U)
+        {
+            (void)esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
     }
     LOG_I(TAG, "GET %s 200: %" PRIu32 " bytes sent", path, offset);
 }

@@ -853,8 +853,6 @@ void test_parser_every_via_empty_alias_rejected()
 
 void test_parser_every_via_two_slots_accepted()
 {
-    CondParserFixture fx;
-
     static const char kScript[] =
         "include SIM_COM as COM1\n"
         "include SIM_COM as COM2\n"
@@ -880,10 +878,111 @@ void test_parser_every_via_two_slots_accepted()
         "  on_enter:\n"
         "    EVENT.info \"done\"\n";
 
-    const bool ok = fx.load("every_via_two_slots.ams", kScript);
+    {
+        CondParserFixture fx;
+        const bool ok = fx.load("every_via_two_slots.ams", kScript);
 
-    EngineSnapshot snap {};
-    fx.engine.getSnapshot(snap);
-    TEST_ASSERT_TRUE_MESSAGE(ok, snap.lastError);
-    TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+        EngineSnapshot snap {};
+        fx.engine.getSnapshot(snap);
+        TEST_ASSERT_TRUE_MESSAGE(ok, snap.lastError);
+        TEST_ASSERT_EQUAL(EngineStatus::LOADED, snap.status);
+    }
+
+    // Extra parser_state coverage: SERIAL.report inside a valid log_every block.
+    static const char kScriptSerialOk[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state LOGGING:\n"
+        "  log_every 100ms:\n"
+        "    SERIAL.report {\n"
+        "      baro_alt: BARO.alt\n"
+        "    }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    {
+        CondParserFixture fxSerialOk;
+        const bool serialOk = fxSerialOk.load("serial_report_ok.ams", kScriptSerialOk);
+        EngineSnapshot snapSerialOk {};
+        fxSerialOk.engine.getSnapshot(snapSerialOk);
+        TEST_ASSERT_TRUE_MESSAGE(serialOk, snapSerialOk.lastError);
+        TEST_ASSERT_EQUAL(EngineStatus::LOADED, snapSerialOk.status);
+    }
+
+    // Extra parser_state coverage: SERIAL.report without log_every must fail.
+    static const char kScriptSerialBad[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state BAD:\n"
+        "  SERIAL.report {\n"
+        "    baro_alt: BARO.alt\n"
+        "  }\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    {
+        CondParserFixture fxSerialBad;
+        const bool serialBad = fxSerialBad.load("serial_report_bad.ams", kScriptSerialBad);
+        EngineSnapshot snapSerialBad {};
+        fxSerialBad.engine.getSnapshot(snapSerialBad);
+        TEST_ASSERT_FALSE(serialBad);
+        TEST_ASSERT_EQUAL(EngineStatus::ERROR, snapSerialBad.status);
+    }
+
+    // Extra parser_state coverage: duplicate wifi/api directives in one state.
+    static const char kScriptDupWifi[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state D1:\n"
+        "  wifi.disable\n"
+        "  wifi.enable\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    {
+        CondParserFixture fxDupWifi;
+        const bool dupWifi = fxDupWifi.load("dup_wifi.ams", kScriptDupWifi);
+        EngineSnapshot snapDupWifi {};
+        fxDupWifi.engine.getSnapshot(snapDupWifi);
+        TEST_ASSERT_FALSE(dupWifi);
+        TEST_ASSERT_EQUAL(EngineStatus::ERROR, snapDupWifi.status);
+    }
+
+    static const char kScriptDupApi[] =
+        "include SIM_COM as COM\n"
+        "include SIM_BARO as BARO\n"
+        "\n"
+        "pus.apid = 1\n"
+        "pus.service 1 as TC\n"
+        "\n"
+        "state D2:\n"
+        "  api.disable\n"
+        "  api.enable\n"
+        "  transition to END when TC.command == LAUNCH\n"
+        "\n"
+        "state END:\n";
+
+    {
+        CondParserFixture fxDupApi;
+        const bool dupApi = fxDupApi.load("dup_api.ams", kScriptDupApi);
+        EngineSnapshot snapDupApi {};
+        fxDupApi.engine.getSnapshot(snapDupApi);
+        TEST_ASSERT_FALSE(dupApi);
+        TEST_ASSERT_EQUAL(EngineStatus::ERROR, snapDupApi.status);
+    }
 }

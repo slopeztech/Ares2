@@ -75,14 +75,6 @@ static constexpr size_t kPrevSlotsForStateEntry()
 
 void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-size)
 {
-    // Reset staging buffers before every tick.  They are populated inside the
-    // mutex scope below and flushed by flushPendingIoUnlocked() after the lock
-    // is released, keeping LittleFS write latency out of the critical section
-    // so that injectTcCommand("ABORT") and other API callers cannot time out
-    // waiting for I/O (AMS-8.3).
-    pendingCheckpoint_.pending = false;
-    pendingAppendCount_        = 0U;
-
     {
         ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
         if (!guard.acquired())
@@ -123,7 +115,7 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
             // Evaluate all event-driven exit paths.  Every branch that calls
             // enterStateLocked / deactivateLocked may stage a checkpoint or an append
             // row via saveResumePointLocked / queueAppendLocked.  We must NOT return
-            // early here; all paths fall through so that flushPendingIoUnlocked() always
+            // early here; all paths fall through so that flushPendingCheckpointUnlocked() always
             // runs after the mutex is released (AMS-8).
             const bool transitioned = evaluateTransitionAndMaybeEnterLocked(state, nowMs)
                                    || checkOnTimeoutLocked(state, nowMs);
@@ -162,7 +154,7 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
                                         ares::proto::EventId::FPL_VIOLATION,
                                         abortMsg, nowMs);
                         // Stage a final "abort" row in the mission log; flushed
-                        // unconditionally by flushPendingIoUnlocked() below.
+                        // unconditionally by flushPendingCheckpointUnlocked() below.
                         writeAbortMarkerLocked(state.name, nowMs);
                         deactivateLocked();
                         // Fall through: flush persists the abort row.
@@ -209,11 +201,15 @@ void MissionScriptEngine::tick(uint64_t nowMs) // NOLINT(readability-function-si
         }
     } // Mutex released; all staging complete.
 
-    // Perform deferred LittleFS writes (log appends + checkpoint) outside the
-    // critical section (AMS-8.3).  Reached unconditionally so that checkpoints
-    // staged by enterStateLocked() and abort rows from writeAbortMarkerLocked()
-    // are always persisted (AMS-8).
-    flushPendingIoUnlocked();
+    // In host/SITL builds there is no background deferred I/O task execution.
+    // Drain append queue at tick tail to preserve durability semantics.
+#if !defined(ARDUINO_ARCH_ESP32)
+    flushPendingAppendsUnlocked();
+#endif
+
+    // Perform the checkpoint write outside the critical section (AMS-8.3).
+    // On target, CSV appends are drained by the low-priority deferred I/O task.
+    flushPendingCheckpointUnlocked();
 }
 
 /**
@@ -1093,13 +1089,20 @@ void MissionScriptEngine::resetEntryStateResourcesLocked(uint64_t nowMs)
 
 void MissionScriptEngine::applyStateDirectiveLocked(const StateDef& enteredState)
 {
-    if ((enteredState.wifiDirective != WifiDirective::NONE
-         || enteredState.apiDirective != ApiDirective::NONE)
-        && stateDirectiveCallback_ != nullptr)
+    if (stateDirectiveCallback_ != nullptr)
     {
+        const bool hasWifiDirective = (enteredState.wifiDirective != WifiDirective::NONE);
+        const bool hasApiDirective  = (enteredState.apiDirective != ApiDirective::NONE);
+
+        if (!hasWifiDirective && !hasApiDirective)
+        {
+            return;
+        }
+
         const bool wifiEnabled = (enteredState.wifiDirective != WifiDirective::DISABLE);
         const bool apiEnabled  = (enteredState.apiDirective != ApiDirective::DISABLE);
-        stateDirectiveCallback_(wifiEnabled, apiEnabled);
+        stateDirectiveCallback_(hasWifiDirective, wifiEnabled,
+                                hasApiDirective, apiEnabled);
     }
 }
 

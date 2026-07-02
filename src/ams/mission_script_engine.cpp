@@ -86,6 +86,22 @@ bool MissionScriptEngine::begin()
         return false;
     }
 
+    deferredIoTaskHandle_ = xTaskCreateStaticPinnedToCore(
+        deferredIoTaskFn,
+        "ams_io",
+        static_cast<uint32_t>(sizeof(deferredIoStack_) / sizeof(deferredIoStack_[0])),
+        this,
+        ares::TASK_PRIORITY_AMS_IO,
+        deferredIoStack_,
+        &deferredIoTcb_,
+        tskNO_AFFINITY);
+
+    if (deferredIoTaskHandle_ == nullptr)
+    {
+        sBeginCount--;
+        return false;
+    }
+
     (void)tryRestoreResumePointLocked(millis64());
     begun_ = true;
     return true;
@@ -365,7 +381,7 @@ bool MissionScriptEngine::arm()
         (void)saveResumePointLocked(nowMs, true);
     } // Mutex released; checkpoint staged.
 
-    flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
+    flushPendingCheckpointUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
     return true;
 }
 
@@ -412,7 +428,7 @@ void MissionScriptEngine::setExecutionEnabled(bool enabled)
         (void)saveResumePointLocked(millis64(), true);
     } // Mutex released; checkpoint staged.
 
-    flushPendingIoUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
+    flushPendingCheckpointUnlocked(); // Write staged checkpoint outside the mutex (AMS-8.3).
 }
 
 bool MissionScriptEngine::requestTelemetry(uint64_t nowMs)

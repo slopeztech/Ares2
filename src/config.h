@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.6.4"
+#define ARES_VERSION_STRING "2.6.5"
 
 namespace ares
 {
@@ -109,14 +109,22 @@ constexpr uint32_t    SERIAL_BAUD    = 115200;   ///< USB-CDC baud rate.
 
 // ── I2C ─────────────────────────────────────────────────────
 constexpr uint32_t I2C_FREQ     = 400000;  ///< I2C0 bus speed in Hz (BMP280, 400 kHz fast mode).
-constexpr uint32_t I2C_FREQ_IMU =  50000;  ///< I2C1 bus speed in Hz (MPU-6050, 50 kHz).
-                                            ///< GY-521 modules use 10 kΩ pull-ups; t_rise ~0.85 µs is
-                                            ///< marginal at 100 kHz (spec: 1 µs max).  50 kHz doubles
-                                            ///< the allowed rise time to 2 µs, eliminating NACK storms.
+constexpr uint32_t I2C_FREQ_IMU_SAFE_HZ = 50000U;   ///< Conservative IMU I2C1 profile for weak pull-ups / long wiring.
+constexpr uint32_t I2C_FREQ_IMU_FAST_HZ = 100000U;  ///< Fast IMU I2C1 profile (standard mode, preferred when stable).
+constexpr bool     IMU_I2C_USE_FAST_PROFILE = true; ///< true: use 100 kHz profile. false: force conservative 50 kHz.
+constexpr uint32_t I2C_FREQ_IMU = IMU_I2C_USE_FAST_PROFILE
+                                ? I2C_FREQ_IMU_FAST_HZ
+                                : I2C_FREQ_IMU_SAFE_HZ; ///< Effective I2C1 bus speed in Hz for IMU drivers.
 constexpr uint16_t I2C_TIMEOUT_MS = 5;     ///< Max I2C transaction stall before fail-fast recovery.
 
 // ── Barometer (I2C BMP280) ──────────────────────────────────
 constexpr uint8_t BMP280_I2C_ADDR = 0x77;  ///< SDO → VCC (AHT20+BMP280 default).
+// BMP280 runtime profile (datasheet registers 0xF4/0xF5):
+// - CTRL_MEAS default keeps temperature x1 + pressure x4 in normal mode.
+// - CONFIG default uses minimal standby (0.5 ms) so new samples are available
+//   at sub-50 ms logging intervals instead of repeating a 500 ms-held sample.
+constexpr uint8_t BMP280_CTRL_MEAS_VAL = 0x2FU; ///< osrs_t=x1, osrs_p=x4, mode=normal.
+constexpr uint8_t BMP280_CONFIG_VAL    = 0x08U; ///< t_sb=0.5 ms, IIR filter x4, 3-wire SPI disabled.
 
 // ── IMU (I2C MPU-6050) ──────────────────────────────────────
 constexpr uint8_t MPU6050_I2C_ADDR = 0x68; ///< AD0 → GND (default address).
@@ -182,7 +190,7 @@ constexpr uint16_t    API_CFG_MUTEX_TIMEOUT_MS = 50;    ///< Config mutex wait (
 // ── Storage / log download (REST-12) ────────────────────────
 constexpr const char* LOG_DIR             = "/logs";    ///< LittleFS log directory.
 constexpr uint8_t     MAX_LOG_FILES       = 16;         ///< Max files returned by listing.
-constexpr uint16_t    DOWNLOAD_CHUNK_SIZE = 512;        ///< Chunk size for file download (REST-12.2).
+constexpr uint16_t    DOWNLOAD_CHUNK_SIZE = 1024;       ///< Chunk size for file download (REST-12.2). Larger chunks reduce per-request LittleFS open/seek overhead on big logs.
 constexpr uint8_t     LOG_FILENAME_MAX    = 32;         ///< Max log filename length (no path).
 
 // ── AMS (Ares Mission Script) ───────────────────────────────
@@ -227,7 +235,7 @@ constexpr uint32_t    AMS_SENSOR_CACHE_TTL_MS           = 5U;     ///< Maximum a
 // ── Config field validation bounds (REST-5.4) ───────────────
 constexpr uint32_t    TELEMETRY_INTERVAL_MIN = 100;     ///< Min telemetry interval ms.
 constexpr uint32_t    TELEMETRY_INTERVAL_MAX = 60000;   ///< Max telemetry interval ms.
-constexpr uint32_t    LOG_INTERVAL_MIN_MS    = 100;     ///< Min log_every interval ms (flash wear + latency protection, AMS-4.3.1).
+constexpr uint32_t    LOG_INTERVAL_MIN_MS    = 10;     ///< Min log_every interval ms (flash wear + latency protection, AMS-4.3.1).
 constexpr uint32_t    LOG_INTERVAL_MAX_MS    = 60000;   ///< Max log_every interval ms.
 constexpr uint8_t     NODE_ID_MIN            = 1;       ///< Min telemetry node ID.
 constexpr uint8_t     NODE_ID_MAX            = 253;     ///< Max telemetry node ID.
@@ -256,9 +264,11 @@ constexpr uint32_t TASK_STACK_SIZE_LED   = 2048;  ///< LED task stack in bytes (
 constexpr UBaseType_t TASK_PRIORITY_COMMS = 2;  ///< Medium — telemetry TX.
 constexpr UBaseType_t TASK_PRIORITY_API   = 1;  ///< Low    — REST API polling.
 constexpr UBaseType_t TASK_PRIORITY_LED   = 1;  ///< Low    — status heartbeat.
+constexpr UBaseType_t TASK_PRIORITY_AMS_IO = 1;  ///< Low    — deferred AMS flash draining.
 constexpr uint32_t SENSOR_RATE_MS    = 10;   ///< 100 Hz.
 constexpr uint32_t FLIGHT_RATE_MS    = 20;   ///<  50 Hz.
 constexpr uint32_t LOOP_TICK_WARN_MS = 50;   ///< Max tick work duration (ms) before a LOG_W overrun warning is emitted.
+constexpr bool     LOOP_TIMING_PROFILE_ENABLED = false; ///< Emit per-stage loop timing traces for lab profiling; keep false in flight builds.
 /// Maximum vTaskDelay in loop() — must be less than half CONFIG_ESP_TASK_WDT_TIMEOUT_S
 /// (5 s) so the TWDT reset at the top of each iteration is always reached in time.
 constexpr uint32_t LOOP_SLEEP_MAX_MS = 2000U; ///< 2 s < (5 s / 2) = 2.5 s.
@@ -272,6 +282,9 @@ constexpr uint32_t LOG_RATE_MS       = 100;  ///<  10 Hz.
 constexpr uint32_t TELEMETRY_RATE_MS = 2000; ///< 0.5 Hz — must exceed air TX time (~1.85 s @ 2.4 kbps).
 constexpr uint32_t API_RATE_MS       = 50;   ///<  20 Hz.
 constexpr uint32_t LED_RATE_MS       = 1000; ///<   1 Hz.
+constexpr uint32_t TASK_STACK_SIZE_AMS_IO = 6144; ///< AMS deferred I/O worker stack in bytes.
+constexpr uint8_t  AMS_IO_MAX_PENDING_APPENDS = 32U; ///< Deferred AMS append queue depth.
+constexpr uint32_t AMS_IO_APPEND_BURST_BYTES  = 1024U; ///< Max bytes coalesced per LittleFS append.
 
 // ── Flight thresholds ──────────────────────────────────────
 // These define the state-machine transitions for the flight

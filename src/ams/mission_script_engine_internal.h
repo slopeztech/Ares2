@@ -27,15 +27,21 @@ namespace ams
 
 // ── Deferred I/O staging (AMS-8.3) ───────────────────────────────────────────
 // Checkpoint writes and CSV log appends are assembled inside the mutex but
-// executed by flushPendingIoUnlocked() after the lock is released.  This
+// executed by flushPendingAppendsUnlocked() after the lock is released.  This
 // keeps blocking LittleFS latency out of the critical section so that
 // injectTcCommand("ABORT") and other API callers cannot timeout on I/O.
 
-/// Worst-case pending appends per tick:
+/// Minimum pending appends needed to hold one fully busy tick:
 ///   1 header + 1 data row per LOG slot = 2 × AMS_MAX_HK_SLOTS = 8,
 ///   plus 1 legacy header + 1 legacy data row = 10 entries total.
-constexpr uint8_t kMaxPendingAppends =
+constexpr uint8_t kMinPendingAppendsPerTick =
     static_cast<uint8_t>(ares::AMS_MAX_HK_SLOTS * 2U + 2U);
+
+/// Runtime queue depth for deferred appends (bounded static storage).
+constexpr uint8_t kMaxPendingAppends = ares::AMS_IO_MAX_PENDING_APPENDS;
+
+static_assert(kMaxPendingAppends >= kMinPendingAppendsPerTick,
+              "AMS_IO_MAX_PENDING_APPENDS must hold at least one worst-case tick");
 
 /** @brief Staged checkpoint record awaiting flush to LittleFS (AMS-8.3). */
 struct PendingCheckpoint

@@ -9,6 +9,7 @@
 
 #include <LittleFS.h>
 #include <cstring>
+#include <esp_timer.h>
 #include <sys/stat.h>
 
 // ── Log tag ─────────────────────────────────────────────────
@@ -514,6 +515,8 @@ StorageStatus LittleFsStorage::appendFile(const char* path,
                                            const uint8_t* data,
                                            uint32_t len)
 {
+    const uint64_t opStartUs = static_cast<uint64_t>(esp_timer_get_time());
+
     if (!validatePath(path))        { return StorageStatus::PATH_ERROR; }
     if (data == nullptr && len > 0) { return StorageStatus::ERROR; }
     if (len == 0)                   { return StorageStatus::OK; }
@@ -548,6 +551,13 @@ StorageStatus LittleFsStorage::appendFile(const char* path,
         return StorageStatus::ERROR;
     }
 
+    if (ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        const uint32_t elapsedUs = static_cast<uint32_t>(static_cast<uint64_t>(esp_timer_get_time())
+                                                          - opStartUs);
+        LOG_I(TAG, "appendFile(%s,%u): %" PRIu32 " us", path, len, elapsedUs);
+    }
+
     return StorageStatus::OK;
 }
 
@@ -556,6 +566,8 @@ StorageStatus LittleFsStorage::writeInternal(const char* path, // NOLINT(readabi
                                               uint32_t len,
                                               const char* mode)
 {
+    const uint64_t opStartUs = static_cast<uint64_t>(esp_timer_get_time());
+
     // CERT-1: validate all inputs
     if (!validatePath(path))                 { return StorageStatus::PATH_ERROR; }
     if (data == nullptr && len > 0)          { return StorageStatus::ERROR; }
@@ -688,6 +700,13 @@ StorageStatus LittleFsStorage::writeInternal(const char* path, // NOLINT(readabi
 
     // bakPath was created by the rename only if hadOriginal; skip if not present.
     if (hadOriginal) { (void)LittleFS.remove(bakPath); }
+
+    if (ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        const uint32_t elapsedUs = static_cast<uint32_t>(static_cast<uint64_t>(esp_timer_get_time())
+                                                          - opStartUs);
+        LOG_I(TAG, "%s(%s,%u): %" PRIu32 " us", mode, path, len, elapsedUs);
+    }
 
     return StorageStatus::OK;
 }

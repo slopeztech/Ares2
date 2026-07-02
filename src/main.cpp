@@ -44,6 +44,7 @@
 #include <Wire.h>
 #include <new>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <esp_task_wdt.h>
 
 #include "debug/ares_log.h"
@@ -250,12 +251,22 @@ static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dis
 /// Apply state-level AMS directives to the live WiFi/API runtime.
 /// Each directive is applied independently so AMS can disable the AP, the
 /// REST listener, or both for a given mission state.
-static void applyMissionStateDirective(bool wifiEnabled, bool apiEnabled)
+static void applyMissionStateDirective(bool hasWifiDirective,
+                                       bool wifiEnabled,
+                                       bool hasApiDirective,
+                                       bool apiEnabled)
 {
     if (pApiServer != nullptr)
     {
-        pApiServer->setWifiEnabled(wifiEnabled);
-        pApiServer->setApiEnabled(apiEnabled);
+        if (hasWifiDirective)
+        {
+            pApiServer->setWifiEnabled(wifiEnabled);
+        }
+
+        if (hasApiDirective)
+        {
+            pApiServer->setApiEnabled(apiEnabled);
+        }
     }
 }
 
@@ -335,6 +346,18 @@ static uint32_t computeSleepMs(uint64_t nowAms,
                                  : sleepMs64);
 }
 
+static void logLoopTimingUs(const char* label, uint64_t startUs)
+{
+    if (!ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        return;
+    }
+
+    const uint32_t elapsedUs = static_cast<uint32_t>(static_cast<uint64_t>(esp_timer_get_time())
+                                                     - startUs);
+    LOG_I("LOOP", "%s: %" PRIu32 " us", label, elapsedUs);
+}
+
 // ═════════════════════════════════════════════════════════
 void setup() // NOLINT(readability-function-size)
 {
@@ -349,10 +372,13 @@ void setup() // NOLINT(readability-function-size)
     // [P1-3] Construct baro here — Wire is now initialised (SIOF fix).
     pBaro = new (s_baroBuf) Bmp280Driver(Wire, ares::BMP280_I2C_ADDR);
     bindInstalledDrivers(pBaro, &serialOut);
-    // I2C1: dedicated IMU bus (MPU6050 on GPIO 12/13).
-    // Uses 100 kHz standard mode — GY-521 pull-ups (10 kΩ) are not reliable at 400 kHz.
+        // I2C1: dedicated IMU bus (MPU6050/ADXL375 on GPIO 12/13).
+        // Effective clock is selected in config.h (fast/safe profile).
     imuWire.begin(ares::PIN_IMU_SDA, ares::PIN_IMU_SCL, ares::I2C_FREQ_IMU);
     imuWire.setTimeOut(ares::I2C_TIMEOUT_MS);
+        LOG_I("BOOT", "I2C1 IMU bus at %lu Hz (%s profile)",
+            static_cast<unsigned long>(ares::I2C_FREQ_IMU),
+            ares::IMU_I2C_USE_FAST_PROFILE ? "fast" : "safe");
 
     const ares::hardware::DriverList<ares::hardware::BaroDriverEntry>& baroDrivers =
         ares::hardware::baroDrivers();
@@ -466,15 +492,24 @@ void loop()
 
     const ares::hardware::DriverList<ares::hardware::GpsDriverEntry>& gpsDrivers =
         ares::hardware::gpsDrivers();
+    const uint64_t gpsStartUs = static_cast<uint64_t>(esp_timer_get_time());
     for (uint8_t i = 0U; i < gpsDrivers.count; i++)
     {
         GpsInterface* const iface = gpsDrivers.entries[i].iface;
         if (iface != nullptr) { iface->update(); }
     }
+    logLoopTimingUs("gps->update", gpsStartUs);
+
+    const uint64_t radioPollStartUs = static_cast<uint64_t>(esp_timer_get_time());
     radioDispatcher.poll(now);
+    logLoopTimingUs("radioDispatcher.poll", radioPollStartUs);
+
     logRuntimeSecrets(now, lastWifiPasswordPrintMs, lastApiTokenPrintMs);
 
+    const uint64_t amsTickStartUs = static_cast<uint64_t>(esp_timer_get_time());
     missionEngine.tick(nowAms);
+    logLoopTimingUs("missionEngine.tick", amsTickStartUs);
+
     updateMissionCompletionStatus(*pApiServer, missionEngine, lastNotifiedStatus);
 
     const uint32_t tickMs = static_cast<uint32_t>(millis64() - tickStart);

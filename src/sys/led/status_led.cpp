@@ -55,7 +55,7 @@ bool StatusLed::begin()
     TaskHandle_t handle = xTaskCreateStaticPinnedToCore(
         taskFn,
         "led",
-        sizeof(stack_),             // RTOS-7.2: size in bytes
+        static_cast<uint32_t>(sizeof(stack_) / sizeof(stack_[0])), // RTOS-7.2: depth in StackType_t entries
         this,                       // pass self as parameter
         ares::TASK_PRIORITY_LED,
         stack_,
