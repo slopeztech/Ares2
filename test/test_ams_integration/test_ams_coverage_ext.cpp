@@ -136,7 +136,9 @@ public:
 
     uint32_t availableForWrite() const override
     {
-        return capacity;
+        const uint32_t bufAvail =
+            static_cast<uint32_t>(sizeof(buffer) - 1U) - used;
+        return (capacity < bufAvail) ? capacity : bufAvail;
     }
 
     uint32_t write(const uint8_t* data, uint32_t len) override
@@ -153,7 +155,7 @@ public:
             used += toCopy;
             buffer[used] = '\0';
         }
-        return len;
+        return toCopy;
     }
 
     void clear()

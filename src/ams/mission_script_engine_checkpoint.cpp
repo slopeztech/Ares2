@@ -451,6 +451,9 @@ bool MissionScriptEngine::stageAppendBurstLocked(uint8_t* burst,
     if (!guard.acquired())
     {
         LOG_W(TAG, "deferred append drain: mutex timeout");
+        // The worker consumes its notify token before attempting the drain.
+        // Re-notify so pending rows are retried even when this attempt times out.
+        notifyDeferredIoWorker();
         return false;
     }
 

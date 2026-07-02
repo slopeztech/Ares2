@@ -213,6 +213,7 @@ bool ApiServer::begin()
 
 void ApiServer::applyWifiRuntimeState(bool enabled)
 {
+    (void)esp_task_wdt_reset();
     if (enabled)
     {
         if (!wifi_.isReady() && !wifi_.begin(devCfg_))
@@ -228,10 +229,12 @@ void ApiServer::applyWifiRuntimeState(bool enabled)
     }
 
     wifiRuntimeStarted_ = wifi_.isReady();
+    (void)esp_task_wdt_reset();
 }
 
 void ApiServer::applyApiRuntimeState(bool enabled)
 {
+    (void)esp_task_wdt_reset();
     if (enabled)
     {
         httpServer.begin();
@@ -243,6 +246,7 @@ void ApiServer::applyApiRuntimeState(bool enabled)
     }
 
     apiRuntimeListening_ = enabled;
+    (void)esp_task_wdt_reset();
 }
 
 void ApiServer::syncRuntimeState()
@@ -412,7 +416,11 @@ void ApiServer::run()
                     : API_SAFE_SOCKET_TIMEOUT_MS;
             client.setTimeout(timeoutMs);
             handleClient(client);
-            client.stop();  // REST-10.3: close after response
+            // Avoid potentially blocking close on already-reset sockets.
+            if (client.connected())
+            {
+                client.stop();  // REST-10.3: close after response
+            }
         }
 
         const uint32_t nowMs = millis();
