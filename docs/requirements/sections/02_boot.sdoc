@@ -31,7 +31,7 @@ ELEMENTS:
 UID: SRS-1000
 STATUS: Active
 TAGS: Boot
-STATEMENT: On power-on reset, the firmware shall initialise subsystems in the following strict order: (1) USB serial, (2) I2C baro bus at 400 kHz (I2C_FREQ), (3) I2C IMU bus at 50 kHz (I2C_FREQ_IMU), (4) BMP280 barometer, (5) BN-220 GPS on UART1, (6) ADXL375 + MPU-6050 IMU, (7) DX-LR03 LoRa on UART2 at 9600 baud, (8) LittleFS filesystem, (9) WiFi soft-AP, (10) REST API HTTP server.
+STATEMENT: On power-on reset, the firmware shall initialise subsystems in the following strict order: (1) USB serial, (2) I2C baro bus at 400 kHz (I2C_FREQ), (3) I2C IMU bus using the configured profile frequency (I2C_FREQ_IMU), (4) BMP280 barometer, (5) BN-220 GPS on UART1, (6) ADXL375 + MPU-6050 IMU, (7) DX-LR03 LoRa on UART2 at 9600 baud, (8) LittleFS filesystem, (9) WiFi soft-AP, (10) REST API HTTP server.
 VERIFICATION: Inspection
 RATIONALE: This order ensures hardware dependencies are satisfied before dependent subsystems start. I2C buses must be active before BMP280/IMU register reads; LittleFS must be mounted before any AMS checkpoint restore or log write.
 REFS: src/main.cpp, src/config.h I2C_FREQ, I2C_FREQ_IMU

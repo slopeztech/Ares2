@@ -386,6 +386,8 @@ private:
     /// Runtime state currently applied by the API task.
     bool wifiRuntimeStarted_{false};
     bool apiRuntimeListening_{true};
+    bool wifiShutdownPending_{false};
+    uint32_t wifiShutdownDeadlineMs_{0U};
 
     // ── RTOS task (static allocation) ───────────────────────
     StackType_t  stack_[ares::TASK_STACK_SIZE_API / sizeof(StackType_t)] = {};

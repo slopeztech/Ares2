@@ -25,6 +25,7 @@
 
 #include <freertos/task.h>
 #include <cinttypes>
+#include <esp_timer.h>
 
 static constexpr const char* TAG = "LORA";
 
@@ -77,6 +78,8 @@ bool DxLr03Driver::begin()
 // ── send() ───────────────────────────────────────────────
 RadioStatus DxLr03Driver::send(const uint8_t* data, uint16_t len)
 {
+    const uint64_t txStartUs = static_cast<uint64_t>(esp_timer_get_time());
+
     if (!ready_)          { return RadioStatus::NOT_READY; }
     if (data == nullptr)  { return RadioStatus::ERROR; }
     if (len == 0)         { return RadioStatus::OK; }
@@ -101,6 +104,13 @@ RadioStatus DxLr03Driver::send(const uint8_t* data, uint16_t len)
     }
 
     serial_.flush();  // Wait for UART TX FIFO to drain
+
+    if (ares::LOOP_TIMING_PROFILE_ENABLED)
+    {
+        const uint32_t elapsedUs = static_cast<uint32_t>(static_cast<uint64_t>(esp_timer_get_time())
+                                                          - txStartUs);
+        LOG_I(TAG, "send(%u): %" PRIu32 " us", static_cast<unsigned>(len), elapsedUs);
+    }
 
     return RadioStatus::OK;
 }

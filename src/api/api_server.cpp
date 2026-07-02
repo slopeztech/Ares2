@@ -30,6 +30,8 @@
 
 // ── Log tag ─────────────────────────────────────────────────
 static constexpr const char* TAG = "API";
+static constexpr uint32_t WIFI_SHUTDOWN_QUIESCE_MS = 250U;
+static constexpr uint32_t API_SAFE_SOCKET_TIMEOUT_MS = 1000U;
 static constexpr uint32_t API_STACK_MONITOR_INTERVAL_MS = 5000;
 static constexpr uint32_t API_STACK_WARN_BYTES = 1024;
 
@@ -184,7 +186,7 @@ bool ApiServer::begin()
     taskHandle_ = xTaskCreateStaticPinnedToCore(
         taskFn,
         "api",                              // REST-13.1
-        sizeof(stack_),                     // RTOS-7.2: bytes
+        static_cast<uint32_t>(sizeof(stack_) / sizeof(stack_[0])), // RTOS-7.2: depth in StackType_t entries
         this,
         ares::TASK_PRIORITY_API,
         stack_,
@@ -246,15 +248,43 @@ void ApiServer::applyApiRuntimeState(bool enabled)
 void ApiServer::syncRuntimeState()
 {
     const bool wantWifi = desiredWifiEnabled_.load();
-    if (wantWifi != wifiRuntimeStarted_)
+    const bool wantApi = wantWifi && desiredApiEnabled_.load();
+
+    if (wantWifi)
     {
-        applyWifiRuntimeState(wantWifi);
+        wifiShutdownPending_ = false;
+        if (!wifiRuntimeStarted_)
+        {
+            applyWifiRuntimeState(true);
+        }
     }
 
-    const bool wantApi = desiredApiEnabled_.load();
     if (wantApi != apiRuntimeListening_)
     {
         applyApiRuntimeState(wantApi);
+    }
+
+    if (!wantWifi)
+    {
+        if (wifiRuntimeStarted_)
+        {
+            const uint32_t nowMs = millis();
+            if (!wifiShutdownPending_)
+            {
+                wifiShutdownPending_ = true;
+                wifiShutdownDeadlineMs_ = nowMs + WIFI_SHUTDOWN_QUIESCE_MS;
+            }
+            else if (!apiRuntimeListening_
+                  && static_cast<uint32_t>(nowMs - wifiShutdownDeadlineMs_) < 0x80000000UL)
+            {
+                applyWifiRuntimeState(false);
+                wifiShutdownPending_ = false;
+            }
+        }
+        else
+        {
+            wifiShutdownPending_ = false;
+        }
     }
 }
 
@@ -374,7 +404,13 @@ void ApiServer::run()
         WiFiClient client = httpServer.accept();
         if (client.connected())
         {
-            client.setTimeout(ares::WIFI_CONN_TIMEOUT_MS);  // REST-10.2
+            // Keep per-call socket timeout comfortably below TWDT so parser
+            // reads cannot block this task for ~5s in one shot.
+            const uint32_t timeoutMs =
+                (ares::WIFI_CONN_TIMEOUT_MS < API_SAFE_SOCKET_TIMEOUT_MS)
+                    ? ares::WIFI_CONN_TIMEOUT_MS
+                    : API_SAFE_SOCKET_TIMEOUT_MS;
+            client.setTimeout(timeoutMs);
             handleClient(client);
             client.stop();  // REST-10.3: close after response
         }
@@ -420,7 +456,9 @@ static bool parseRequestLine(WiFiClient& client,
 {
     pathTruncated = false;
     char line[HTTP_LINE_MAX] = {};
+    (void)esp_task_wdt_reset();
     size_t lineLen = client.readBytesUntil('\n', line, HTTP_LINE_MAX - 1U);
+    (void)esp_task_wdt_reset();
     if (lineLen > 0U && line[lineLen - 1U] == '\r')
     {
         lineLen--;
@@ -495,7 +533,9 @@ static void parseHeaders(WiFiClient& client,
     while (headerCount < HTTP_MAX_HEADERS)  // PO10-2: bounded
     {
         char hdr[HTTP_HEADER_MAX] = {};
+        (void)esp_task_wdt_reset();
         size_t hLen = client.readBytesUntil('\n', hdr, HTTP_HEADER_MAX - 1U);
+        (void)esp_task_wdt_reset();
         if (hLen > 0U && hdr[hLen - 1U] == '\r')
         {
             hLen--;
@@ -558,7 +598,9 @@ static bool readRequestBody(WiFiClient& client,
     bodyLen = 0;
     const uint32_t toRead =
         (contentLength < maxLen) ? contentLength : maxLen;
+    (void)esp_task_wdt_reset();
     bodyLen = static_cast<uint32_t>(client.readBytes(body, toRead));
+    (void)esp_task_wdt_reset();
     body[bodyLen] = '\0';   // safe: buffer is always toRead+1 or larger
     return bodyLen == toRead;
 }

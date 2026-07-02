@@ -78,3 +78,25 @@ inline UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t /*task*/)
 {
     return static_cast<UBaseType_t>(8192U);
 }
+
+/**
+ * Stub for ulTaskNotifyTake.
+ *
+ * In single-threaded sim there is no RTOS scheduler; return immediately as if
+ * one notification token had been consumed so worker loops can progress.
+ */
+inline uint32_t ulTaskNotifyTake(BaseType_t /*xClearCountOnExit*/, TickType_t /*xTicksToWait*/)
+{
+    return 1U;
+}
+
+/**
+ * Stub for xTaskNotifyGive.
+ *
+ * Notification delivery is a no-op in single-threaded sim; return pdTRUE to
+ * match a successful post.
+ */
+inline BaseType_t xTaskNotifyGive(TaskHandle_t /*xTaskToNotify*/)
+{
+    return pdTRUE;
+}
