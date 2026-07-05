@@ -74,12 +74,18 @@ private:
     bool writeReg(uint8_t reg, uint8_t value);
     /// Burst-read @p len consecutive registers starting at @p reg.
     bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len);
+    /// Read raw signed 16-bit axis counts directly from DATAX0..DATAZ1.
+    bool readRawAxesLocked(int16_t& rawAx, int16_t& rawAy, int16_t& rawAz);
     /// Inner read implementation — called while imuMutex_ is held.
     ImuStatus readLocked(ImuReading& out);
 
     TwoWire& wire_;                         ///< I2C bus (injected, not owned).
     uint8_t  addr_;                         ///< 7-bit I2C slave address.
     bool     ready_                = false; ///< true after successful begin().
+    bool     biasReady_            = false; ///< true after startup static-offset calibration.
+    int16_t  biasRawX_             = 0;     ///< Startup static offset on X axis (raw counts).
+    int16_t  biasRawY_             = 0;     ///< Startup static offset on Y axis (raw counts).
+    int16_t  biasRawZ_             = 0;     ///< Startup static offset on Z axis (raw counts).
     uint32_t lastReinitAttemptMs_  = 0U;    ///< millis() of last lazy re-init attempt.
     uint8_t  consecutiveErrors_    = 0U;    ///< Consecutive readRegs() failures.
     SemaphoreHandle_t imuMutex_    = nullptr; ///< Serialises concurrent calls (CERT-13).
