@@ -398,6 +398,27 @@ Maximum throughput per tick by budget level:
 - Tie-break order is deterministic: EVENT > HK > LOG
 - Within a selected group all due slots fire before the next group is considered
 
+#### AMS-4.4.1 Starvation guard — serial-only diagnostic
+
+If the elapsed time since a slot last fired is more than twice the slot period
+when the slot timer is advanced (i.e., the slot is still behind after one catch-
+up step), the engine resets the timer to `nowMs` and emits a **serial** warning
+(`LOG_W`) with the number of skipped samples.
+
+**The starvation guard does NOT send a radio EVENT frame.**
+
+Rationale: on a slow radio link (e.g., LoRa at 9600 baud), a single
+`sendEventLocked()` call blocks the calling task for the full frame transmission
+time (~50 ms for a 48-byte frame).  If the starvation guard emits a radio EVENT
+on every stalled tick, the radio TX latency itself causes the next tick to miss
+its deadline, which re-triggers the guard — a self-reinforcing feedback loop
+that pegs the tick period at `radio_tx_time + ε` regardless of the configured
+`log_every` or `every` interval.
+
+Using `LOG_W` (serial only) keeps the diagnostic available without introducing
+the feedback loop.  The ground station can detect missed samples from timestamp
+gaps in the CSV log or from the HK sequence counter.
+
 ### AMS-4.5 Sensor Expressions
 
 Supported expressions in both HK and LOG blocks:

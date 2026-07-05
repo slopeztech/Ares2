@@ -78,6 +78,8 @@ docs/changelog/
     v2.6.2.md   ← Patch: pre-arm CALIBRATE progression fix + integer-safe RUNTIME HK mapping
     v2.6.3.md   ← Patch: centralized installed-driver registry + runtime driver selection/defaults (GPS/BARO/COM/IMU)
     v2.6.4.md   ← Patch: SerialInterface HAL abstraction + hardware-agnostic telemetry; removes #ifdef ARDUINO coupling; registry-based driver resolution
+    v2.6.5.md   ← Performance/Observability: deferred I/O worker, profiling flag, BMP280 standby fix, AMS I/O stack fix, log download TWDT hardening
+    v2.7.0.md   ← Performance + Bug Fix: STOR-2 RAM write-behind buffer (~80 ms → <1 ms per CSV row); AMS-4.4.1 starvation-guard radio feedback loop fix; IMU I²C 400 kHz
     v2.6.5.md   ← Minor: performance stabilization pass; loop timing instrumentation; deferred CSV append worker; API/logging WDT hardening
 ```
 

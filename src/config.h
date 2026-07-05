@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.6.5"
+#define ARES_VERSION_STRING "2.7.0"
 
 namespace ares
 {
@@ -110,8 +110,8 @@ constexpr uint32_t    SERIAL_BAUD    = 115200;   ///< USB-CDC baud rate.
 // ── I2C ─────────────────────────────────────────────────────
 constexpr uint32_t I2C_FREQ     = 400000;  ///< I2C0 bus speed in Hz (BMP280, 400 kHz fast mode).
 constexpr uint32_t I2C_FREQ_IMU_SAFE_HZ = 50000U;   ///< Conservative IMU I2C1 profile for weak pull-ups / long wiring.
-constexpr uint32_t I2C_FREQ_IMU_FAST_HZ = 100000U;  ///< Fast IMU I2C1 profile (standard mode, preferred when stable).
-constexpr bool     IMU_I2C_USE_FAST_PROFILE = true; ///< true: use 100 kHz profile. false: force conservative 50 kHz.
+constexpr uint32_t I2C_FREQ_IMU_FAST_HZ = 400000U;  ///< Fast IMU I2C1 profile (fast mode, 4× throughput vs standard). ADXL375 and MPU6050 both support 400 kHz.
+constexpr bool     IMU_I2C_USE_FAST_PROFILE = true; ///< true: use 400 kHz fast-mode profile. false: force conservative 50 kHz.
 constexpr uint32_t I2C_FREQ_IMU = IMU_I2C_USE_FAST_PROFILE
                                 ? I2C_FREQ_IMU_FAST_HZ
                                 : I2C_FREQ_IMU_SAFE_HZ; ///< Effective I2C1 bus speed in Hz for IMU drivers.
@@ -285,6 +285,25 @@ constexpr uint32_t LED_RATE_MS       = 1000; ///<   1 Hz.
 constexpr uint32_t TASK_STACK_SIZE_AMS_IO = 6144; ///< AMS deferred I/O worker stack in bytes.
 constexpr uint8_t  AMS_IO_MAX_PENDING_APPENDS = 32U; ///< Deferred AMS append queue depth.
 constexpr uint32_t AMS_IO_APPEND_BURST_BYTES  = 1024U; ///< Max bytes coalesced per LittleFS append.
+/// How many consecutive appendFile() calls to the same path before an explicit
+/// flush is forced.  Lower values reduce data loss on power failure; higher
+/// values reduce flash write frequency.  Each LittleFS page is 512 bytes, so
+/// at ~40 bytes/row a natural page flush already occurs every ~12 rows — this
+/// constant is a safety-net upper bound.
+constexpr uint8_t  AMS_IO_APPEND_FLUSH_INTERVAL = 16U;
+/// RAM write-behind buffer size for the storage append stream (STOR-2).
+/// CSV rows are accumulated in this static buffer and committed to flash in a
+/// single large f.write() only when the buffer fills or the durability timer
+/// elapses.  This decouples the per-row logging rate from the LittleFS flash
+/// program latency (~40-80 ms per write on ESP32 internal flash), which is the
+/// dominant cost when writing one small row per tick.  At ~40 bytes/row a 4 KiB
+/// buffer batches ~100 rows into one flash write.
+constexpr uint32_t AMS_IO_APPEND_RAM_BYTES = 4096U;
+/// Maximum time a row may sit in the RAM write-behind buffer before a durability
+/// flush is forced (STOR-2).  Bounds worst-case data loss on power failure to
+/// this window regardless of data rate.  On read/download and unmount the buffer
+/// is always flushed, so retrieved logs are never truncated.
+constexpr uint32_t AMS_IO_APPEND_FLUSH_MS = 1000U;
 
 // ── Flight thresholds ──────────────────────────────────────
 // These define the state-machine transitions for the flight

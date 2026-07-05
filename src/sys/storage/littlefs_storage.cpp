@@ -447,6 +447,16 @@ void LittleFsStorage::end()
         return;
     }
 
+    // Flush and close any cached append handle before unmounting.
+    if (cachedAppendFile_)
+    {
+        (void)commitAppendRamBufLocked();
+        cachedAppendFile_.flush();
+        cachedAppendFile_.close();
+        cachedAppendPath_[0] = '\0';
+        appendRamLen_        = 0U;
+    }
+
     if (mounted_)
     {
         LittleFS.end();
@@ -487,6 +497,14 @@ StorageStatus LittleFsStorage::readFile(const char* path,
 
     if (!LittleFS.exists(path))            { return StorageStatus::NOT_FOUND; }
 
+    // Flush any RAM-buffered append data for this path so the reader sees the
+    // latest rows (STOR-2 write-behind buffer).
+    if (cachedAppendFile_ && (strcmp(path, cachedAppendPath_) == 0))
+    {
+        (void)commitAppendRamBufLocked();
+        cachedAppendFile_.flush();
+    }
+
     File f = LittleFS.open(path, "r");
     if (!f)
     {
@@ -526,36 +544,149 @@ StorageStatus LittleFsStorage::appendFile(const char* path,
     if (!guard.acquired()) { LOG_W(TAG, "mutex timeout"); return StorageStatus::BUSY; }
     if (!mounted_)         { return StorageStatus::NOT_READY; }
 
-    if (!ensureParentDirectories(path))
+    // ── Append-stream cache + RAM write-behind (STOR-2) ──────────────────────
+    // Rows are staged in appendRamBuf_ and committed to flash only when the
+    // buffer fills or the durability timer elapses, so the ~40-80 ms LittleFS
+    // flash program cost is amortised over ~100 rows instead of paid per row.
+    bool sameFile = false;
+    if (cachedAppendFile_)
     {
-        LOG_W(TAG, "mkdir parent failed: %s", path);
-        return StorageStatus::ERROR;
+        sameFile = (strcmp(path, cachedAppendPath_) == 0);
+    }
+    if (!sameFile)
+    {
+        // Path change (or first call): commit+close the previous stream, open new.
+        if (!openAppendCacheLocked(path)) { return StorageStatus::ERROR; }
     }
 
-    // Direct append — no transactional copy needed for sequential log writes.
-    // create=true: VFS creates the file if it does not exist yet.
-    File f = LittleFS.open(path, "a", /*create=*/true);
-    if (!f)
-    {
-        LOG_W(TAG, "open(a) failed: %s", path);
-        return StorageStatus::ERROR;
-    }
-
-    const uint32_t written = static_cast<uint32_t>(f.write(data, len));
-    f.flush();
-    f.close();
-
-    if (written != len)
-    {
-        LOG_W(TAG, "short append: want=%u got=%u path=%s", len, written, path);
-        return StorageStatus::ERROR;
-    }
+    const StorageStatus stStage = stageAppendRowLocked(data, len, path);
+    if (stStage != StorageStatus::OK) { return stStage; }
 
     if (ares::LOOP_TIMING_PROFILE_ENABLED)
     {
-        const uint32_t elapsedUs = static_cast<uint32_t>(static_cast<uint64_t>(esp_timer_get_time())
-                                                          - opStartUs);
+        const uint32_t elapsedUs = static_cast<uint32_t>(
+            static_cast<uint64_t>(esp_timer_get_time()) - opStartUs);
         LOG_I(TAG, "appendFile(%s,%u): %" PRIu32 " us", path, len, elapsedUs);
+    }
+
+    return StorageStatus::OK;
+}
+
+StorageStatus LittleFsStorage::stageAppendRowLocked(const uint8_t* data,
+                                                    uint32_t       len,
+                                                    const char*    path)
+{
+    // If the incoming row does not fit in the free RAM space, commit first.
+    if (appendRamLen_ + len > sizeof(appendRamBuf_))
+    {
+        if (!commitAppendRamBufLocked()) { return StorageStatus::ERROR; }
+    }
+
+    if (len > sizeof(appendRamBuf_))
+    {
+        // Row larger than the whole buffer (should not happen for CSV rows):
+        // write it straight through to avoid unbounded buffering.
+        uint32_t written = 0U;
+        written = static_cast<uint32_t>(cachedAppendFile_.write(data, len));
+        if (written != len)
+        {
+            LOG_W(TAG, "short append: want=%u got=%u path=%s", len, written, path);
+            cachedAppendFile_.close();
+            cachedAppendPath_[0] = '\0';
+            appendRamLen_        = 0U;
+            return StorageStatus::ERROR;
+        }
+    }
+    else
+    {
+        memcpy(&appendRamBuf_[appendRamLen_], data, len);
+        appendRamLen_ += len;
+    }
+
+    // Durability timer: bound worst-case data loss to AMS_IO_APPEND_FLUSH_MS
+    // regardless of data rate (STOR-2).  A full buffer is flushed above.
+    const uint32_t nowMs = static_cast<uint32_t>(millis());
+    if ((nowMs - appendRamLastFlushMs_) >= ares::AMS_IO_APPEND_FLUSH_MS)
+    {
+        if (!commitAppendRamBufLocked()) { return StorageStatus::ERROR; }
+        cachedAppendFile_.flush();
+        appendRamLastFlushMs_ = nowMs;
+    }
+
+    return StorageStatus::OK;
+}
+
+bool LittleFsStorage::commitAppendRamBufLocked()
+{
+    if (appendRamLen_ == 0U)          { return true; }
+    if (!cachedAppendFile_)           { return false; }
+
+    uint32_t written = 0U;
+    written = static_cast<uint32_t>(cachedAppendFile_.write(appendRamBuf_, appendRamLen_));
+    if (written != appendRamLen_)
+    {
+        LOG_W(TAG, "write-behind commit short: want=%" PRIu32 " got=%" PRIu32,
+              appendRamLen_, written);
+        appendRamLen_ = 0U;
+        return false;
+    }
+    appendRamLen_ = 0U;
+    return true;
+}
+
+void LittleFsStorage::invalidateAppendCacheIfPathLocked(const char* path)
+{
+    if (!cachedAppendFile_ || path == nullptr)          { return; }
+    if (strcmp(path, cachedAppendPath_) != 0)           { return; }
+
+    (void)commitAppendRamBufLocked();
+    cachedAppendFile_.flush();
+    cachedAppendFile_.close();
+    cachedAppendPath_[0] = '\0';
+    appendRamLen_        = 0U;
+}
+
+bool LittleFsStorage::openAppendCacheLocked(const char* path)
+{
+    if (cachedAppendFile_)
+    {
+        // Commit any staged bytes to the outgoing file before switching.
+        (void)commitAppendRamBufLocked();
+        cachedAppendFile_.flush();
+        cachedAppendFile_.close();
+    }
+    cachedAppendPath_[0] = '\0';
+    appendRamLen_        = 0U;
+
+    if (!ensureParentDirectories(path))
+    {
+        LOG_W(TAG, "mkdir parent failed: %s", path);
+        return false;
+    }
+
+    cachedAppendFile_ = LittleFS.open(path, "a", /*create=*/true);
+    if (!cachedAppendFile_)
+    {
+        LOG_W(TAG, "open(a) failed: %s", path);
+        return false;
+    }
+
+    (void)strncpy(cachedAppendPath_, path, sizeof(cachedAppendPath_) - 1U);
+    cachedAppendPath_[sizeof(cachedAppendPath_) - 1U] = '\0';
+    appendRamLastFlushMs_ = static_cast<uint32_t>(millis());
+    return true;
+}
+
+StorageStatus LittleFsStorage::flushCachedAppend()
+{
+    ScopedLock guard(mutex_, MUTEX_TIMEOUT);
+    if (!guard.acquired()) { return StorageStatus::BUSY; }
+
+    if (cachedAppendFile_)
+    {
+        if (!commitAppendRamBufLocked()) { return StorageStatus::ERROR; }
+        cachedAppendFile_.flush();
+        appendRamLastFlushMs_ = static_cast<uint32_t>(millis());
     }
 
     return StorageStatus::OK;
@@ -576,6 +707,10 @@ StorageStatus LittleFsStorage::writeInternal(const char* path, // NOLINT(readabi
     ScopedLock guard(mutex_, MUTEX_TIMEOUT);
     if (!guard.acquired())                   { LOG_W(TAG, "mutex timeout"); return StorageStatus::BUSY; }
     if (!mounted_)                           { return StorageStatus::NOT_READY; }
+
+    // If this path is the active append stream, commit+close it first so the
+    // transactional write below sees a consistent, fully-flushed file (STOR-2).
+    invalidateAppendCacheIfPathLocked(path);
 
     // Ensure parent directories exist before opening file for write/append.
     if (!ensureParentDirectories(path))
@@ -721,6 +856,9 @@ StorageStatus LittleFsStorage::removeFile(const char* path)
 
     if (!LittleFS.exists(path))  { return StorageStatus::NOT_FOUND; }
 
+    // Drop the append cache if it points at this file (STOR-2).
+    invalidateAppendCacheIfPathLocked(path);
+
     const bool ok = LittleFS.remove(path);
     if (!ok)
     {
@@ -742,6 +880,10 @@ StorageStatus LittleFsStorage::renameFile(const char* oldPath,
     if (!mounted_)               { return StorageStatus::NOT_READY; }
 
     if (!LittleFS.exists(oldPath))  { return StorageStatus::NOT_FOUND; }
+
+    // Drop the append cache if it points at either path (STOR-2).
+    invalidateAppendCacheIfPathLocked(oldPath);
+    invalidateAppendCacheIfPathLocked(newPath);
 
     const bool ok = LittleFS.rename(oldPath, newPath);
     if (!ok)
@@ -766,6 +908,14 @@ StorageStatus LittleFsStorage::fileSize(const char* path, uint32_t& size)
     if (!mounted_)            { return StorageStatus::NOT_READY; }
 
     if (!LittleFS.exists(path))  { return StorageStatus::NOT_FOUND; }
+
+    // Commit RAM-buffered append data so the reported size includes the tail
+    // that has not yet reached flash (STOR-2 write-behind buffer).
+    if (cachedAppendFile_ && (strcmp(path, cachedAppendPath_) == 0))
+    {
+        (void)commitAppendRamBufLocked();
+        cachedAppendFile_.flush();
+    }
 
     File f = LittleFS.open(path, "r");
     if (!f)                      { return StorageStatus::ERROR; }
@@ -880,6 +1030,14 @@ StorageStatus LittleFsStorage::readFileChunk(const char* path,
     if (!mounted_)                      { return StorageStatus::NOT_READY; }
 
     if (!LittleFS.exists(path))         { return StorageStatus::NOT_FOUND; }
+
+    // Flush any RAM-buffered append data for this path so the reader sees
+    // complete data (STOR-2 write-behind buffer).
+    if (cachedAppendFile_ && (strcmp(path, cachedAppendPath_) == 0))
+    {
+        (void)commitAppendRamBufLocked();
+        cachedAppendFile_.flush();
+    }
 
     File f = LittleFS.open(path, "r");
     if (!f)                             { return StorageStatus::ERROR; }
