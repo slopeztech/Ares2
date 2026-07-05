@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.7.0"
+#define ARES_VERSION_STRING "2.7.1"
 ```
 
 ---
@@ -80,6 +80,7 @@ docs/changelog/
     v2.6.4.md   ← Patch: SerialInterface HAL abstraction + hardware-agnostic telemetry; removes #ifdef ARDUINO coupling; registry-based driver resolution
     v2.6.5.md   ← Performance/Observability: deferred I/O worker, profiling flag, BMP280 standby fix, AMS I/O stack fix, log download TWDT hardening
     v2.7.0.md   ← Performance + Bug Fix: STOR-2 RAM write-behind buffer (~80 ms → <1 ms per CSV row); AMS-4.4.1 starvation-guard radio feedback loop fix; IMU I²C 400 kHz
+    v2.7.1.md   ← Patch (Driver): ADXL375 startup static-offset compensation (I2C/SPI) + configurable bias calibration knobs
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -130,3 +131,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.6.4](../changelog/v2.6.4.md)   | 2026-06-22 | Patch   | Patch: SerialInterface HAL abstraction; hardware-agnostic `SERIAL.report` telemetry; removes `#ifdef ARDUINO`; registry-based driver resolution; ams_programming_guide.md backpressure docs |
 | [2.6.5](../changelog/v2.6.5.md)   | 2026-07-01 | Minor   | Performance: loop timing instrumentation; deferred CSV append worker; same-path batching; `GET /api/logs` WDT hardening |
 | [2.7.0](../changelog/v2.7.0.md)   | 2026-07-05 | Minor   | Performance + Bug Fix: STOR-2 RAM write-behind buffer (~80 ms → <1 ms/row); AMS-4.4.1 starvation-guard radio feedback loop fix; IMU I²C 400 kHz |
+| [2.7.1](../changelog/v2.7.1.md)   | 2026-07-05 | Patch   | Driver: ADXL375 startup static-offset compensation (I2C/SPI) + configurable bias calibration |
