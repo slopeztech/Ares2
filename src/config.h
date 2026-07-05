@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.7.0"
+#define ARES_VERSION_STRING "2.7.1"
 
 namespace ares
 {
@@ -132,6 +132,9 @@ constexpr uint8_t MPU6050_I2C_ADDR = 0x68; ///< AD0 → GND (default address).
 // ── IMU (I2C ADXL375) ───────────────────────────────────────
 constexpr uint8_t ADXL375_I2C_ADDR  = 0x53U; ///< ALT_ADDRESS/CS → GND (default address).
 constexpr uint8_t ADXL375_SETTLE_MS = 5U;    ///< Wait after POWER_CTL → Measure before first read.
+constexpr bool    ADXL375_BIAS_COMPENSATION_ENABLED = true; ///< Subtract startup static offset (sensor bias + static gravity projection) from ADXL375 axis outputs.
+constexpr uint8_t ADXL375_BIAS_CAL_SAMPLES          = 32U;  ///< Number of startup samples averaged to estimate ADXL375 static offset.
+constexpr uint8_t ADXL375_BIAS_CAL_SAMPLE_DELAY_MS  = 10U;  ///< Delay between startup calibration samples (matches 100 Hz ODR period).
 
 // ── IMU (SPI ADXL375) ───────────────────────────────────────
 /// Chip-select GPIO for the SPI ADXL375 variant.  Assign per schematic.

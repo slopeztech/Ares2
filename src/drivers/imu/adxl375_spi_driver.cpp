@@ -134,6 +134,51 @@ bool Adxl375SpiDriver::begin() // NOLINT(readability-function-size)
     // RTOS-1: deviation — vTaskDelay required after POWER_CTL transition.
     vTaskDelay(pdMS_TO_TICKS(ares::ADXL375_SETTLE_MS));
 
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && !biasReady_)
+    {
+        int32_t sumX = 0;
+        int32_t sumY = 0;
+        int32_t sumZ = 0;
+        uint8_t okCount = 0U;
+
+        for (uint8_t i = 0U; i < ares::ADXL375_BIAS_CAL_SAMPLES; i++)
+        {
+            int16_t rawAx = 0;
+            int16_t rawAy = 0;
+            int16_t rawAz = 0;
+            if (readRawAxesLocked(rawAx, rawAy, rawAz))
+            {
+                sumX += static_cast<int32_t>(rawAx);
+                sumY += static_cast<int32_t>(rawAy);
+                sumZ += static_cast<int32_t>(rawAz);
+                okCount++;
+            }
+
+            if (ares::ADXL375_BIAS_CAL_SAMPLE_DELAY_MS > 0U)
+            {
+                // RTOS-1: startup sampling delay to capture distinct ODR samples.
+                vTaskDelay(pdMS_TO_TICKS(ares::ADXL375_BIAS_CAL_SAMPLE_DELAY_MS));
+            }
+        }
+
+        if (okCount > 0U)
+        {
+            biasRawX_  = static_cast<int16_t>(sumX / static_cast<int32_t>(okCount));
+            biasRawY_  = static_cast<int16_t>(sumY / static_cast<int32_t>(okCount));
+            biasRawZ_  = static_cast<int16_t>(sumZ / static_cast<int32_t>(okCount));
+            biasReady_ = true;
+            LOG_I(TAG, "ADXL375_SPI: static offset calibrated (%u samples) raw=[%d,%d,%d]",
+                  static_cast<unsigned>(okCount),
+                  static_cast<int>(biasRawX_),
+                  static_cast<int>(biasRawY_),
+                  static_cast<int>(biasRawZ_));
+        }
+        else
+        {
+            LOG_W(TAG, "ADXL375_SPI: static offset calibration skipped (no valid startup samples)");
+        }
+    }
+
     ready_ = true;
     LOG_I(TAG, "ADXL375_SPI: init OK — 100 Hz, ±200g, SPI Mode3, CS=%u",
           static_cast<unsigned>(csPin_));
@@ -173,9 +218,10 @@ ImuStatus Adxl375SpiDriver::readLocked(ImuReading& out)
         }
     }
 
-    // Burst read: DATAX0..DATAZ1 (6 bytes, multi-byte SPI frame).
-    uint8_t buf[adxl375spi::BURST_LEN] = {};  // MISRA-4.1: zero-init
-    if (!readRegs(adxl375spi::REG_DATAX0, buf, adxl375spi::BURST_LEN))
+    int16_t rawAx = 0;
+    int16_t rawAy = 0;
+    int16_t rawAz = 0;
+    if (!readRawAxesLocked(rawAx, rawAy, rawAz))
     {
         consecutiveErrors_++;
         if (consecutiveErrors_ >= ares::IMU_MAX_CONSECUTIVE_ERRORS)
@@ -189,22 +235,20 @@ ImuStatus Adxl375SpiDriver::readLocked(ImuReading& out)
         return ImuStatus::ERROR;
     }
 
-    // ADXL375 data format: little-endian (LSB first), signed 16-bit per axis.
-    // Burst layout: X0, X1, Y0, Y1, Z0, Z1  (datasheet §Output Data Registers).
-    auto toInt16 = [](uint8_t lo, uint8_t hi) -> int16_t
+    int32_t corrAx = static_cast<int32_t>(rawAx);
+    int32_t corrAy = static_cast<int32_t>(rawAy);
+    int32_t corrAz = static_cast<int32_t>(rawAz);
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && biasReady_)
     {
-        return static_cast<int16_t>(
-            (static_cast<uint16_t>(hi) << 8U) | static_cast<uint16_t>(lo));
-    };
-
-    const int16_t rawAx = toInt16(buf[0], buf[1]);
-    const int16_t rawAy = toInt16(buf[2], buf[3]);
-    const int16_t rawAz = toInt16(buf[4], buf[5]);
+        corrAx -= static_cast<int32_t>(biasRawX_);
+        corrAy -= static_cast<int32_t>(biasRawY_);
+        corrAz -= static_cast<int32_t>(biasRawZ_);
+    }
 
     const float scale = adxl375spi::ACCEL_MG_PER_LSB * adxl375spi::GRAVITY_MS2;
-    out.accelX = static_cast<float>(rawAx) * scale;
-    out.accelY = static_cast<float>(rawAy) * scale;
-    out.accelZ = static_cast<float>(rawAz) * scale;
+    out.accelX = static_cast<float>(corrAx) * scale;
+    out.accelY = static_cast<float>(corrAy) * scale;
+    out.accelZ = static_cast<float>(corrAz) * scale;
 
     // No gyroscope or temperature sensor on ADXL375.
     out.gyroX = 0.0f;
@@ -259,5 +303,27 @@ bool Adxl375SpiDriver::readRegs(uint8_t reg, uint8_t* buf, uint8_t len)
     }
     digitalWrite(csPin_, HIGH);
     spi_.endTransaction();
+    return true;
+}
+
+bool Adxl375SpiDriver::readRawAxesLocked(int16_t& rawAx, int16_t& rawAy, int16_t& rawAz)
+{
+    // Burst read: DATAX0..DATAZ1 (6 bytes, multi-byte SPI frame).
+    uint8_t buf[adxl375spi::BURST_LEN] = {};  // MISRA-4.1: zero-init
+    if (!readRegs(adxl375spi::REG_DATAX0, buf, adxl375spi::BURST_LEN))
+    {
+        return false;
+    }
+
+    // ADXL375 data format: little-endian (LSB first), signed 16-bit per axis.
+    auto toInt16 = [](uint8_t lo, uint8_t hi) -> int16_t
+    {
+        return static_cast<int16_t>(
+            (static_cast<uint16_t>(hi) << 8U) | static_cast<uint16_t>(lo));
+    };
+
+    rawAx = toInt16(buf[0], buf[1]);
+    rawAy = toInt16(buf[2], buf[3]);
+    rawAz = toInt16(buf[4], buf[5]);
     return true;
 }

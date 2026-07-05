@@ -152,6 +152,51 @@ bool Adxl375Driver::begin() // NOLINT(readability-function-size)
         }
     }
 
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && !biasReady_)
+    {
+        int32_t sumX = 0;
+        int32_t sumY = 0;
+        int32_t sumZ = 0;
+        uint8_t okCount = 0U;
+
+        for (uint8_t i = 0U; i < ares::ADXL375_BIAS_CAL_SAMPLES; i++)
+        {
+            int16_t rawAx = 0;
+            int16_t rawAy = 0;
+            int16_t rawAz = 0;
+            if (readRawAxesLocked(rawAx, rawAy, rawAz))
+            {
+                sumX += static_cast<int32_t>(rawAx);
+                sumY += static_cast<int32_t>(rawAy);
+                sumZ += static_cast<int32_t>(rawAz);
+                okCount++;
+            }
+
+            if (ares::ADXL375_BIAS_CAL_SAMPLE_DELAY_MS > 0U)
+            {
+                // RTOS-1: startup sampling delay to capture distinct ODR samples.
+                vTaskDelay(pdMS_TO_TICKS(ares::ADXL375_BIAS_CAL_SAMPLE_DELAY_MS));
+            }
+        }
+
+        if (okCount > 0U)
+        {
+            biasRawX_  = static_cast<int16_t>(sumX / static_cast<int32_t>(okCount));
+            biasRawY_  = static_cast<int16_t>(sumY / static_cast<int32_t>(okCount));
+            biasRawZ_  = static_cast<int16_t>(sumZ / static_cast<int32_t>(okCount));
+            biasReady_ = true;
+            LOG_I(TAG, "ADXL375: static offset calibrated (%u samples) raw=[%d,%d,%d]",
+                  static_cast<unsigned>(okCount),
+                  static_cast<int>(biasRawX_),
+                  static_cast<int>(biasRawY_),
+                  static_cast<int>(biasRawZ_));
+        }
+        else
+        {
+            LOG_W(TAG, "ADXL375: static offset calibration skipped (no valid startup samples)");
+        }
+    }
+
     ready_ = true;
     LOG_I(TAG, "ADXL375: init OK — addr 0x%02X, 100 Hz, ±200g, I2C1 SDA=%d SCL=%d",
           addr_, ares::PIN_IMU_SDA, ares::PIN_IMU_SCL);
@@ -191,9 +236,10 @@ ImuStatus Adxl375Driver::readLocked(ImuReading& out)
         }
     }
 
-    // Burst read: DATAX0, DATAX1, DATAY0, DATAY1, DATAZ0, DATAZ1 (6 bytes).
-    uint8_t buf[adxl375::BURST_LEN] = {};  // MISRA-4.1: zero-init
-    if (!readRegs(adxl375::REG_DATAX0, buf, adxl375::BURST_LEN))
+    int16_t rawAx = 0;
+    int16_t rawAy = 0;
+    int16_t rawAz = 0;
+    if (!readRawAxesLocked(rawAx, rawAy, rawAz))
     {
         consecutiveErrors_++;
         if (consecutiveErrors_ >= ares::IMU_MAX_CONSECUTIVE_ERRORS)
@@ -207,23 +253,21 @@ ImuStatus Adxl375Driver::readLocked(ImuReading& out)
         return ImuStatus::ERROR;
     }
 
-    // ADXL375 data format: little-endian (LSB first), signed 16-bit per axis.
-    // Burst layout: X0, X1, Y0, Y1, Z0, Z1  (datasheet §Output Data Registers).
-    auto toInt16 = [](uint8_t lo, uint8_t hi) -> int16_t
+    int32_t corrAx = static_cast<int32_t>(rawAx);
+    int32_t corrAy = static_cast<int32_t>(rawAy);
+    int32_t corrAz = static_cast<int32_t>(rawAz);
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && biasReady_)
     {
-        return static_cast<int16_t>(
-            (static_cast<uint16_t>(hi) << 8U) | static_cast<uint16_t>(lo));
-    };
-
-    const int16_t rawAx = toInt16(buf[0], buf[1]);
-    const int16_t rawAy = toInt16(buf[2], buf[3]);
-    const int16_t rawAz = toInt16(buf[4], buf[5]);
+        corrAx -= static_cast<int32_t>(biasRawX_);
+        corrAy -= static_cast<int32_t>(biasRawY_);
+        corrAz -= static_cast<int32_t>(biasRawZ_);
+    }
 
     // Convert raw counts to m/s² (49 mg/LSB × g).
     const float scale = adxl375::ACCEL_MG_PER_LSB * adxl375::GRAVITY_MS2;
-    out.accelX = static_cast<float>(rawAx) * scale;
-    out.accelY = static_cast<float>(rawAy) * scale;
-    out.accelZ = static_cast<float>(rawAz) * scale;
+    out.accelX = static_cast<float>(corrAx) * scale;
+    out.accelY = static_cast<float>(corrAy) * scale;
+    out.accelZ = static_cast<float>(corrAz) * scale;
 
     // No gyroscope or temperature sensor on ADXL375.
     out.gyroX = 0.0f;
@@ -275,5 +319,27 @@ bool Adxl375Driver::readRegs(uint8_t reg, uint8_t* buf, uint8_t len)
     {
         buf[i] = static_cast<uint8_t>(wire_.read());
     }
+    return true;
+}
+
+bool Adxl375Driver::readRawAxesLocked(int16_t& rawAx, int16_t& rawAy, int16_t& rawAz)
+{
+    // Burst read: DATAX0, DATAX1, DATAY0, DATAY1, DATAZ0, DATAZ1 (6 bytes).
+    uint8_t buf[adxl375::BURST_LEN] = {};  // MISRA-4.1: zero-init
+    if (!readRegs(adxl375::REG_DATAX0, buf, adxl375::BURST_LEN))
+    {
+        return false;
+    }
+
+    // ADXL375 data format: little-endian (LSB first), signed 16-bit per axis.
+    auto toInt16 = [](uint8_t lo, uint8_t hi) -> int16_t
+    {
+        return static_cast<int16_t>(
+            (static_cast<uint16_t>(hi) << 8U) | static_cast<uint16_t>(lo));
+    };
+
+    rawAx = toInt16(buf[0], buf[1]);
+    rawAy = toInt16(buf[2], buf[3]);
+    rawAz = toInt16(buf[4], buf[5]);
     return true;
 }
