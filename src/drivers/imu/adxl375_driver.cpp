@@ -72,11 +72,7 @@ bool Adxl375Driver::begin() // NOLINT(readability-function-size)
         }
     }
 
-    ready_      = false;
-    biasReady_  = false;
-    biasRawX_   = 0;
-    biasRawY_   = 0;
-    biasRawZ_   = 0;
+    ready_ = false;
 
     auto tryInitAtAddress = [&](uint8_t addr) -> bool
     {
@@ -156,7 +152,7 @@ bool Adxl375Driver::begin() // NOLINT(readability-function-size)
         }
     }
 
-    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED)
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && !biasReady_)
     {
         int32_t sumX = 0;
         int32_t sumY = 0;

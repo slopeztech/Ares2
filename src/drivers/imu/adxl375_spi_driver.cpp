@@ -68,11 +68,7 @@ bool Adxl375SpiDriver::begin() // NOLINT(readability-function-size)
         }
     }
 
-    ready_      = false;
-    biasReady_  = false;
-    biasRawX_   = 0;
-    biasRawY_   = 0;
-    biasRawZ_   = 0;
+    ready_ = false;
 
     // Configure chip-select: start idle-high (deasserted).
     pinMode(csPin_, OUTPUT);
@@ -138,7 +134,7 @@ bool Adxl375SpiDriver::begin() // NOLINT(readability-function-size)
     // RTOS-1: deviation — vTaskDelay required after POWER_CTL transition.
     vTaskDelay(pdMS_TO_TICKS(ares::ADXL375_SETTLE_MS));
 
-    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED)
+    if (ares::ADXL375_BIAS_COMPENSATION_ENABLED && !biasReady_)
     {
         int32_t sumX = 0;
         int32_t sumY = 0;
