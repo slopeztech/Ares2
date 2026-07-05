@@ -82,14 +82,14 @@ public:
      * Flush the internal append-stream cache for the currently open log file.
      *
      * The cache keeps one `File` handle open across consecutive `appendFile()`
-     * calls to the same path (to eliminate open/close overhead per row).
-     * This method forces a `f.flush()` on the cached handle so that all
-     * buffered data is committed to flash.  It is safe to call even if no file
-     * is currently cached.
+     * calls to the same path (to eliminate open/close overhead per row).  The
+     * RAM write-behind buffer is committed to flash and the file handle is
+     * flushed.  Safe to call even if no file is currently cached.
      *
-     * Called by the AMS deferred-I/O task after draining the append queue,
-     * and automatically before any `readFile()` / `readFileChunk()` on the
-     * same path, so downloaded logs always reflect the latest data.
+     * Available for higher-level code to force durability after draining an
+     * append queue.  `LittleFsStorage` also calls this automatically before any
+     * `readFile()` / `readFileChunk()` on the same path, so downloaded logs
+     * always reflect the latest data.
      */
     StorageStatus flushCachedAppend() override;
 

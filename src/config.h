@@ -290,6 +290,11 @@ constexpr uint32_t AMS_IO_APPEND_BURST_BYTES  = 1024U; ///< Max bytes coalesced 
 /// values reduce flash write frequency.  Each LittleFS page is 512 bytes, so
 /// at ~40 bytes/row a natural page flush already occurs every ~12 rows — this
 /// constant is a safety-net upper bound.
+/// @note This constant is currently unused.  The write-behind path in
+///       LittleFsStorage uses a time-based flush (AMS_IO_APPEND_FLUSH_MS) rather
+///       than a write-count flush.  Kept for future use if a count-based policy
+///       is preferred over time-based.  Setting it to 0 or removing it has no
+///       runtime effect until it is wired into appendFile() or stageAppendRowLocked().
 constexpr uint8_t  AMS_IO_APPEND_FLUSH_INTERVAL = 16U;
 /// RAM write-behind buffer size for the storage append stream (STOR-2).
 /// CSV rows are accumulated in this static buffer and committed to flash in a

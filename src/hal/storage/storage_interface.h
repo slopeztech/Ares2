@@ -209,7 +209,8 @@ public:
      * cached file handle here.  The default no-op is used by stub drivers
      * that have no persistent handle.
      *
-     * Called by the AMS deferred-I/O task after draining the append queue, and
+     * May be called by higher-level code after draining an async append queue
+     * to bound the maximum age of buffered data, and is invoked automatically
      * by `readFile()` / `readFileChunk()` before opening the same path for read,
      * so that all buffered data is visible to the reader.
      *
