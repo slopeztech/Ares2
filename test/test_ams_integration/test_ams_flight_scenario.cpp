@@ -270,7 +270,12 @@ void test_multiple_hk_frames_accumulate_correctly()
 void test_hk_slot_starvation_skips_samples()
 {
     // AMS-4.4 starvation guard: a single catch-up tick after a 5-period gap
-    // must emit exactly ONE HK.report and ONE EVENT.warning (not 5 bursts).
+    // must emit exactly ONE HK.report and NO radio EVENT.warning.
+    //
+    // AMS-4.4.1: the starvation guard uses LOG_W (serial only) instead of
+    // sendEventLocked() to avoid a feedback loop where the radio TX time (up
+    // to 50 ms on a 9600-baud LoRa link) itself causes the next tick to miss
+    // its deadline and re-trigger the guard indefinitely.
     FlightFixture f;
     f.init("/missions/flight.ams", ares::sim::kScriptFlight);
     (void)f.engine.activate("flight.ams");
@@ -299,8 +304,9 @@ void test_hk_slot_starvation_skips_samples()
     ares::sim::clock::advanceMs(3000U);
     f.engine.tick(ares::sim::clock::nowMs());
 
-    // Guard: 1 HK frame + 1 EVENT.warning (skipped 2 samples).
-    TEST_ASSERT_EQUAL(2U, f.radio.sendCount());
+    // Guard: 1 HK frame only — the starvation warning goes to serial (LOG_W),
+    // NOT over radio, so sendCount must be exactly 1 (AMS-4.4.1).
+    TEST_ASSERT_EQUAL(1U, f.radio.sendCount());
 
     // After the reset the next regular tick must produce exactly 1 HK frame
     // and no further warnings.

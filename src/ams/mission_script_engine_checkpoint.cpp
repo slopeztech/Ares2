@@ -658,6 +658,14 @@ void MissionScriptEngine::deferredIoTaskLoop()
     {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         flushPendingAppendsUnlocked();
+        // Do NOT call storage_.flushCachedAppend() here: that would flush the
+        // LittleFS page cache after every single row (~50 ms per flush), holding
+        // the CPU and blocking the main loop between every tick.
+        // Flushing is handled by:
+        //   1. Time-based durability flush inside appendFile() (AMS_IO_APPEND_FLUSH_MS):
+        //      data reaches flash within 1 s of being staged, without blocking the loop.
+        //   2. Pre-read flush in readFile() / readFileChunk() — guarantees the log
+        //      is complete when the operator downloads it via the REST API.
     }
 }
 

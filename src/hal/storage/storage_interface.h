@@ -200,4 +200,21 @@ public:
                                         uint8_t* buf,
                                         uint32_t bufSize,
                                         uint32_t& bytesRead) = 0;
+
+    /**
+     * Flush any in-memory data from the internal append-stream cache to flash.
+     *
+     * Implementations that keep a log file open across consecutive
+     * `appendFile()` calls (to avoid open/close overhead) must flush their
+     * cached file handle here.  The default no-op is used by stub drivers
+     * that have no persistent handle.
+     *
+     * May be called by higher-level code after draining an async append queue
+     * to bound the maximum age of buffered data, and is invoked automatically
+     * by `readFile()` / `readFileChunk()` before opening the same path for read,
+     * so that all buffered data is visible to the reader.
+     *
+     * @return Status code.
+     */
+    virtual StorageStatus flushCachedAppend() { return StorageStatus::OK; }
 };

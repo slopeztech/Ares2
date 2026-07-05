@@ -537,13 +537,13 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
                         {
                             const uint32_t skipped = static_cast<uint32_t>(
                                 (nowMs - lastHkSlotMs_[s]) / state.hkSlots[s].everyMs);
-                            char warnMsg[64] = {};
-                            snprintf(warnMsg, sizeof(warnMsg),
-                                     "HK slot %u skipped %" PRIu32 " samples",
-                                     static_cast<uint32_t>(s), skipped);
-                            sendEventLocked(EventVerb::WARN,
-                                            ares::proto::EventId::FPL_VIOLATION,
-                                            warnMsg, nowMs);
+                            // Starvation is a local timing diagnostic — log to serial only.
+                            // Calling sendEventLocked() here would transmit over the radio
+                            // bus (blocking for the full frame TX time) which would itself
+                            // extend the tick and trigger starvation on the next iteration,
+                            // creating a self-reinforcing feedback loop (AMS-4.4.1).
+                            LOG_W(TAG, "HK slot %u skipped %" PRIu32 " samples",
+                                  static_cast<uint32_t>(s), skipped);
                             lastHkSlotMs_[s] = nowMs;
                         }
                         hkSlotDue[s] = false;
@@ -560,12 +560,7 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
                 {
                     const uint32_t skipped = static_cast<uint32_t>(
                         (nowMs - lastHkMs_) / state.hkEveryMs);
-                    char warnMsg[64] = {};
-                    snprintf(warnMsg, sizeof(warnMsg),
-                             "HK slot 0 skipped %" PRIu32 " samples", skipped);
-                    sendEventLocked(EventVerb::WARN,
-                                    ares::proto::EventId::FPL_VIOLATION,
-                                    warnMsg, nowMs);
+                    LOG_W(TAG, "HK slot 0 skipped %" PRIu32 " samples", skipped);
                     lastHkMs_ = nowMs;
                 }
             }
@@ -594,13 +589,12 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
                         {
                             const uint32_t skipped = static_cast<uint32_t>(
                                 (nowMs - lastLogSlotMs_[s]) / state.logSlots[s].everyMs);
-                            char warnMsg[64] = {};
-                            snprintf(warnMsg, sizeof(warnMsg),
-                                     "LOG slot %u skipped %" PRIu32 " samples",
-                                     static_cast<uint32_t>(s), skipped);
-                            sendEventLocked(EventVerb::WARN,
-                                            ares::proto::EventId::FPL_VIOLATION,
-                                            warnMsg, nowMs);
+                            // Starvation is a local timing diagnostic — log to serial only.
+                            // Sending over radio here would block the tick for the full
+                            // frame TX time, causing the very starvation being warned
+                            // about on every subsequent tick (AMS-4.4.1).
+                            LOG_W(TAG, "LOG slot %u skipped %" PRIu32 " samples",
+                                  static_cast<uint32_t>(s), skipped);
                             lastLogSlotMs_[s] = nowMs;
                         }
                         logSlotDue[s] = false;
@@ -617,12 +611,7 @@ void MissionScriptEngine::executeDueActionsLocked(const StateDef& state, uint64_
                 {
                     const uint32_t skipped = static_cast<uint32_t>(
                         (nowMs - lastLogMs_) / state.logEveryMs);
-                    char warnMsg[64] = {};
-                    snprintf(warnMsg, sizeof(warnMsg),
-                             "LOG slot 0 skipped %" PRIu32 " samples", skipped);
-                    sendEventLocked(EventVerb::WARN,
-                                    ares::proto::EventId::FPL_VIOLATION,
-                                    warnMsg, nowMs);
+                    LOG_W(TAG, "LOG slot 0 skipped %" PRIu32 " samples", skipped);
                     lastLogMs_ = nowMs;
                 }
             }
