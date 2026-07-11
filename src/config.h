@@ -28,7 +28,7 @@
 ///         - docs/requirements/SRS.sdoc        (TITLE + VERSION + body)
 ///         - docs/api/wifi_api_endpoints.md    (GET /api/status response example)
 ///         - Create a new entry in docs/changelog/
-#define ARES_VERSION_STRING "2.7.1"
+#define ARES_VERSION_STRING "2.7.2"
 
 namespace ares
 {
@@ -154,7 +154,13 @@ constexpr uint32_t FIRE_DURATION_MS = 1000;  ///< Channel fire pulse duration (m
 constexpr float    LORA_FREQ_MHZ          = 433.125f; ///< CH=23: 410.125+23.
 constexpr int8_t   LORA_TX_POWER          = 20;       ///< Transmit power in dBm.
 constexpr uint32_t LORA_UART_BAUD         = 9600;     ///< Module serial baud rate.
-constexpr uint32_t LORA_AUX_TIMEOUT_MS    = 50;       ///< Max AUX wait before TX proceeds in degraded mode.
+/// DX-LR03 AUX init timeout: module self-test drives AUX LOW for ~1 s after power-on;
+/// 2 000 ms provides 1 s of margin before begin() gives up and disables flow control.
+constexpr uint32_t LORA_AUX_INIT_TIMEOUT_MS = 2000U;  ///< Max AUX wait during begin() for module self-test (nominal ~1 s).
+/// DX-LR03 AUX TX timeout: worst-case air-TX time at 2.4 kbps with max frame is ~1.85 s
+/// (see TELEMETRY_RATE_MS comment); 3 000 ms provides 1.15 s margin before send() proceeds
+/// in degraded mode.  Must exceed TELEMETRY_RATE_MS (2 000 ms) + max air-TX time.
+constexpr uint32_t LORA_AUX_TX_TIMEOUT_MS   = 3000U;  ///< Max AUX wait in send() before TX proceeds in degraded mode (must exceed ~1.85 s air-TX).
 constexpr uint16_t LORA_UART_RX_BUF_BYTES = 512U;     ///< UART RX FIFO flush bound — matches ESP32 serial buffer size.
 constexpr uint32_t TELEMETRY_INTERVAL_MS  = 500;      ///< Downlink interval.
 

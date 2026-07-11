@@ -494,8 +494,9 @@ peripheral can freeze the entire flight computer.
 | Operation         | Timeout          | Notes                        |
 |-------------------|------------------|------------------------------|
 | UART read         | Bounded by len   | Byte-count or time limit     |
-| Radio send        | `TX_TIMEOUT_MS`  | Typically 2000 ms            |
-| AUX pin wait      | `AUX_TIMEOUT_MS` | Radio module busy signal     |
+| Radio send        | `TX_TIMEOUT_MS`        | Typically 2000 ms              |
+| AUX pin init wait | `LORA_AUX_INIT_TIMEOUT_MS` | 2 000 ms — module self-test ~1 s |
+| AUX pin TX wait   | `LORA_AUX_TX_TIMEOUT_MS`   | 3 000 ms — air-TX ~1.85 s max |
 | Semaphore take    | 50 ms typical    | Never `portMAX_DELAY`        |
 | Mutex acquire     | 100 ms typical   | Log on timeout               |
 | ACK wait          | `ACK_TIMEOUT_MS` | 1000 ms (APUS-4.5)          |

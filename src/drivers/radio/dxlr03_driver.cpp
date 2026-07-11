@@ -55,7 +55,7 @@ bool DxLr03Driver::begin()
     // Wait for module self-test (AUX LOW → HIGH, ~1 s).
     // If AUX never goes HIGH the module may still work — some
     // DX-LR03 units hold AUX LOW permanently (see file header).
-    auxAvailable_ = waitReady(AUX_TIMEOUT_MS);
+    auxAvailable_ = waitReady(AUX_INIT_TIMEOUT_MS);
     if (!auxAvailable_)
     {
         LOG_W(TAG, "AUX stayed LOW — flow control disabled");
@@ -156,17 +156,20 @@ uint16_t DxLr03Driver::mtu() const
 bool DxLr03Driver::waitReady(uint32_t timeoutMs) const
 {
     static constexpr uint32_t POLL_PERIOD_MS = 1U;
+    // Compile-time upper bound for MISRA PO10-2 bounded-loop compliance.
+    // Derived from the largest timeout this driver ever passes (AUX_TIMEOUT_MS,
+    // the TX-wait constant).  Callers supplying a smaller value (e.g.
+    // AUX_INIT_TIMEOUT_MS) are honoured exactly; values larger than
+    // MAX_AUX_POLLS are capped to MAX_AUX_POLLS (defensive only —
+    // no current call site does this).
     static constexpr uint16_t MAX_AUX_POLLS  =
         static_cast<uint16_t>(AUX_TIMEOUT_MS / POLL_PERIOD_MS);
 
-    // POLL_PERIOD_MS is fixed to 1 ms for AUX polling.
-    const uint32_t requestedPolls = timeoutMs;
-
-    uint16_t pollsLeft = MAX_AUX_POLLS;
-    if (requestedPolls < static_cast<uint32_t>(MAX_AUX_POLLS))
-    {
-        pollsLeft = static_cast<uint16_t>(requestedPolls);
-    }
+    // Compute actual poll count from the caller-supplied timeout (CERT-10.3).
+    const uint32_t rawPolls = timeoutMs / POLL_PERIOD_MS;
+    uint16_t pollsLeft = (rawPolls > static_cast<uint32_t>(MAX_AUX_POLLS))
+                       ? MAX_AUX_POLLS
+                       : static_cast<uint16_t>(rawPolls);
 
     while (pollsLeft > 0U)
     {
