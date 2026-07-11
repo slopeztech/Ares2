@@ -186,14 +186,35 @@ class Frame:
     received_at: str
 
 
+# Expected TelemetryPayload wire size — must match sizeof(TelemetryPayload) in
+# src/comms/ares_radio_protocol.h (APUS-3.6 static_assert).
+TELEMETRY_PAYLOAD_LEN = 78
+# struct format: I=timestampMs, B=flightPhase, B=statusBits,
+# 15×f=altAgl/vVel/accelMag/accelX/Y/Z/gyroMag/gyroX/Y/Z/imuTemp/gpsSpeed/gpsHdop/pressurePa/tempC,
+# i=latE7, i=lonE7, H=gpsAltDm, B=gpsSats, B=batteryPct
+_TELEMETRY_STRUCT = struct.Struct("<IBBfffffffffffffffiiHBB")
+assert _TELEMETRY_STRUCT.size == TELEMETRY_PAYLOAD_LEN
+
+
 @dataclass(frozen=True)
 class TelemetryView:
     timestamp_ms: int
     phase_name: str
     status_text: str
+    is_delta: bool            # True when STATUS_DELTA_FRAME (0x20) is set; alt/pressure are deltas
     altitude_agl_m: float
     vertical_vel_ms: float
     accel_mag: float
+    accel_x: float
+    accel_y: float
+    accel_z: float
+    gyro_mag: float
+    gyro_x: float
+    gyro_y: float
+    gyro_z: float
+    imu_temp_c: float
+    gps_speed_ms: float
+    gps_hdop: float
     pressure_pa: float
     temperature_c: float
     latitude: float
@@ -268,13 +289,16 @@ def color_metric_low_good(value: float, warn: float, crit: float, fmt: str) -> s
 
 
 def parse_status_bits(bits: int) -> str:
+    # Bit assignments from src/comms/ares_radio_protocol.h (APUS-3.2, APUS-3.3)
     parts = [
         f"armed={(bits >> 0) & 0x01}",
         f"fcsActive={(bits >> 1) & 0x01}",
         f"gpsValid={(bits >> 2) & 0x01}",
         f"pyroAFired={(bits >> 3) & 0x01}",
         f"pyroBFired={(bits >> 4) & 0x01}",
-        f"reserved={(bits >> 5) & 0x07}",
+        f"deltaFrame={(bits >> 5) & 0x01}",   # STATUS_DELTA_FRAME=0x20: alt/pressure are deltas
+        f"pyroCFired={(bits >> 6) & 0x01}",
+        f"pyroDFired={(bits >> 7) & 0x01}",
     ]
     return ", ".join(parts)
 
@@ -327,24 +351,47 @@ def parse_frame(frame_bytes: bytes) -> Optional[Frame]:
 
 
 def decode_telemetry(payload: bytes) -> Optional[TelemetryView]:
-    if len(payload) != 38:
+    """Decode a 78-byte TelemetryPayload (APUS-3.6, ares_radio_protocol.h).
+
+    Returns None when the payload size does not match the expected struct size so
+    that callers can fall back to the raw hex dump without raising an exception.
+    """
+    if len(payload) != TELEMETRY_PAYLOAD_LEN:
         return None
 
-    unpacked = struct.unpack("<IBBfffffiiHBB", payload)
+    u = _TELEMETRY_STRUCT.unpack(payload)
+    # u[0]=timestampMs  u[1]=flightPhase  u[2]=statusBits
+    # u[3]=altAgl  u[4]=vVel  u[5]=accelMag
+    # u[6]=accelX  u[7]=accelY  u[8]=accelZ
+    # u[9]=gyroMag  u[10]=gyroX  u[11]=gyroY  u[12]=gyroZ
+    # u[13]=imuTempC  u[14]=gpsSpeedMs  u[15]=gpsHdop
+    # u[16]=pressurePa  u[17]=temperatureC
+    # u[18]=latE7  u[19]=lonE7  u[20]=gpsAltDm  u[21]=gpsSats  u[22]=batteryPct
     return TelemetryView(
-        timestamp_ms=unpacked[0],
-        phase_name=FLIGHT_PHASE_NAMES.get(unpacked[1], f"UNKNOWN({unpacked[1]})"),
-        status_text=parse_status_bits(unpacked[2]),
-        altitude_agl_m=unpacked[3],
-        vertical_vel_ms=unpacked[4],
-        accel_mag=unpacked[5],
-        pressure_pa=unpacked[6],
-        temperature_c=unpacked[7],
-        latitude=unpacked[8] / 1e7,
-        longitude=unpacked[9] / 1e7,
-        gps_alt_m=unpacked[10] / 10.0,
-        gps_sats=unpacked[11],
-        battery_pct=unpacked[12],
+        timestamp_ms=u[0],
+        phase_name=FLIGHT_PHASE_NAMES.get(u[1], f"UNKNOWN({u[1]})"),
+        status_text=parse_status_bits(u[2]),
+        is_delta=bool(u[2] & 0x20),  # STATUS_DELTA_FRAME
+        altitude_agl_m=u[3],
+        vertical_vel_ms=u[4],
+        accel_mag=u[5],
+        accel_x=u[6],
+        accel_y=u[7],
+        accel_z=u[8],
+        gyro_mag=u[9],
+        gyro_x=u[10],
+        gyro_y=u[11],
+        gyro_z=u[12],
+        imu_temp_c=u[13],
+        gps_speed_ms=u[14],
+        gps_hdop=u[15],
+        pressure_pa=u[16],
+        temperature_c=u[17],
+        latitude=u[18] / 1e7,
+        longitude=u[19] / 1e7,
+        gps_alt_m=u[20] / 10.0,
+        gps_sats=u[21],
+        battery_pct=u[22],
     )
 
 
@@ -361,15 +408,21 @@ def describe_payload(frame: Frame) -> str:
     if frame.msg_type == 0x01:
         telemetry = decode_telemetry(frame.payload)
         if telemetry is None:
-            detail = f"invalid_payload_len={len(frame.payload)} raw={hex_bytes(frame.payload)}"
+            detail = f"payload_len={len(frame.payload)} expected={TELEMETRY_PAYLOAD_LEN} raw={hex_bytes(frame.payload)}"
         else:
+            alt_label = "alt\u0394AglM" if telemetry.is_delta else "altitudeAglM"
+            press_label = "press\u0394Pa" if telemetry.is_delta else "pressurePa"
             detail = (
                 f"timestampMs={telemetry.timestamp_ms} phase={telemetry.phase_name} "
-                f"status=[{telemetry.status_text}] altitudeAglM={telemetry.altitude_agl_m:.2f} "
+                f"status=[{telemetry.status_text}] {alt_label}={telemetry.altitude_agl_m:.2f} "
                 f"verticalVelMs={telemetry.vertical_vel_ms:.2f} accelMag={telemetry.accel_mag:.2f} "
-                f"pressurePa={telemetry.pressure_pa:.2f} temperatureC={telemetry.temperature_c:.2f} "
+                f"accelXYZ=[{telemetry.accel_x:.2f},{telemetry.accel_y:.2f},{telemetry.accel_z:.2f}] "
+                f"gyroMag={telemetry.gyro_mag:.2f} gyroXYZ=[{telemetry.gyro_x:.2f},{telemetry.gyro_y:.2f},{telemetry.gyro_z:.2f}] "
+                f"imuTempC={telemetry.imu_temp_c:.2f} "
+                f"{press_label}={telemetry.pressure_pa:.2f} temperatureC={telemetry.temperature_c:.2f} "
                 f"lat={telemetry.latitude:.7f} lon={telemetry.longitude:.7f} "
                 f"gpsAltM={telemetry.gps_alt_m:.1f} gpsSats={telemetry.gps_sats} "
+                f"gpsSpeedMs={telemetry.gps_speed_ms:.1f} hdop={telemetry.gps_hdop:.1f} "
                 f"batteryPct={telemetry.battery_pct}"
             )
     elif frame.msg_type == 0x02:
@@ -789,7 +842,8 @@ class RxTestApp(App[None]):
         table = self.query_one("#history", DataTable)
 
         if telemetry is not None:
-            alt_text = f"{telemetry.altitude_agl_m:.2f}"
+            alt_prefix = "\u0394" if telemetry.is_delta else ""
+            alt_text = f"{alt_prefix}{telemetry.altitude_agl_m:.2f}"
             pres_text = f"{telemetry.pressure_pa:.1f}"
             temp_text = f"{telemetry.temperature_c:.2f}"
             gps_text = f"{telemetry.latitude:.5f},{telemetry.longitude:.5f}"
@@ -843,18 +897,22 @@ class RxTestApp(App[None]):
             return
 
         telemetry = self.last_telemetry
+        alt_label = "Alt AGL [yellow](\u0394)[/yellow]" if telemetry.is_delta else "Alt AGL"
+        press_label = "Press [yellow](\u0394)[/yellow]" if telemetry.is_delta else "Pressure"
         telemetry_panel.update(
             "\n".join(
                 [
                     "[b]Latest Telemetry[/b]",
                     f"Received: [cyan]{self.last_frame.received_at}[/]    Seq: [cyan]{self.last_frame.seq}[/]",
-                    # AMS-generated TELEMETRY frames never set flightPhase (always 0 = PAD_IDLE).
-                    f"Phase: [green]{telemetry.phase_name}[/] [dim](AMS frames: always PAD_IDLE)[/]    Flags: [green]{format_flags(self.last_frame.flags)}[/]",
+                    f"Phase: [green]{telemetry.phase_name}[/]    Flags: [green]{format_flags(self.last_frame.flags)}[/]",
                     f"Status: {telemetry.status_text}",
-                    f"Alt AGL: [bold]{telemetry.altitude_agl_m:.2f} m[/]    VVel: [bold]{telemetry.vertical_vel_ms:.2f} m/s[/]    Accel: [bold]{telemetry.accel_mag:.2f} m/s2[/]",
-                    f"Pressure: [bold]{telemetry.pressure_pa:.2f} Pa[/]    Temp: [bold]{telemetry.temperature_c:.2f} C[/]",
+                    f"{alt_label}: [bold]{telemetry.altitude_agl_m:.2f} m[/]    VVel: [bold]{telemetry.vertical_vel_ms:.2f} m/s[/]    Accel: [bold]{telemetry.accel_mag:.2f} m/s\u00b2[/]",
+                    f"Accel XYZ: [bold]{telemetry.accel_x:.2f} / {telemetry.accel_y:.2f} / {telemetry.accel_z:.2f} m/s\u00b2[/]",
+                    f"Gyro: [bold]{telemetry.gyro_mag:.2f} \u00b0/s[/]    XYZ: [bold]{telemetry.gyro_x:.2f} / {telemetry.gyro_y:.2f} / {telemetry.gyro_z:.2f} \u00b0/s[/]",
+                    f"IMU Temp: [bold]{telemetry.imu_temp_c:.2f} \u00b0C[/]    {press_label}: [bold]{telemetry.pressure_pa:.2f} Pa[/]    Baro Temp: [bold]{telemetry.temperature_c:.2f} \u00b0C[/]",
                     f"Lat: [bold]{telemetry.latitude:.7f}[/]    Lon: [bold]{telemetry.longitude:.7f}[/]",
-                    f"GPS Alt: [bold]{telemetry.gps_alt_m:.1f} m[/]    Sats: [bold]{telemetry.gps_sats}[/]    Battery: [bold]{telemetry.battery_pct}%[/]",
+                    f"GPS Alt: [bold]{telemetry.gps_alt_m:.1f} m[/]    Sats: [bold]{telemetry.gps_sats}[/]    Speed: [bold]{telemetry.gps_speed_ms:.1f} m/s[/]    HDOP: [bold]{telemetry.gps_hdop:.1f}[/]",
+                    f"Battery: [bold]{telemetry.battery_pct}%[/]",
                 ]
             )
         )

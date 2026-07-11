@@ -8,11 +8,18 @@
  *
  * AUX pin handling:
  *   The AUX pin is *advisory*.  During begin() the driver probes
- *   AUX: if it goes HIGH within AUX_TIMEOUT_MS, AUX-based flow
- *   control is enabled; otherwise it is disabled and the driver
+ *   AUX: if it goes HIGH within AUX_INIT_TIMEOUT_MS (2 000 ms), AUX-based
+ *   flow control is enabled; otherwise it is disabled and the driver
  *   sends unconditionally.  Some DX-LR03 units (or wiring configs)
  *   hold AUX permanently LOW yet transmit/receive correctly —
  *   confirmed during HW bring-up 2026-04-20.
+ *
+ *   AUX timing budget (hardware reference):
+ *     - Module self-test (power-on to AUX HIGH): ~1 000 ms nominal.
+ *       AUX_INIT_TIMEOUT_MS = 2 000 ms provides 1 s of headroom.
+ *     - Air-TX time at 2.4 kbps with max frame (~240 B): ~1 850 ms.
+ *       AUX_TIMEOUT_MS = 3 000 ms provides 1.15 s of headroom.
+ *       TELEMETRY_RATE_MS (2 000 ms) must remain >= air-TX time.
  *
  * Thread safety: NOT thread-safe.  Must be accessed from the comms
  *                task only (CERT-13).
@@ -116,8 +123,13 @@ private:
     /// Module max packet size (bytes over-air in a single burst).
     static constexpr uint16_t MODULE_MTU = 240;
 
-    /// AUX wait timeout when starting a transmission (ms).
-    static constexpr uint32_t AUX_TIMEOUT_MS = ares::LORA_AUX_TIMEOUT_MS;
+    /// AUX wait timeout during begin() for module self-test (ms).
+    /// The DX-LR03 drives AUX LOW for ~1 000 ms after power-on; 2 000 ms gives 1 s headroom.
+    static constexpr uint32_t AUX_INIT_TIMEOUT_MS = ares::LORA_AUX_INIT_TIMEOUT_MS;
+
+    /// AUX wait timeout in send() for TX flow control (ms).
+    /// Must exceed worst-case air-TX time (~1 850 ms at 2.4 kbps, max frame).
+    static constexpr uint32_t AUX_TIMEOUT_MS = ares::LORA_AUX_TX_TIMEOUT_MS;
 
     /// UART RX FIFO flush bound (mirrors LORA_UART_RX_BUF_BYTES from config.h).
     static constexpr uint16_t UART_RX_BUF_BYTES = ares::LORA_UART_RX_BUF_BYTES;
