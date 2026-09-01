@@ -179,7 +179,7 @@ int main()
     RUN_TEST(test_seq_bitmap_wraparound_255_to_0);
     RUN_TEST(test_seq_bitmap_jump_ahead_resets_window);
 
-    // radio MAC (APUS-17)
+    // radio MAC (APUS-4.8, APUS-4.9)
     RUN_TEST(test_computeHmac8_rfc4231_tc1);
     RUN_TEST(test_computeHmac8_rfc4231_tc2);
     RUN_TEST(test_computeHmac8_deterministic);

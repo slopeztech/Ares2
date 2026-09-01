@@ -2,8 +2,8 @@
 
 **Transport-agnostic telemetry frame protocol**
 
-Source: [src/comms/ares_radio_protocol.h](../src/comms/ares_radio_protocol.h),
-        [src/comms/ares_radio_protocol.cpp](../src/comms/ares_radio_protocol.cpp)
+Source: [src/comms/ares_radio_protocol.h](../../src/comms/ares_radio_protocol.h),
+        [src/comms/ares_radio_protocol.cpp](../../src/comms/ares_radio_protocol.cpp)
 
 ---
 
@@ -19,6 +19,8 @@ Key properties:
 - Fixed maximum frame size (214 bytes)
 - Static buffers only — no dynamic allocation (PO10-3)
 - Support for ACK, retransmission, and fragmentation
+- Optional HMAC-SHA256 COMMAND authentication
+- 64-entry sliding anti-replay window and authenticated freshness timestamp
 
 ---
 
@@ -37,7 +39,7 @@ Key properties:
 | SYNC    | 0      | 4 bytes | `0xAE 0x55 0xC3 0x1A` — frame marker    |
 | VER     | 4      | 1 byte  | Protocol version (`0x02`)                |
 | FLAGS   | 5      | 1 byte  | Bit flags (see below)                    |
-| NODE    | 6      | 1 byte  | Sender node ID                           |
+| NODE    | 6      | 1 byte  | Route node: uplink destination or downlink source |
 | TYPE    | 7      | 1 byte  | Message type                             |
 | SEQ     | 8      | 1 byte  | Sequence number (0–255, wrapping)        |
 | LEN     | 9      | 1 byte  | Payload length (0–200)                   |
@@ -64,7 +66,8 @@ Key properties:
 | 1   | `0x02` | `FLAG_RETRANSMIT`| This is a retransmission     |
 | 2   | `0x04` | `FLAG_PRIORITY`  | High-priority frame          |
 | 3   | `0x08` | `FLAG_FRAGMENT`  | Fragmented frame             |
-| 4–7 | `0xF0` | Reserved         | Must be zero                 |
+| 4   | `0x10` | `FLAG_MAC`       | COMMAND payload ends with an 8-byte HMAC tag |
+| 5–7 | `0xE0` | Reserved         | Must be zero                 |
 
 ---
 
@@ -84,6 +87,10 @@ Frame `TYPE` maps to ECSS-E-ST-70-41C (PUS) service numbers per APUS-5:
 
 ## Node Addressing
 
+ARES uses one route byte instead of separate source and destination fields.
+`NODE` is the destination for uplink traffic received by the rocket and the
+source for downlink traffic emitted by it (APUS-10.5).
+
 | Value  | Constant          | Description             |
 |--------|-------------------|-------------------------|
 | `0x00` | `NODE_BROADCAST`  | Address all nodes       |
@@ -91,6 +98,40 @@ Frame `TYPE` maps to ECSS-E-ST-70-41C (PUS) service numbers per APUS-5:
 | `0x02` | `NODE_GROUND`     | Ground station (APID 0x02) |
 | `0x03` | `NODE_PAYLOAD`    | Payload bay node (APID 0x03) |
 | `0xFF` | `NODE_UNASSIGNED` | Node ID not configured  |
+
+---
+
+## COMMAND Authentication and Freshness
+
+The COMMAND payload begins with a packed 6-byte `CommandHeader`:
+
+| Offset | Size | Field         | Description |
+|--------|------|---------------|-------------|
+| 0      | 1    | `priority`    | Command priority |
+| 1      | 1    | `commandId`   | Command identifier |
+| 2      | 4    | `timestampMs` | Ground estimate of receiver uptime, little-endian |
+| 6      | n    | parameters    | Command-specific arguments |
+| 6+n    | 8    | MAC tag       | Present only when `FLAG_MAC` is set |
+
+With a 16-byte radio key configured, every non-fragmented COMMAND must carry
+an 8-byte truncated HMAC-SHA256 tag. The authenticated input is:
+
+```
+VER | (FLAGS | FLAG_MAC) | NODE | TYPE | SEQ | command_len | command_payload
+```
+
+`command_len` and `command_payload` exclude the tag. Verification uses a
+constant-time comparison. The MAC and the ±5000 ms receiver-uptime freshness
+check complete before `SeqBitmap::checkAndMark()` or any other state mutation.
+An authentication failure returns `HMAC_INVALID` without consuming the SEQ.
+
+Without a configured key, the dispatcher accepts unsigned COMMAND frames in
+open mode. This is retained for bench compatibility; provisioning enforcement
+for flight deployments remains a fail-secure configuration requirement.
+Authenticated fragmented COMMAND transfer is not currently defined, so such
+frames are rejected while a key is configured.
+
+Normative rules: APUS-4.8 through APUS-4.12.
 
 ---
 
@@ -148,6 +189,9 @@ into a single `FragReceiveSession` buffer and passes the assembled payload
 to `enqueueCmd()` once all segments arrive.  A 30-second inactivity timeout
 (`kFragTimeoutMs`) discards stale sessions (APUS-15.4).
 
+When COMMAND authentication is enabled, fragmented COMMAND frames are rejected
+until APUS defines an authenticated whole-transfer format (APUS-4.12).
+
 ---
 
 ## Retransmission
@@ -155,7 +199,8 @@ to `enqueueCmd()` once all segments arrive.  A 30-second inactivity timeout
 When `FLAG_ACK_REQ` is set:
 - Sender waits up to `ACK_TIMEOUT_MS` (1000 ms) for an ACK
 - Retransmit up to `MAX_RETRIES` (3) times with `FLAG_RETRANSMIT` set
-- Receiver uses `isDuplicate(seq, lastSeq)` to filter retransmissions
+- COMMAND authentication completes before replay state is updated
+- Receiver uses `SeqBitmap::checkAndMark()` to track a 64-entry SEQ window
 
 ---
 
@@ -185,8 +230,16 @@ bool encodeFrag(Frame&         frame,
 // Extract fragmentation header from a received fragment payload.
 bool decodeFrag(const Frame& frame, FragHeader& frag);
 
-// Check for duplicate sequence number.
+// Legacy equality-only duplicate helper. COMMAND dispatch uses SeqBitmap.
 bool isDuplicate(uint8_t seq, uint8_t lastSeq);
+
+// Sliding 64-entry COMMAND replay window. Returns true for replay/duplicate;
+// otherwise records seq and returns false.
+bool SeqBitmap::checkAndMark(uint8_t seq);
+
+// Append or verify the truncated COMMAND HMAC-SHA256 tag.
+bool appendCommandMac(const uint8_t* key, uint8_t keyLen, Frame& frame);
+bool verifyCommandMac(const uint8_t* key, uint8_t keyLen, const Frame& frame);
 
 // ── RadioDispatcher (radio_dispatcher.h) ──────────────────────────────
 // Arm a new outbound fragmented transfer (non-blocking; pump via poll()).
@@ -202,11 +255,11 @@ bool startFragSend(const uint8_t* data,
 
 ## Testing
 
-The protocol has 41 unit tests running on the **native** platform
-(desktop, no hardware required):
+The protocol suites run on desktop targets without radio hardware:
 
 ```bash
-pio test -e native
+pio test -e native -f test_radio_protocol
+pio test -e sim -f test_dispatcher
 ```
 
 Test categories:
@@ -222,4 +275,6 @@ Test categories:
   segmentNum, FLAG_FRAGMENT set, flag preservation, little-endian header,
   data placement, correct len, encode/decode round-trip, single segment,
   max-payload segment
-- Duplicate detection (same seq, different seq, wraparound)
+- Sliding-window duplicate/replay detection, including wraparound
+- RFC 4231 HMAC vectors, constant-time verification, wrong-key and missing-tag rejection
+- Authenticated timestamp acceptance, expiry, future rejection, and same-SEQ recovery after invalid MAC

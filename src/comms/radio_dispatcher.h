@@ -91,11 +91,11 @@ public:
      * @brief Configure the HMAC-SHA256 key used to authenticate COMMAND frames.
      *
      * When a key is configured all incoming non-fragmented COMMAND frames MUST
-     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-17).
+    * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-4.8).
      * Frames that fail verification receive a NACK with FailureCode::HMAC_INVALID.
      *
      * When no key is configured (default) FLAG_MAC is optional and not verified
-     * (backwards-compatible open mode).
+    * (backwards-compatible open mode, APUS-4.11).
      *
      * Must be called from the same task as poll() — not thread-safe.
      *
@@ -122,7 +122,7 @@ private:
     ares::ams::MissionScriptEngine& engine_;
     PulseInterface*               pulse_;   ///< Nullable — guarded before use.
 
-    // ── MAC key (APUS-17) ──────────────────────────────
+    // ── MAC key (APUS-4.8) ─────────────────────────────
     static constexpr uint8_t kMacKeyLen = proto::HMAC_KEY_LEN;
     uint8_t  macKey_[kMacKeyLen] = {};  ///< Pre-shared HMAC key (all-zero = disabled).
     bool     macKeySet_ = false;        ///< true after setMacKey() is called.
@@ -229,13 +229,14 @@ private:
     void dispatchFrame(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Handle a TYPE == COMMAND frame (APUS-7, APUS-9, APUS-17).
+      * @brief Handle a COMMAND frame (APUS-4.8–4.10, APUS-7, APUS-9).
      *
      * Sequence:
-     *   1. Duplicate-SEQ check — discard silently if duplicate (APUS-4.7).
-     *   2. MAC verification — if a key is configured, verify FLAG_MAC,
+      *   1. MAC verification — if a key is configured, verify FLAG_MAC,
      *      HMAC-SHA256 tag, and rolling timestamp window via
-     *      checkCommandMac(); NACK with HMAC_INVALID on failure (APUS-17).
+      *      checkCommandMac(); NACK with HMAC_INVALID on failure (APUS-4.9).
+      *   2. Duplicate-SEQ check and mark — discard silently if duplicate
+      *      (APUS-4.7). Authentication must precede this state mutation.
      *   3. Acceptance ACK — sent unconditionally on MAC pass (APUS-9.1).
      *   4. enqueueCmd() — insert into the priority queue (APUS-2.2).
      *   5. Completion ACK/NACK deferred to drainCmdQueue().
@@ -246,7 +247,7 @@ private:
     void handleCommand(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Authenticate a non-fragmented COMMAND frame (APUS-17).
+    * @brief Authenticate a non-fragmented COMMAND frame (APUS-4.8–4.10).
      *
      * Verifies FLAG_MAC presence, the HMAC-SHA256 tag, and the rolling
      * timestamp window.  Sends a NACK(HMAC_INVALID) and returns @c false on
@@ -276,7 +277,7 @@ private:
      * FailureCode::NONE produces an ACK; any other value produces a NACK.
      *
      * @param[in] originalSeq   SEQ of the frame being verified (APUS-9.5).
-     * @param[in] originalNode  NODE of the frame sender.
+    * @param[in] originalNode  NODE field copied from the original frame.
      * @param[in] code          FailureCode::NONE = ACK; non-zero = NACK.
      * @param[in] failureData   Command-specific diagnostic byte (may be 0).
      */

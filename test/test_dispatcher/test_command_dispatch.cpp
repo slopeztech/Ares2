@@ -16,10 +16,12 @@
  *   - Buffer with leading garbage followed by valid frame → garbage stripped.
  *   - CRC-corrupted frame → decode failure, SYNC byte skipped.
  *
- * MAC + timestamp tests (APUS-17) covered in this file:
+ * MAC + timestamp tests (APUS-4.8–4.10) covered in this file:
  *   TC-AUTH-4  MAC key set, valid MAC, timestamp within window → accepted.
  *   TC-AUTH-5  MAC key set, valid MAC, timestamp too old (> 5 s) → HMAC_INVALID NACK.
  *   TC-AUTH-6  MAC key set, valid MAC, timestamp far in future (> 5 s) → HMAC_INVALID NACK.
+ *   TC-AUTH-7  Invalid MAC followed by valid same-SEQ frame → valid frame accepted once.
+ *   TC-AUTH-8  No MAC key configured, unsigned COMMAND → accepted in open mode.
  * (TC-AUTH-1/2/3 are covered by the v2.3.3 MAC authentication tests.)
  */
 #include <unity.h>
@@ -110,7 +112,7 @@ struct CmdDispatchFixture
  * @param[in]  id       Command identifier.
  * @param[in]  extra    Additional payload bytes after CommandHeader (optional).
  * @param[in]  extraLen Length of @p extra.
- * @param[in]  nowMs    Sender uptime used as frame timestamp (APUS-17).
+ * @param[in]  nowMs    Estimated receiver uptime used as timestamp (APUS-4.10).
  * @return Wire frame length (0 on error).
  */
 static uint16_t make_cmd(uint8_t*       buf,
@@ -129,7 +131,7 @@ static uint16_t make_cmd(uint8_t*       buf,
     tx.flags      = flags;
     tx.payload[0] = static_cast<uint8_t>(Priority::PRI_LOW);
     tx.payload[1] = static_cast<uint8_t>(id);
-    // CommandHeader timestampMs at bytes [2..5] little-endian (APUS-17).
+    // CommandHeader timestampMs at bytes [2..5] little-endian (APUS-4.10).
     tx.payload[2] = static_cast<uint8_t>( nowMs        & 0xFFU);
     tx.payload[3] = static_cast<uint8_t>((nowMs >>  8U) & 0xFFU);
     tx.payload[4] = static_cast<uint8_t>((nowMs >> 16U) & 0xFFU);
@@ -1613,7 +1615,7 @@ void test_retry_drops_not_incremented_after_ack_frees_slot()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  MAC + TIMESTAMP TESTS  (APUS-17)
+//  MAC + TIMESTAMP TESTS  (APUS-4.8–4.10)
 //  These tests exercise the rolling timestamp window that defends against
 //  cross-boot replay attacks (SeqBitmap is not persistent across reboots).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1685,6 +1687,88 @@ void test_cmd_mac_valid_timestamp_accepted()
     f.dispatcher.poll(kNow);
 
     TEST_ASSERT_GREATER_THAN_UINT32(0U, f.dispatchRadio.sendCount());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TC-AUTH-7: invalid MAC must not consume the anti-replay sequence number
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @test TC-AUTH-7
+ * An invalid MAC receives HMAC_INVALID without mutating the anti-replay window.
+ * A valid frame with the same SEQ is then accepted exactly once; replaying that
+ * authenticated frame produces no additional response.
+ */
+void test_cmd_invalid_mac_does_not_consume_seq()
+{
+    CmdDispatchFixture f;
+    f.dispatcher.setMacKey(kTestMacKey, HMAC_KEY_LEN);
+
+    constexpr uint32_t kNow = 6000U;
+    constexpr uint8_t  kSeq = 93U;
+
+    uint8_t validWire[MAX_FRAME_LEN];
+    const uint16_t validLen = make_mac_cmd(
+        validWire, kSeq, CommandId::REQUEST_STATUS, kNow);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, validLen);
+
+    Frame invalidFrame = {};
+    TEST_ASSERT_TRUE(decode(validWire, validLen, invalidFrame));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(HMAC_LEN, invalidFrame.len);
+    invalidFrame.payload[invalidFrame.len - 1U] ^= 0x01U;
+
+    uint8_t invalidWire[MAX_FRAME_LEN];
+    uint16_t invalidLen = 0U;
+    TEST_ASSERT_TRUE(encode(
+        invalidFrame, invalidWire, MAX_FRAME_LEN, invalidLen));
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(invalidWire, invalidLen));
+    f.dispatcher.poll(kNow);
+    TEST_ASSERT_EQUAL_UINT32(1U, f.dispatchRadio.sendCount());
+
+    Frame nackFrame = {};
+    TEST_ASSERT_TRUE(decode(f.dispatchRadio.lastFrame(),
+                            f.dispatchRadio.lastFrameLen(), nackFrame));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(
+        static_cast<uint8_t>(sizeof(AckPayload)), nackFrame.len);
+    AckPayload nack = {};
+    (void)memcpy(&nack, nackFrame.payload, sizeof(nack));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(FailureCode::HMAC_INVALID), nack.failureCode);
+
+    const uint32_t rejectedSendCount = f.dispatchRadio.sendCount();
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(validWire, validLen));
+    f.dispatcher.poll(kNow);
+    TEST_ASSERT_GREATER_THAN_UINT32(
+        rejectedSendCount, f.dispatchRadio.sendCount());
+
+    const uint32_t acceptedSendCount = f.dispatchRadio.sendCount();
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(validWire, validLen));
+    f.dispatcher.poll(kNow);
+    TEST_ASSERT_EQUAL_UINT32(
+        acceptedSendCount, f.dispatchRadio.sendCount());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TC-AUTH-8: open mode accepts an unsigned command
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @test TC-AUTH-8
+ * With no MAC key configured, an unsigned COMMAND remains accepted for
+ * backwards-compatible open-mode deployments.
+ */
+void test_cmd_open_mode_accepts_unsigned_command()
+{
+    CmdDispatchFixture f;
+
+    uint8_t wire[MAX_FRAME_LEN];
+    const uint16_t wireLen = make_cmd(
+        wire, 94U, 0U, CommandId::REQUEST_STATUS, nullptr, 0U, 7000U);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, wireLen);
+
+    TEST_ASSERT_TRUE(f.dispatchRadio.injectBytes(wire, wireLen));
+    f.dispatcher.poll(7000U);
+
+    TEST_ASSERT_EQUAL_UINT32(2U, f.dispatchRadio.sendCount());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

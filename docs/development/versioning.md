@@ -29,7 +29,7 @@ When `MINOR` is incremented, `PATCH` is reset to **0**.
 The canonical version lives in `src/config.h`:
 
 ```cpp
-#define ARES_VERSION_STRING "2.7.2"
+#define ARES_VERSION_STRING "2.7.3"
 ```
 
 ---
@@ -82,6 +82,7 @@ docs/changelog/
     v2.7.0.md   ← Performance + Bug Fix: STOR-2 RAM write-behind buffer (~80 ms → <1 ms per CSV row); AMS-4.4.1 starvation-guard radio feedback loop fix; IMU I²C 400 kHz
     v2.7.1.md   ← Patch (Driver): ADXL375 startup static-offset compensation (I2C/SPI) + configurable bias calibration knobs
     v2.7.2.md   ← Patch (Radio/Driver): DX-LR03 AUX flow-control regression fix (split init/TX timeouts, robust waitReady timeout handling)
+    v2.7.3.md   ← Patch (Security/Docs): authenticate-before-state anti-replay fix (ARES-P0-001) + APUS/SRS reconciliation
 ```
 
 File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
@@ -134,3 +135,4 @@ File names follow the pattern `vMAJOR.MINOR.PATCH.md`.
 | [2.7.0](../changelog/v2.7.0.md)   | 2026-07-05 | Minor   | Performance + Bug Fix: STOR-2 RAM write-behind buffer (~80 ms → <1 ms/row); AMS-4.4.1 starvation-guard radio feedback loop fix; IMU I²C 400 kHz |
 | [2.7.1](../changelog/v2.7.1.md)   | 2026-07-05 | Patch   | Driver: ADXL375 startup static-offset compensation (I2C/SPI) + configurable bias calibration |
 | [2.7.2](../changelog/v2.7.2.md)   | 2026-07-07 | Patch   | Radio/Driver: DX-LR03 AUX flow-control regression fix; split init/TX AUX timeouts; `waitReady()` timeout handling corrected |
+| [2.7.3](../changelog/v2.7.3.md)   | 2026-09-01 | Patch   | Security/Docs: authenticate COMMAND before mutating `SeqBitmap`; TC-AUTH-7/8; APUS/SRS reconciliation |

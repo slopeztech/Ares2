@@ -252,7 +252,7 @@ REFS: docs/standards/ams_standard.md AMS-4.8.2, src/config.h AMS_MAX_SENSOR_RETR
 UID: SRS-2404
 STATUS: Active
 TAGS: AMS, Variables, ArithmeticExpression
-STATEMENT: A set action shall support an arithmetic expression form "set VARNAME = TERM op TERM [op TERM]", where TERM is a sensor field reference (ALIAS.field), a declared variable name, or a float literal, and op is one of +, -, *, /. Expressions with two or three terms shall be accepted; any other count shall be a parse error. Evaluation shall be strictly left-to-right. A literal zero in divisor position shall be a parse error. An unknown alias in a sensor term shall be a parse error. At runtime, if any operand is invalid (sensor failure, variable not yet set) or the result is NaN or infinite, an EVENT.warning shall be emitted and the target variable shall remain unchanged.
+STATEMENT: A set action shall support an arithmetic expression form "set VARNAME = TERM op TERM [op TERM]", where TERM is a sensor field reference (ALIAS.field), a declared variable name, or a float literal, and op is one of +, -, \*, /. Expressions with two or three terms shall be accepted; any other count shall be a parse error. Evaluation shall be strictly left-to-right. A literal zero in divisor position shall be a parse error. An unknown alias in a sensor term shall be a parse error. At runtime, if any operand is invalid (sensor failure, variable not yet set) or the result is NaN or infinite, an EVENT.warning shall be emitted and the target variable shall remain unchanged.
 VERIFICATION: Test
 RATIONALE: AMS-4.8.8. Allows missions to compute derived values (AGL altitude, average velocity) without consuming transition slots for intermediate logic.
 REFS: docs/standards/ams_standard.md AMS-4.8.8
@@ -313,7 +313,7 @@ STATUS: Active
 TAGS: AMS, Telemetry, HK
 STATEMENT: An HK.report block shall include at most AMS_MAX_HK_FIELDS (16) named fields. Each field shall reference a sensor token (e.g. BARO.alt) or a global variable. Fields that reference an unknown token or undeclared variable shall be a parse error.
 VERIFICATION: Test
-RATIONALE: AMS-4.3 / APUS-15. Bounded field count ensures the serialised HK payload remains within the 255-byte maximum ARES Radio Protocol frame size (SRS-3003).
+RATIONALE: AMS-4.3 / APUS-15. Bounded field count ensures the serialised HK payload remains within the 200-byte maximum ARES Radio Protocol payload (SRS-3004).
 REFS: docs/standards/ams_standard.md AMS-4.3, src/config.h AMS_MAX_HK_FIELDS
 
 [[/SECTION]]
@@ -448,7 +448,7 @@ REFS: src/hal/buzzer/buzzer_interface.h
 UID: SRS-2903
 STATUS: Active
 TAGS: AMS, Buzzer, ExecutionGuard
-STATEMENT: BUZZER.beep actions shall be dispatched only when the engine execution is enabled (executionEnabled_ == true) and the engine status is RUNNING. If execution is disabled via setExecutionEnabled(false) after arm(), no BUZZER.beep actions shall fire on subsequent state entries or cadence ticks until execution is re-enabled.
+STATEMENT: BUZZER.beep actions shall be dispatched only when the engine execution is enabled (executionEnabled\_ == true) and the engine status is RUNNING. If execution is disabled via setExecutionEnabled(false) after arm(), no BUZZER.beep actions shall fire on subsequent state entries or cadence ticks until execution is re-enabled.
 VERIFICATION: Test
 RATIONALE: AMS-4.20 / AMS-5.1. Consistent with the execution-enabled guard applied to PULSE.fire and EVENT actions. Prevents buzzer activation during ground-test or inhibited-flight modes.
 REFS: docs/standards/ams_standard.md AMS-5.1
@@ -474,10 +474,10 @@ REFS: src/ams/mission_script_engine_types.h HkSlot.hasBuzzerAction
 [[/SECTION]]
 
 [[SECTION]]
-TITLE: 3.10 Background Task Blocks
+TITLE: 3.11 Background Task Blocks
 
 [REQUIREMENT]
-UID: SRS-2900
+UID: SRS-2920
 STATUS: Active
 TAGS: AMS, Tasks
 STATEMENT: A script shall declare at most AMS_MAX_TASKS (4) background task blocks using the syntax "task NAME when in STATE [STATE...] every Nms:". A task block shall only execute when the current engine state appears in the task's "when in" clause. The "when in" clause shall accept at most AMS_MAX_TASK_ACTIVE_STATES (6) state names. Each task shall declare at most AMS_MAX_TASK_RULES (4) conditional if-rules.
@@ -486,7 +486,7 @@ RATIONALE: AMS-4.13. Background tasks decouple periodic monitoring logic (e.g. m
 REFS: docs/standards/ams_standard.md AMS-4.13, src/config.h AMS_MAX_TASKS, AMS_MAX_TASK_RULES, AMS_MAX_TASK_ACTIVE_STATES
 
 [REQUIREMENT]
-UID: SRS-2901
+UID: SRS-2921
 STATUS: Active
 TAGS: AMS, Tasks, Constraints
 STATEMENT: A background task if-rule body shall execute set actions and dispatch at most one EVENT per rule firing. A task rule shall NOT contain a "transition to" directive; state transitions shall only occur via regular transitions, fallback, on_error, or on_timeout. Task-generated EVENTs shall be dispatched at the same priority as HK.report within the action arbitrator (SRS-2502).
@@ -497,7 +497,7 @@ REFS: docs/standards/ams_standard.md AMS-4.13
 [[/SECTION]]
 
 [[SECTION]]
-TITLE: 3.11 Pulse Channel Commands
+TITLE: 3.12 Pulse Channel Commands
 
 [REQUIREMENT]
 UID: SRS-2950
@@ -529,7 +529,7 @@ REFS: docs/standards/ams_standard.md AMS-4.18, src/config.h AMS_PULSE_LABEL_LEN
 [[/SECTION]]
 
 [[SECTION]]
-TITLE: 3.12 Script Radio Configuration Override
+TITLE: 3.13 Script Radio Configuration Override
 
 [REQUIREMENT]
 UID: SRS-2980

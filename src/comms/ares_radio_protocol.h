@@ -57,7 +57,7 @@ constexpr uint8_t FLAG_ACK_REQ    = 0x01;  ///< Bit 0: ACK required (APUS-9).
 constexpr uint8_t FLAG_RETRANSMIT = 0x02;  ///< Bit 1: retransmission flag.
 constexpr uint8_t FLAG_PRIORITY   = 0x04;  ///< Bit 2: high-priority frame (APUS-2).
 constexpr uint8_t FLAG_FRAGMENT   = 0x08;  ///< Bit 3: fragmented transfer (APUS-15).
-constexpr uint8_t FLAG_MAC        = 0x10;  ///< Bit 4: HMAC-SHA256 tag present (APUS-17).
+constexpr uint8_t FLAG_MAC        = 0x10;  ///< Bit 4: HMAC-SHA256 tag present (APUS-4.8).
 constexpr uint8_t FLAGS_RESERVED  = 0xE0;  ///< Bits 5–7: reserved, must be zero.
 
 // ── Retransmission constants (APUS-4.5) ────────────────────
@@ -92,7 +92,7 @@ struct Frame
 {
     uint8_t  ver;                        ///< Protocol version.
     uint8_t  flags;                      ///< Frame flags (FLAG_* bitmask).
-    uint8_t  node;                       ///< Sender node ID (APID).
+    uint8_t  node;                       ///< Route node: uplink destination or downlink source (APUS-10.5).
     MsgType  type;                       ///< PUS service type.
     uint8_t  seq;                        ///< Rolling sequence number.
     uint8_t  len;                        ///< Payload length in bytes.
@@ -194,7 +194,7 @@ enum class FailureCode : uint8_t
     QUEUE_FULL        = 0x06,
     INVALID_PARAM     = 0x07,
     ROUTING_FAIL      = 0x08,  ///< Packet could not be routed to any handler (APUS-14.3).
-    HMAC_INVALID      = 0x09,  ///< MAC tag missing, wrong, or key not provisioned (APUS-17).
+    HMAC_INVALID      = 0x09,  ///< COMMAND authentication or freshness failed (APUS-4.9).
     LAST              = HMAC_INVALID,
 };
 
@@ -255,7 +255,7 @@ static_assert(sizeof(TelemetryPayload) == 78,
  * Wire layout (little-endian, packed):
  *   [0]    priority    — Priority level (Priority enum value).
  *   [1]    commandId   — Command identifier (CommandId enum value).
- *   [2..5] timestampMs — Sender uptime in ms at frame creation (APUS-17).
+ *   [2..5] timestampMs — Sender estimate of receiver uptime (APUS-4.10).
  *                        Covered by the HMAC-SHA256 tag; receiver validates
  *                        that |nowMs − timestampMs| ≤ CMD_TIMESTAMP_WINDOW_MS.
  */
@@ -263,12 +263,12 @@ struct CommandHeader
 {
     uint8_t  priority;       ///< Priority level (Priority enum value).
     uint8_t  commandId;      ///< Command identifier (CommandId enum value).
-    uint32_t timestampMs;    ///< Frame creation uptime ms for replay-window validation (APUS-17).
+    uint32_t timestampMs;    ///< Estimated receiver uptime for freshness validation (APUS-4.10).
 } __attribute__((packed));
 static_assert(sizeof(CommandHeader) == 6,
               "APUS-3.6: CommandHeader must be 6 bytes");
 
-/// Rolling timestamp acceptance window for COMMAND frames (APUS-17).
+/// Rolling timestamp acceptance window for COMMAND frames (APUS-4.10).
 /// COMMAND frames authenticated with a MAC key are rejected when
 /// |receiver_nowMs − frame.timestampMs| exceeds this value.
 constexpr uint32_t CMD_TIMESTAMP_WINDOW_MS = 5000U;
@@ -291,7 +291,7 @@ static_assert(sizeof(EventHeader) == 6,
 struct AckPayload
 {
     uint8_t  originalSeq;   ///< Sequence number of the original TC.
-    uint8_t  originalNode;  ///< Node ID of the original TC sender.
+    uint8_t  originalNode;  ///< NODE field copied from the original frame.
     uint8_t  failureCode;   ///< Failure code (FailureCode enum; 0 = success).
     uint8_t  failureData;   ///< Command-specific diagnostic byte.
 } __attribute__((packed));

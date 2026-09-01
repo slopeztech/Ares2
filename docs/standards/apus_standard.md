@@ -148,11 +148,13 @@ to the `FLAG_PRIORITY` bit and an internal queue discipline.
 
 The `FLAG_PRIORITY` bit (`0x04`) in the frame flags byte marks
 HIGH and CRITICAL frames. The exact priority level is encoded in
-the first byte of the payload when `TYPE == COMMAND`:
+the first byte of `CommandHeader` when `TYPE == COMMAND`:
 
 ```
-PAYLOAD[0] = priority level (0–3)
-PAYLOAD[1..] = command-specific data
+PAYLOAD[0]    = priority level (0–3)
+PAYLOAD[1]    = commandId
+PAYLOAD[2..5] = timestampMs
+PAYLOAD[6..]  = command-specific parameters
 ```
 
 ### Rationale
@@ -260,16 +262,44 @@ Command uplink is optional and depends on hardware configuration.
 | APUS-4.4 | If `FLAG_ACK_REQ` is set, the receiver must respond with an ACK.  |
 | APUS-4.5 | ACK timeout: 1000 ms. After timeout, retransmit up to 3×.        |
 | APUS-4.6 | Retransmissions must set `FLAG_RETRANSMIT` and preserve the SEQ.  |
-| APUS-4.7 | Duplicate SEQ detection is mandatory on the receiver side.        |
+| APUS-4.7 | Duplicate SEQ detection is mandatory. If COMMAND authentication is configured, it must complete before replay state is updated. |
+
+### Command authentication
+
+When a 16-byte radio key is provisioned, COMMAND frames use an 8-byte
+truncated HMAC-SHA256 tag. The tag is appended to the payload and is included
+in `LEN`; command handlers never receive those tag bytes. The authenticated
+input is encoded canonically as:
+
+```
+VER | (FLAGS | FLAG_MAC) | NODE | TYPE | SEQ | command_len | command_payload
+```
+
+Here, `command_len` and `command_payload` exclude the HMAC tag. This extension
+is specific to ARES and is not part of the PUS-C secondary header specified by
+APUS-17.
+
+| ID        | Rule |
+|-----------|------|
+| APUS-4.8  | With a radio key configured, every inbound non-fragmented COMMAND must set `FLAG_MAC` and carry an 8-byte HMAC-SHA256 tag computed with the 16-byte pre-shared key. |
+| APUS-4.9  | MAC comparison must be constant-time. Authentication, including timestamp validation, must finish before updating replay, queue, acceptance-ACK, or reassembly state. Any failure returns `HMAC_INVALID` without consuming the SEQ. |
+| APUS-4.10 | An authenticated COMMAND must carry a ground-supplied estimate of receiver uptime in `CommandHeader.timestampMs`. At receipt it must be within ±5000 ms of receiver uptime, compared with wrap-safe `uint32_t` arithmetic. |
+| APUS-4.11 | With no radio key configured, the dispatcher operates in explicit open mode and may accept unsigned COMMAND frames. Open mode is limited to development or bench use; flight deployments must provision a key. |
+| APUS-4.12 | While authenticated fragmented transfer is undefined, a COMMAND with `FLAG_FRAGMENT` must be rejected when a radio key is configured. |
 
 ### Implementation status
 
 | Rule      | Status          | Module                               |
 |-----------|-----------------|--------------------------------------|
 | APUS-4.4  | ✅ Implemented   | `src/comms/radio_dispatcher.cpp` — `poll()` called from `loop()` every SENSOR_RATE_MS interval |
-| APUS-4.5  | ⏳ Planned       | Retransmit logic not yet implemented (ground-side responsibility for now) |
-| APUS-4.6  | ⏳ Planned       | `FLAG_RETRANSMIT` should integrate with `RadioDispatcher::handleCommand()` / `proto::SeqBitmap::checkAndMark()`; not the old `isDuplicate()` path |
-| APUS-4.7  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — `proto::SeqBitmap::checkAndMark()`, 64-slot sliding-window bitmap ([H5]) |
+| APUS-4.5  | ✅ Implemented   | `sendReliable()` / `enqueueRetry()` / `processRetries()` / `clearRetryForSeq()` |
+| APUS-4.6  | ✅ Implemented   | `processRetries()` preserves SEQ and sets `FLAG_RETRANSMIT` on timed-out frames |
+| APUS-4.7  | ✅ Implemented   | `RadioDispatcher::handleCommand()` — authentication precedes `proto::SeqBitmap::checkAndMark()`, a 64-slot sliding-window bitmap ([H5]) |
+| APUS-4.8  | ✅ Implemented   | `proto::appendCommandMac()` / `proto::verifyCommandMac()` |
+| APUS-4.9  | ✅ Implemented   | `RadioDispatcher::checkCommandMac()` and authenticate-before-state ordering in `handleCommand()` |
+| APUS-4.10 | ✅ Implemented   | `CommandHeader::timestampMs` and `CMD_TIMESTAMP_WINDOW_MS` |
+| APUS-4.11 | ⚠️ Partial       | Open-mode behavior is implemented; flight-mode enforcement is pending fail-secure provisioning |
+| APUS-4.12 | ✅ Implemented   | `checkCommandMac()` rejects `FLAG_FRAGMENT` with `HMAC_INVALID` |
 
 ### Transmission cadence
 
@@ -289,6 +319,8 @@ Command uplink is optional and depends on hardware configuration.
 | Latency         | Priority queue                      | APUS-2     |
 | Bandwidth       | Bit packing + delta encoding        | APUS-3     |
 | Duplicate frames | SEQ-based deduplication            | APUS-4.7   |
+| Command forgery | Truncated HMAC-SHA256               | APUS-4.8, 4.9 |
+| Cross-boot replay | Authenticated timestamp window    | APUS-4.10  |
 
 ---
 
@@ -397,7 +429,9 @@ Defines the payload layout for `TYPE == COMMAND (0x03)`.
 |--------|------|---------|-----------|---------------------------|
 | 0      | 1    | uint8_t | priority  | 0=CRITICAL … 3=LOW        |
 | 1      | 1    | uint8_t | commandId | Command enumeration        |
-| 2      | n    | varies  | params    | Command-specific arguments |
+| 2      | 4    | uint32_t | timestampMs | Ground estimate of receiver uptime, little-endian; authenticated freshness input (APUS-4.10) |
+| 6      | n    | varies  | params    | Command-specific arguments |
+| 6+n    | 8    | uint8_t[8] | mac   | Present only with `FLAG_MAC`; excluded from command parameters (APUS-4.8) |
 
 ### Command identifiers
 
@@ -424,6 +458,8 @@ Defines the payload layout for `TYPE == COMMAND (0x03)`.
 | APUS-7.1 | Unknown commandId values must be rejected with NACK.          |
 | APUS-7.2 | Pyro commands require `armed == true` — reject otherwise.     |
 | APUS-7.3 | CRITICAL commands must carry `FLAG_PRIORITY` in the flags.    |
+| APUS-7.4 | `CommandHeader` is a packed 6-byte header; command parameters begin at payload offset 6. |
+| APUS-7.5 | `LEN` includes any MAC trailer, but command parsing and length checks must exclude its 8 bytes. |
 
 ---
 
@@ -527,6 +563,7 @@ the ACK/NACK payload:
 
 | Code | Name                 | Description                         |
 |------|----------------------|-------------------------------------|
+| 0x00 | NONE                 | Successful ACK                      |
 | 0x01 | CRC_INVALID          | CRC mismatch on received TC         |
 | 0x02 | UNKNOWN_TYPE         | Unrecognised message TYPE           |
 | 0x03 | UNKNOWN_COMMAND      | Valid TYPE but unknown commandId    |
@@ -534,6 +571,8 @@ the ACK/NACK payload:
 | 0x05 | EXECUTION_ERROR      | Runtime error during execution     |
 | 0x06 | QUEUE_FULL           | Priority queue overflow            |
 | 0x07 | INVALID_PARAM        | Parameter out of valid range       |
+| 0x08 | ROUTING_FAIL         | NODE cannot be routed locally       |
+| 0x09 | HMAC_INVALID         | COMMAND MAC or freshness validation failed |
 
 ### Rules
 
@@ -607,6 +646,11 @@ ROOT-PACKET-SEQUENCE-CONTROL ::= SEQUENCE {
 | Packet Data Length         | LEN           | 8    | Max payload 200 bytes            |
 | Packet Error Control      | CRC-32        | 32   | Upgraded from CRC-16 to CRC-32   |
 
+`NODE` is a compact route endpoint rather than separate CCSDS source and
+destination fields. It identifies the destination on uplink frames received by
+the rocket and the source on downlink frames emitted by the rocket. The link
+direction supplies the omitted half of the route.
+
 ### APID assignment
 
 PUS-C requires each application process to have a unique APID (0–2047).
@@ -636,6 +680,7 @@ the original command. In ARES, the Request ID is simplified to
 | APUS-10.2 | Unknown APID/NODE values must be rejected (routing failure).   |
 | APUS-10.3 | Sequence count wraps at 256 — receiver must handle wrap-around.|
 | APUS-10.4 | APID 0x00 frames are processed by all nodes (broadcast).      |
+| APUS-10.5 | NODE denotes destination on uplink and source on downlink; implementations must not interpret it as an invariant sender field. |
 
 ---
 
@@ -785,8 +830,12 @@ is valid.
 |-------------|-----------------|-------------------------|------------|
 | TELEMETRY   | `timestampMs`   | `millis()` at sample    | 1 ms       |
 | EVENT       | `timestampMs`   | `millis()` at event     | 1 ms       |
-| COMMAND     | —               | No timestamp (ground)   | —          |
+| COMMAND     | `timestampMs`   | Ground estimate of receiver uptime at receipt | 1 ms |
 | ACK         | —               | Implicit (response)     | —          |
+
+The COMMAND timestamp is an authentication freshness value, not mission event
+time. It is checked only when radio authentication is enabled, as specified by
+APUS-4.10.
 
 ### GPS time correlation
 
@@ -809,6 +858,7 @@ maintain an RTC or UTC clock.
 | APUS-13.3 | Counter overflow (49.7 days) is acceptable — flights are <1 hour. |
 | APUS-13.4 | Time-based FCS triggers must compare against MET, not wall clock. |
 | APUS-13.5 | GPS time is advisory — never use it for flight-critical decisions.|
+| APUS-13.6 | Authenticated COMMAND freshness must use the wrap-safe acceptance rule in APUS-4.10. |
 
 ---
 
@@ -1399,7 +1449,7 @@ services should be reconsidered.
 | APUS-1     | CERT-1, CERT-2, DO-6                     |
 | APUS-2     | RTOS-4, RTOS-5, PO10-2                   |
 | APUS-3     | PO10-3, MISRA-1, MISRA-7                 |
-| APUS-4     | CERT-1, DO-7, RTOS-1                     |
+| APUS-4     | CERT-1, DO-7, RTOS-1, RFC 2104, FIPS 180-4 |
 | APUS-5     | CERT-5, PO10-5                           |
 | APUS-6     | MISRA-1, MISRA-7                         |
 | APUS-7     | CERT-1, DO-6, RTOS-4                     |
@@ -1408,7 +1458,7 @@ services should be reconsidered.
 | APUS-10    | CERT-5, PO10-5, APUS-5                   |
 | APUS-11    | MISRA-1, MISRA-7, APUS-6                 |
 | APUS-12    | RTOS-4, CERT-4, DO-8                     |
-| APUS-13    | RTOS-1, CERT-2                           |
+| APUS-13    | RTOS-1, CERT-2, APUS-4.10                |
 | APUS-14    | APUS-1, APUS-5, RTOS-4                   |
 | APUS-15    | APUS-1, CERT-1, PO10-3                   |
 | APUS-16    | APUS-11, CERT-5, PO10-3                  |
@@ -1429,6 +1479,8 @@ services should be reconsidered.
 - ECSS-E-ST-70-41C — *Telemetry and telecommand packet utilisation*
   (European Cooperation for Space Standardization, April 2016)
 - CCSDS 133.0-B-2 — *Space Packet Protocol* (Blue Book, June 2020)
+- RFC 2104 — *HMAC: Keyed-Hashing for Message Authentication*
+- FIPS PUB 180-4 — *Secure Hash Standard (SHS)*
 - OPUS2 Toolset — <https://gitlab.esa.int/PUS-C/opus2>
   (ESA Contract 4000133440/20/NL/CRS, N7 Space)
 - OPUS2 User Manual — <https://gitlab.esa.int/taste/taste-setup/-/wikis/Opus2_User_Manual>

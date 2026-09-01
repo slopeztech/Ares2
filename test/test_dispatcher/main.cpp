@@ -92,10 +92,12 @@ extern void test_retry_drops_initial_zero();
 extern void test_retry_drops_increments_on_buffer_full();
 extern void test_retry_drops_accumulates();
 extern void test_retry_drops_not_incremented_after_ack_frees_slot();
-// Rolling timestamp window (APUS-17)
+// Rolling timestamp window (APUS-4.10)
 extern void test_cmd_mac_valid_timestamp_accepted();
 extern void test_cmd_mac_expired_timestamp_rejected();
 extern void test_cmd_mac_future_timestamp_rejected();
+extern void test_cmd_invalid_mac_does_not_consume_seq();
+extern void test_cmd_open_mode_accepts_unsigned_command();
 
 // ── test_rx_buffer_guard.cpp ────────────────────────────────────────────────
 
@@ -187,10 +189,12 @@ int main()
     RUN_TEST(test_retry_drops_accumulates);
     RUN_TEST(test_retry_drops_not_incremented_after_ack_frees_slot);
 
-    // Rolling timestamp window (APUS-17)
+    // Rolling timestamp window (APUS-4.10)
     RUN_TEST(test_cmd_mac_valid_timestamp_accepted);
     RUN_TEST(test_cmd_mac_expired_timestamp_rejected);
     RUN_TEST(test_cmd_mac_future_timestamp_rejected);
+    RUN_TEST(test_cmd_invalid_mac_does_not_consume_seq);
+    RUN_TEST(test_cmd_open_mode_accepts_unsigned_command);
 
     // RX-buffer boundary guard (P3-5 / CERT-1)
     RUN_TEST(test_poll_liar_driver_received_exceeds_space_no_crash);

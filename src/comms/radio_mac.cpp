@@ -1,6 +1,6 @@
 /**
  * @file  radio_mac.cpp
- * @brief Portable HMAC-SHA256 for APUS radio COMMAND authentication (APUS-17).
+ * @brief Portable HMAC-SHA256 for radio COMMAND authentication (APUS-4.8, APUS-4.9).
  *
  * SHA-256 implemented per FIPS 180-4 §6.2.  HMAC constructed per RFC 2104.
  * No external libraries — compiles on both ESP32 and native host targets.

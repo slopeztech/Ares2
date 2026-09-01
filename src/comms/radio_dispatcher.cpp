@@ -54,7 +54,7 @@ void RadioDispatcher::setMacKey(const uint8_t* key, uint8_t keyLen)
     }
     (void)memcpy(macKey_, key, kMacKeyLen);
     macKeySet_ = true;
-    LOG_I(TAG, "radio MAC key configured (%u bytes) — COMMAND auth enabled (APUS-17)",
+    LOG_I(TAG, "radio MAC key configured (%u bytes) — COMMAND auth enabled (APUS-4.8)",
           static_cast<unsigned>(kMacKeyLen));
 }
 
@@ -285,11 +285,11 @@ void RadioDispatcher::dispatchFrame(const proto::Frame& frame, uint32_t nowMs) /
 
 bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
 {
-    // Fragmented frames cannot carry a per-frame MAC (APUS-17).
+    // Authenticated fragmented COMMAND is not defined (APUS-4.12).
     if ((frame.flags & proto::FLAG_FRAGMENT) != 0U)
     {
         LOG_W(TAG, "COMMAND seq=%u: fragmented COMMAND rejected — "
-              "MAC key requires non-fragmented frames (APUS-17)",
+              "MAC key requires non-fragmented frames (APUS-4.12)",
               static_cast<unsigned>(frame.seq));
         sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
         return false;
@@ -302,7 +302,7 @@ bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
         sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
         return false;
     }
-    // Verify the 8-byte HMAC-SHA256 tag (constant-time compare, OWASP A07).
+    // Verify the 8-byte HMAC-SHA256 tag (constant-time compare, APUS-4.9).
     if (!proto::verifyCommandMac(macKey_, kMacKeyLen, frame))
     {
         LOG_W(TAG, "COMMAND seq=%u: HMAC verification failed — NACK",
@@ -310,9 +310,9 @@ bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
         sendAckNack(frame.seq, frame.node, proto::FailureCode::HMAC_INVALID, 0U);
         return false;
     }
-    LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-17)", static_cast<unsigned>(frame.seq));
+    LOG_D(TAG, "COMMAND seq=%u: MAC verified (APUS-4.8)", static_cast<unsigned>(frame.seq));
 
-    // Rolling timestamp window — defeats cross-boot replays (APUS-17).
+    // Rolling timestamp window — defeats cross-boot replays (APUS-4.10).
     // timestampMs is at CommandHeader bytes [2..5], protected by the MAC.
     if (frame.len >= static_cast<uint8_t>(sizeof(proto::CommandHeader) + proto::HMAC_LEN))
     {
@@ -344,18 +344,20 @@ bool RadioDispatcher::checkCommandMac(const proto::Frame& frame, uint32_t nowMs)
 
 void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
 {
+    // ── APUS-4.8–4.10: MAC + timestamp authentication ────────────────────
+    if (macKeySet_ && !checkCommandMac(frame, nowMs))
+    {
+        return;  // checkCommandMac already sent the NACK.
+    }
+
     // ── APUS-4.7: sliding-window anti-replay guard ([H5]) ─────────────────
+    // Authentication must precede this state mutation.  Otherwise an attacker
+    // without the key could consume chosen sequence numbers using invalid MACs.
     if (rxSeqBitmap_.checkAndMark(frame.seq))
     {
         LOG_D(TAG, "COMMAND seq=%u duplicate/replay — discarded",
               static_cast<unsigned>(frame.seq));
         return;
-    }
-
-    // ── APUS-17: HMAC-SHA256 + timestamp window authentication ────────────
-    if (macKeySet_ && !checkCommandMac(frame, nowMs))
-    {
-        return;  // checkCommandMac already sent the NACK.
     }
 
     // ── APUS-15: fragmented transfer ───────────────────────────────────────
@@ -396,7 +398,7 @@ void RadioDispatcher::handleCommand(const proto::Frame& frame, uint32_t nowMs)
 
 void RadioDispatcher::handleHeartbeat(const proto::Frame& frame, uint32_t nowMs)
 {
-    (void)frame;   // Source node unused — we always respond from NODE_ROCKET.
+    (void)frame;   // Route node was validated before dispatch.
     (void)nowMs;
 
     proto::Frame response = {};
@@ -582,7 +584,7 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
     case proto::CommandId::SET_MODE:
     {
         // Payload layout: CommandHeader(6) + mode(1) = 7 bytes minimum.
-        // CommandHeader[2..5] = timestampMs (APUS-17); mode at byte [6].
+        // CommandHeader[2..5] = timestampMs (APUS-4.10); mode at byte [6].
         // mode 0x00 = pause execution, 0x01 = resume execution.
         if (frame.len < 7U)
         {

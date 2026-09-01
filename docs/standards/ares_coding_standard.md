@@ -48,7 +48,7 @@ in its own file with detailed rules, examples, and cross-references.
 | [RTOS](rtos_standard.md) | FreeRTOS task discipline (ESP32-S3 SMP) | RTOS-1 … RTOS-19 | 19 |
 | [MISRA C](misra_standard.md) | Type safety, predictable behavior | MISRA-1 … MISRA-22 | 22 |
 | [CERT C](cert_standard.md) | Input validation, hostile data defense | CERT-1 … CERT-22 | 22 |
-| [APUS](pus_standard.md) | Packet integrity, RF discipline (ESA PUS) | APUS-1 … APUS-25 | 25 |
+| [APUS](apus_standard.md) | Packet integrity, RF discipline (ESA PUS adaptation) | APUS-1 … APUS-25 | 25 |
 | [DOX](dox_standard.md) | Doxygen documentation discipline | DOX-1 … DOX-8 | 8 |
 | [REST API](apirest_standard.md) | HTTP REST API for WiFi ground config | REST-1 … REST-14 | 14 |
 
