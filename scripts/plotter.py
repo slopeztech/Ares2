@@ -1,13 +1,28 @@
-import argparse
-from pathlib import Path
-import difflib
+#!/usr/bin/env python3
+"""Serve an interactive dashboard for ARES flight telemetry CSV data."""
 
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import dash
-from dash import dcc, html, Input, Output, State
+from __future__ import annotations
+
+import argparse
+import difflib
+import sys
+from pathlib import Path
+
+try:
+    import dash
+    import numpy as np
+    import pandas as pd
+    import plotly.graph_objects as go
+    from dash import Input, Output, State, dcc, html
+    from plotly.subplots import make_subplots
+except ImportError as exc:
+    dependency = exc.name or "required plotting package"
+    print(
+        f"Missing dependency '{dependency}'. Install the plotter dependencies with:\n"
+        "  python -m pip install dash numpy pandas plotly",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from exc
 
 class RocketDataAnalyzer:
     G_ACCEL = 9.80665
