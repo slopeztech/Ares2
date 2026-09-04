@@ -1,5 +1,11 @@
 # ARES APUS Standard — Amateur Packet Utilisation Standard
 
+> **Non-normative legacy snapshot.** This file is retained for design lineage
+> and may not match the implemented protocol. The canonical ARES requirements,
+> rule identifiers, and implementation status are in
+> [apus_standard.md](apus_standard.md). Source comments, tests, and SRS
+> references must resolve APUS IDs against that canonical file.
+
 **Amateur Rocket Embedded System**
 Communications protocol rules for packet integrity, command
 prioritisation, data encoding, and RF link discipline.

@@ -1,6 +1,6 @@
 /**
  * @file  test_radio_mac.cpp
- * @brief Unit tests for the HMAC-SHA256 radio authentication layer (APUS-17).
+ * @brief Unit tests for HMAC-SHA256 radio authentication (APUS-4.8, APUS-4.9).
  *
  * Coverage:
  *   Primitives:

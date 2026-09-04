@@ -236,8 +236,8 @@ private:
 };
 
 // ═══════════════════════════════════════════════════════════
-/// @brief Load the provisioned radio MAC key into the dispatcher (APUS-17).
-///        No-op when no key has been provisioned yet (open / dev mode).
+/// @brief Load the provisioned radio MAC key into the dispatcher (APUS-4.8).
+///        No-op when no key has been provisioned (open mode, APUS-4.11).
 static void applyRadioMacKey(const DeviceConfig& cfg, ares::RadioDispatcher& dispatcher)
 {
     uint8_t radioKeyBuf[ares::proto::HMAC_KEY_LEN] = {};
@@ -434,7 +434,7 @@ void setup() // NOLINT(readability-function-size)
     (void)apiComSelector.selectDriverByName(deviceConfig.defaultComDriver());
     (void)apiImuSelector.selectDriverByName(deviceConfig.defaultImuDriver());
 
-    // Wire radio MAC key into the dispatcher (APUS-17).
+    // Wire radio MAC key into the dispatcher (APUS-4.8).
     applyRadioMacKey(deviceConfig, radioDispatcher);
 
     // COM transceiver(s)

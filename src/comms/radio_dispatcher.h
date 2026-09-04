@@ -7,10 +7,11 @@
  * synchronisation-marker framing scheme (APUS-4.3).
  *
  * For every valid COMMAND frame the dispatcher:
- *   1. Detects duplicate frames by SEQ number (APUS-4.7).
- *   2. Sends an acceptance ACK unconditionally (APUS-9.1).
- *   3. Executes the command via MissionScriptEngine.
- *   4. Sends a completion ACK or NACK if FLAG_ACK_REQ was set (APUS-9.3).
+ *   1. Authenticates the frame before mutable state changes (APUS-4.9).
+ *   2. Detects duplicate frames by SEQ number (APUS-4.7).
+ *   3. Sends an acceptance ACK (APUS-9.1).
+ *   4. Executes the command via MissionScriptEngine.
+ *   5. Sends a completion ACK or NACK if FLAG_ACK_REQ was set (APUS-9.3).
  *
  * HEARTBEAT frames are echoed back to maintain the ST[17] connection-test
  * handshake.  TELEMETRY, EVENT, and ACK frames received from ground are logged
@@ -19,6 +20,7 @@
  * Standards compliance:
  *   APUS-4.4  — receive path polled every main-loop iteration.
  *   APUS-4.7  — duplicate SEQ detection on the rocket side.
+ *   APUS-4.9  — authentication completes before replay state is updated.
  *   APUS-9.1  — acceptance ACK sent for every valid COMMAND.
  *   APUS-9.2  — NACK sent with FailureCode on every rejection.
  *   APUS-9.3  — completion ACK/NACK gated by FLAG_ACK_REQ.
@@ -91,11 +93,11 @@ public:
      * @brief Configure the HMAC-SHA256 key used to authenticate COMMAND frames.
      *
      * When a key is configured all incoming non-fragmented COMMAND frames MUST
-     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-17).
+     * carry FLAG_MAC and pass HMAC-SHA256 verification (APUS-4.8).
      * Frames that fail verification receive a NACK with FailureCode::HMAC_INVALID.
      *
      * When no key is configured (default) FLAG_MAC is optional and not verified
-     * (backwards-compatible open mode).
+     * (backwards-compatible open mode, APUS-4.11).
      *
      * Must be called from the same task as poll() — not thread-safe.
      *
@@ -122,7 +124,7 @@ private:
     ares::ams::MissionScriptEngine& engine_;
     PulseInterface*               pulse_;   ///< Nullable — guarded before use.
 
-    // ── MAC key (APUS-17) ──────────────────────────────
+    // ── MAC key (APUS-4.8) ─────────────────────────────
     static constexpr uint8_t kMacKeyLen = proto::HMAC_KEY_LEN;
     uint8_t  macKey_[kMacKeyLen] = {};  ///< Pre-shared HMAC key (all-zero = disabled).
     bool     macKeySet_ = false;        ///< true after setMacKey() is called.
@@ -229,13 +231,14 @@ private:
     void dispatchFrame(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Handle a TYPE == COMMAND frame (APUS-7, APUS-9, APUS-17).
+     * @brief Handle a COMMAND frame (APUS-4.8–4.10, APUS-7, APUS-9).
      *
      * Sequence:
-     *   1. Duplicate-SEQ check — discard silently if duplicate (APUS-4.7).
-     *   2. MAC verification — if a key is configured, verify FLAG_MAC,
+     *   1. MAC verification — if a key is configured, verify FLAG_MAC,
      *      HMAC-SHA256 tag, and rolling timestamp window via
-     *      checkCommandMac(); NACK with HMAC_INVALID on failure (APUS-17).
+     *      checkCommandMac(); NACK with HMAC_INVALID on failure (APUS-4.9).
+     *   2. Duplicate-SEQ check and mark — discard silently if duplicate
+     *      (APUS-4.7). Authentication must precede this state mutation.
      *   3. Acceptance ACK — sent unconditionally on MAC pass (APUS-9.1).
      *   4. enqueueCmd() — insert into the priority queue (APUS-2.2).
      *   5. Completion ACK/NACK deferred to drainCmdQueue().
@@ -246,7 +249,7 @@ private:
     void handleCommand(const proto::Frame& frame, uint32_t nowMs);
 
     /**
-     * @brief Authenticate a non-fragmented COMMAND frame (APUS-17).
+     * @brief Authenticate a non-fragmented COMMAND frame (APUS-4.8–4.10).
      *
      * Verifies FLAG_MAC presence, the HMAC-SHA256 tag, and the rolling
      * timestamp window.  Sends a NACK(HMAC_INVALID) and returns @c false on
@@ -276,7 +279,7 @@ private:
      * FailureCode::NONE produces an ACK; any other value produces a NACK.
      *
      * @param[in] originalSeq   SEQ of the frame being verified (APUS-9.5).
-     * @param[in] originalNode  NODE of the frame sender.
+     * @param[in] originalNode  NODE field copied from the original frame.
      * @param[in] code          FailureCode::NONE = ACK; non-zero = NACK.
      * @param[in] failureData   Command-specific diagnostic byte (may be 0).
      */

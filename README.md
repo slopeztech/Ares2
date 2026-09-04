@@ -4,7 +4,7 @@ WARNING: for now this is a beta version — use it at your own risk until a fina
 
 **Avionics firmware for amateur rockets on ESP32-S3**
 
-[![Version](https://img.shields.io/badge/version-2.7.2-blue)](#)
+[![Version](https://img.shields.io/badge/version-2.7.3-blue)](#)
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-orange)](#hardware)
 [![Language](https://img.shields.io/badge/C%2B%2B-17-informational)](#)
 [![License](https://img.shields.io/badge/license-GPL--v3-green)](LICENSE)
@@ -495,7 +495,7 @@ Each standard lives in `docs/standards/` and is explained below with the reason 
 - **[MISRA standard](docs/standards/misra_standard.md)** — MISRA C 2012 type-safety subset, enforced by Cppcheck with the MISRA addon (see also the [MISRA C++ review profile](docs/development/misra_cpp_review_profile.md)). Eliminates implicit conversions, signedness traps, and undefined behaviour that compilers will silently accept.
 - **[CERT standard](docs/standards/cert_standard.md)** — CERT C secure coding rules adapted to the embedded context (CERT/CC). Focused on input validation and defence against hostile or malformed data, which on ARES means malformed AMS scripts, REST payloads, and RF frames.
 - **[APUS standard](docs/standards/apus_standard.md)** — *Amateur Packet Utilisation Standard*. The embedded adaptation of ESA PUS that the firmware actually implements: ST[3] housekeeping, ST[5] events, ST[1]/ST[6] command verification, fixed binary layouts, transport-agnostic framing. This is the contract between flight and ground.
-- **[PUS standard](docs/standards/pus_standard.md)** — reference document for the ECSS PUS service model that APUS adapts. Kept in-tree so the lineage of design decisions stays visible and so future contributors can see what was deliberately removed for embedded use.
+- **[Legacy PUS/APUS snapshot](docs/standards/pus_standard.md)** — non-normative historical design lineage. It may diverge from the implemented protocol; use the APUS standard above for all current rule IDs and wire contracts.
 - **[AMS standard](docs/standards/ams_standard.md)** — the language definition for Ares Mission Script: lexical rules, allowed directives, hard parser limits, validation rules, runtime semantics. This is what makes AMS statically analysable and bounded in size and timing.
 - **[APIREST standard](docs/standards/apirest_standard.md)** — in-house contract for the WiFi REST API: route shape, JSON envelope, error model, authentication via `X-ARES-Token`, idempotency rules, behaviour during flight mode. Keeps the ground station independent from firmware revisions.
 - **[ARES coding standard](docs/standards/ares_coding_standard.md)** — the umbrella standard that consolidates the rest into a single style: naming, headers, ownership, logging, assertions, deviation markers. It is the document a new contributor reads first.

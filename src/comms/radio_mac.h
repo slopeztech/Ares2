@@ -1,6 +1,6 @@
 /**
  * @file  radio_mac.h
- * @brief HMAC-SHA256 authentication for APUS radio COMMAND frames (APUS-17).
+ * @brief HMAC-SHA256 authentication for radio COMMAND frames (APUS-4.8, APUS-4.9).
  *
  * Provides truncated HMAC-SHA256 tag computation and verification for
  * transport-command authentication.
@@ -21,7 +21,7 @@
  *   (backwards-compatible open mode).  Once a key is provisioned all incoming
  *   COMMAND frames MUST carry FLAG_MAC and pass verification.
  *
- * Standards: APUS-17 (radio command authentication).
+ * Standards: APUS-4.8 (COMMAND MAC) and APUS-4.9 (constant-time verification).
  * Coding: no heap (PO10-3); pure portable C++17; no Arduino dependency.
  */
 #pragma once
@@ -88,7 +88,7 @@ bool verifyHmac8(const uint8_t* key,      uint8_t  keyLen,
  * @brief Append a MAC tag to a COMMAND frame and set FLAG_MAC.
  *
  * Sets FLAG_MAC in @c frame.flags, computes HMAC-SHA256 over the MAC input
- * (APUS-17: header fields + command payload), appends @c HMAC_LEN bytes to
+ * (APUS-4.8: header fields + command payload), appends @c HMAC_LEN bytes to
  * @c frame.payload, and increments @c frame.len by @c HMAC_LEN.
  *
  * @param[in]     key     MAC key bytes.
