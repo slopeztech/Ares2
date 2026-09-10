@@ -914,5 +914,72 @@ bool MissionScriptEngine::checkPulseSafetyLocked(uint8_t channel, uint64_t nowMs
     return checkPulseAltGateLocked(channel);
 }
 
+// ── requestPulseFire ──────────────────────────────────────────────────────────
+
+/**
+ * @brief Single actuation authority for external pulse-fire requests (APUS-7.2).
+ *
+ * Applies the identical gate order as executePulseActionsLocked() so that a
+ * telecommand can never fire a channel under conditions a script would
+ * block: RUNNING + executionEnabled, then checkPulseSafetyLocked() (arm
+ * token, arm timeout, safe_delay, continuity, altitude), then the driver.
+ * On success, sets the fired-status bit and consumes the arm token exactly
+ * as the script-driven path does.
+ */
+PulseFireResult MissionScriptEngine::requestPulseFire(uint8_t channel, uint64_t nowMs)
+{
+    ScopedLock guard(mutex_, pdMS_TO_TICKS(ares::AMS_MUTEX_TIMEOUT_MS));
+    if (!guard.acquired())
+    {
+        return PulseFireResult::LOCK_TIMEOUT;
+    }
+
+    if (channel >= PulseChannel::COUNT)
+    {
+        return PulseFireResult::INVALID_CHANNEL;
+    }
+
+    if (!executionEnabled_ || status_ != EngineStatus::RUNNING)
+    {
+        LOG_W(TAG, "PULSE ch=%u: external fire request rejected — engine not RUNNING",
+              static_cast<unsigned>(channel));
+        return PulseFireResult::NOT_RUNNING;
+    }
+
+    if (pulseIface_ == nullptr)
+    {
+        LOG_E(TAG, "PULSE ch=%u: external fire request rejected — no pulse driver attached",
+              static_cast<unsigned>(channel));
+        return PulseFireResult::NO_DRIVER;
+    }
+
+    if (!checkPulseSafetyLocked(channel, nowMs))
+    {
+        // checkPulseSafetyLocked() already logged the specific gate that blocked.
+        return PulseFireResult::SAFETY_BLOCKED;
+    }
+
+    const uint32_t dur = static_cast<uint32_t>(ares::FIRE_DURATION_MS);
+    if (!pulseIface_->fire(channel, dur))
+    {
+        LOG_E(TAG, "PULSE ch=%u: external fire request rejected by driver",
+              static_cast<unsigned>(channel));
+        return PulseFireResult::DRIVER_REJECTED;
+    }
+
+    if      (channel == PulseChannel::CH_A) { pulseAFired_ = true; }
+    else if (channel == PulseChannel::CH_B) { pulseBFired_ = true; }
+    else if (channel == PulseChannel::CH_C) { pulseCFired_ = true; }
+    else                                    { pulseDFired_ = true; }
+
+    // Consume the arm token after a successful fire, mirroring
+    // executePulseActionsLocked() (AMS-4.19.1).
+    pulseArmed_[channel] = false;
+
+    LOG_I(TAG, "PULSE ch=%u fired via external request (radio TC), dur=%" PRIu32 "ms",
+          static_cast<unsigned>(channel), dur);
+    return PulseFireResult::OK;
+}
+
 } // namespace ams
 } // namespace ares

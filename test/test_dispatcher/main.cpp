@@ -2,7 +2,7 @@
  * @file  main.cpp
  * @brief Unity runner for test_dispatcher tests.
  *
- * Test count: 64
+ * Test count: 75
  */
 #include <unity.h>
 
@@ -104,6 +104,18 @@ extern void test_cmd_open_mode_accepts_unsigned_command();
 extern void test_poll_liar_driver_received_exceeds_space_no_crash();
 extern void test_poll_liar_driver_recovery_processes_heartbeat();
 
+// ── test_pulse_fire_authority.cpp (ARES-P0-002) ──────────────────────────────
+
+extern void test_remote_fire_engine_not_running_rejected();
+extern void test_remote_fire_paused_execution_rejected();
+extern void test_remote_fire_channel_not_armed_rejected();
+extern void test_remote_fire_arm_expired_rejected();
+extern void test_remote_fire_safe_delay_blocks_early_fire();
+extern void test_remote_fire_continuity_open_rejected();
+extern void test_remote_fire_all_gates_satisfied_succeeds();
+extern void test_remote_fire_already_fired_rejected_by_driver();
+extern void test_remote_fire_no_driver_attached_rejected();
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 int main()
@@ -199,6 +211,17 @@ int main()
     // RX-buffer boundary guard (P3-5 / CERT-1)
     RUN_TEST(test_poll_liar_driver_received_exceeds_space_no_crash);
     RUN_TEST(test_poll_liar_driver_recovery_processes_heartbeat);
+
+    // Single pulse-fire safety authority (ARES-P0-002, AMS-4.19, APUS-7.2)
+    RUN_TEST(test_remote_fire_engine_not_running_rejected);
+    RUN_TEST(test_remote_fire_paused_execution_rejected);
+    RUN_TEST(test_remote_fire_channel_not_armed_rejected);
+    RUN_TEST(test_remote_fire_arm_expired_rejected);
+    RUN_TEST(test_remote_fire_safe_delay_blocks_early_fire);
+    RUN_TEST(test_remote_fire_continuity_open_rejected);
+    RUN_TEST(test_remote_fire_all_gates_satisfied_succeeds);
+    RUN_TEST(test_remote_fire_already_fired_rejected_by_driver);
+    RUN_TEST(test_remote_fire_no_driver_attached_rejected);
 
     return UNITY_END();
 }

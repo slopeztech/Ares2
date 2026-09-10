@@ -208,7 +208,7 @@ struct LiarFixture
     };
 
     LiarRadioDriver       dispatchRadio;
-    ares::RadioDispatcher dispatcher{ dispatchRadio, engine, nullptr };
+    ares::RadioDispatcher dispatcher{ dispatchRadio, engine };
 
     LiarFixture()
     {
@@ -241,7 +241,7 @@ struct RecoveryFixture
     };
 
     LiarThenGoodDriver    dispatchRadio;
-    ares::RadioDispatcher dispatcher{ dispatchRadio, engine, nullptr };
+    ares::RadioDispatcher dispatcher{ dispatchRadio, engine };
 
     RecoveryFixture()
     {

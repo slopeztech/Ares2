@@ -460,6 +460,31 @@ Defines the payload layout for `TYPE == COMMAND (0x03)`.
 | APUS-7.3 | CRITICAL commands must carry `FLAG_PRIORITY` in the flags.    |
 | APUS-7.4 | `CommandHeader` is a packed 6-byte header; command parameters begin at payload offset 6. |
 | APUS-7.5 | `LEN` includes any MAC trailer, but command parsing and length checks must exclude its 8 bytes. |
+| APUS-7.6 | A pyro/pulse command must be actuated through the mission engine's single pulse-fire authority (`MissionScriptEngine::requestPulseFire()`) — the dispatcher must never call the pulse driver directly. |
+
+### Design decision — single actuation authority for remote pulse fire (ARES-P0-002)
+
+`armed == true` (APUS-7.2) is necessary but not sufficient: the AMS engine
+enforces additional safety gates on pyro actuation — two-phase arm token
+(AMS-4.19.1), arm timeout (AMS-4.19.3), safe delay since arm (AMS-4.19.5),
+bridgewire continuity (AMS-4.19.4), and minimum altitude (AMS-4.19.2). A
+telecommand that checked only `armed` and called the pulse driver directly
+could therefore energize a channel under conditions a mission script would
+block, violating the single-authority-for-critical-actuators principle.
+
+**Decision:** by default, a FIRE_PULSE_A/B/C/D telecommand is subject to the
+*identical* AMS-4.19 gate set as a script-declared `PULSE.fire` action — there
+is no telecommand bypass. Both paths call the same engine method under the
+same mutex, so validation and state mutation (arm-token consumption,
+fired-status bits) are atomic with respect to `tick()`. No separate emergency
+override capability is defined; if one is required in the future it must be a
+distinct, authenticated, audited capability — never an implicit bypass of
+these gates.
+
+NACK codes distinguish the failure category without leaking internal state:
+`PRECONDITION_FAIL` covers engine-not-running and every AMS-4.19 safety gate;
+`EXECUTION_ERROR` covers the absence of a pulse driver and a driver-level
+rejection (e.g. a channel that has already fired).
 
 ---
 

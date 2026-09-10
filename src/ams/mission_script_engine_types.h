@@ -81,6 +81,29 @@ struct EngineSnapshot
     char lastError[ares::AMS_MAX_ERROR_TEXT] = {};       ///< Last parser/runtime error message.
 };
 
+/**
+ * Result of MissionScriptEngine::requestPulseFire(), the single safety
+ * authority for actuating a pulse channel (AMS-4.19, APUS-7.2).  Any caller
+ * — script-declared PULSE.fire or an external actuation request such as a
+ * radio COMMAND — is subject to the identical gate set; there is no bypass.
+ *
+ * Values distinguish precondition/safety-gate rejection from driver-level
+ * failure so callers can select an appropriate NACK without exposing
+ * internal engine state.
+ */
+enum class PulseFireResult : uint8_t
+{
+    OK              = 0,  ///< Channel fired successfully.
+    NOT_RUNNING     = 1,  ///< Engine is not RUNNING or executionEnabled_ is false.
+    INVALID_CHANNEL = 2,  ///< channel >= PulseChannel::COUNT.
+    SAFETY_BLOCKED  = 3,  ///< An AMS-4.19 gate rejected the fire (not armed, arm
+                          ///< expired, safe_delay, no continuity, or altitude).
+    NO_DRIVER       = 4,  ///< No PulseInterface attached (pulseIface_ == nullptr).
+    DRIVER_REJECTED = 5,  ///< PulseInterface::fire() returned false (already
+                          ///< fired, invalid duration, or hardware rejection).
+    LOCK_TIMEOUT    = 6,  ///< Engine mutex could not be acquired in time.
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal parser / data-model types (formerly private nested in the class)
 // ─────────────────────────────────────────────────────────────────────────────

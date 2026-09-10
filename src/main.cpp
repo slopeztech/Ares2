@@ -163,7 +163,9 @@ static ares::ams::MissionScriptEngine missionEngine(
     &pulse);
 // Radio dispatcher — polls the LoRa receive FIFO and dispatches inbound APUS
 // frames (APUS-4.4).  Sends acceptance ACK / NACK for every COMMAND (APUS-9).
-static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine, &pulse);
+// FIRE_PULSE_A/B/C/D is actuated exclusively via missionEngine.requestPulseFire()
+// (AMS-4.19, APUS-7.2) — the dispatcher holds no PulseInterface of its own.
+static ares::RadioDispatcher radioDispatcher(radioIf, missionEngine);
 
 // apiServer: deferred to setup() — takes *s_baroIfaces[0] which requires baro
 // to be live first, and baro is deferred (P1-3).  Static storage (PO10-3).
