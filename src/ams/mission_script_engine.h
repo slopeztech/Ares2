@@ -220,13 +220,33 @@ public:
      * Record that a pulse channel was successfully actuated.
      *
      * Sets the corresponding bit in StatusBits so the next telemetry
-     * frame reflects the actuation.  Must be called by the layer that
-     * drives the pulse GPIO after a confirmed FIRE_PULSE_A / FIRE_PULSE_B
-     * command.
+     * frame reflects the actuation.  Called internally by
+     * requestPulseFire() and by executePulseActionsLocked(); external
+     * callers should use requestPulseFire() instead of calling this
+     * directly (AMS-4.19, APUS-7.2 — single actuation authority).
      *
      * @param[in] channel  Channel index 0–3 (PulseChannel::CH_A – CH_D).
      */
     void notifyPulseFired(uint8_t channel);
+
+    /**
+     * Single safety authority for actuating a pulse channel (AMS-4.19,
+     * APUS-7.2).  This is the ONLY path by which an external actuation
+     * request (e.g. a radio FIRE_PULSE_A/B/C/D COMMAND) may energize a
+     * channel: it atomically evaluates, under the engine mutex, the same
+     * RUNNING/executionEnabled state and AMS-4.19 gates (arm token, arm
+     * timeout, safe_delay, continuity, altitude) applied to script-declared
+     * PULSE.fire actions, then fires through the same PulseInterface.
+     * There is no bypass — a telecommand can never fire under conditions a
+     * script would block.
+     *
+     * @param[in] channel  PulseChannel::CH_A (0) … CH_D (3).
+     * @param[in] nowMs    Current uptime in milliseconds (same clock domain
+     *                     as millis64(), used by the AMS-4.19 timing gates).
+     * @return Result distinguishing precondition/safety-gate rejection from
+     *         driver-level failure (see PulseFireResult).
+     */
+    PulseFireResult requestPulseFire(uint8_t channel, uint64_t nowMs);
 
     /**
      * Thread-safe snapshot of the engine's current state.

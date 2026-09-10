@@ -87,7 +87,7 @@ struct CmdDispatchFixture
     };
 
     ares::sim::SimRadioDriver dispatchRadio;
-    ares::RadioDispatcher     dispatcher{ dispatchRadio, engine, nullptr };
+    ares::RadioDispatcher     dispatcher{ dispatchRadio, engine };
 
     CmdDispatchFixture()
     {

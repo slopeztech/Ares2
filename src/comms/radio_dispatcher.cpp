@@ -18,6 +18,7 @@
 #include "comms/radio_mac.h"
 #include "ares_assert.h"
 #include "debug/ares_log.h"
+#include "hal/pulse/pulse_interface.h"
 
 #include <cinttypes>
 #include <cstring>
@@ -30,11 +31,9 @@ static constexpr const char* TAG = "RADIO";
 // ── Constructor ──────────────────────────────────────────────────────────────
 
 RadioDispatcher::RadioDispatcher(RadioInterface&               radio,
-                                 ares::ams::MissionScriptEngine& engine,
-                                 PulseInterface*               pulse)
+                                 ares::ams::MissionScriptEngine& engine)
     : radio_(radio)
     , engine_(engine)
-    , pulse_(pulse)
     , rxBuf_{}
     , rxLen_(0U)
     , txSeq_(0U)
@@ -545,38 +544,41 @@ proto::FailureCode RadioDispatcher::executeCommand(const proto::Frame& frame, //
     case proto::CommandId::FIRE_PULSE_C:
     case proto::CommandId::FIRE_PULSE_D:
     {
-        // ── APUS-7.2: pulse commands require engine RUNNING (armed) ────────
-        ares::ams::EngineSnapshot snap = {};
-        engine_.getSnapshot(snap);
-        if (snap.status != ares::ams::EngineStatus::RUNNING)
-        {
-            LOG_W(TAG, "FIRE_PULSE commandId=0x%02X rejected: engine not RUNNING",
-                  static_cast<unsigned>(commandId));
-            return proto::FailureCode::PRECONDITION_FAIL;
-        }
-
-        if (pulse_ == nullptr)
-        {
-            LOG_E(TAG, "FIRE_PULSE commandId=0x%02X: no pulse driver attached",
-                  static_cast<unsigned>(commandId));
-            return proto::FailureCode::EXECUTION_ERROR;
-        }
-
         uint8_t ch = PulseChannel::CH_A;
         if      (cmd == proto::CommandId::FIRE_PULSE_B) { ch = PulseChannel::CH_B; }
         else if (cmd == proto::CommandId::FIRE_PULSE_C) { ch = PulseChannel::CH_C; }
         else if (cmd == proto::CommandId::FIRE_PULSE_D) { ch = PulseChannel::CH_D; }
 
-        if (!pulse_->fire(ch, static_cast<uint32_t>(ares::FIRE_DURATION_MS)))
-        {
-            LOG_E(TAG, "FIRE_PULSE ch=%u: driver rejected fire",
-                  static_cast<unsigned>(ch));
-            return proto::FailureCode::EXECUTION_ERROR;
-        }
+        // ── APUS-7.2 / AMS-4.19: single actuation authority ────────────────
+        // requestPulseFire() is the ONLY path that may energize a channel; it
+        // applies the identical RUNNING/executionEnabled/arm/timeout/
+        // safe_delay/altitude/continuity gates as script-declared PULSE.fire,
+        // atomically under the engine mutex. This dispatcher never touches
+        // PulseInterface directly — there is no telecommand bypass.
+        const ares::ams::PulseFireResult result =
+            engine_.requestPulseFire(ch, static_cast<uint64_t>(nowMs));
 
-        engine_.notifyPulseFired(ch);
-        LOG_I(TAG, "FIRE_PULSE ch=%u OK", static_cast<unsigned>(ch));
-        return proto::FailureCode::NONE;
+        switch (result)
+        {
+        case ares::ams::PulseFireResult::OK:
+            LOG_I(TAG, "FIRE_PULSE ch=%u OK", static_cast<unsigned>(ch));
+            return proto::FailureCode::NONE;
+
+        case ares::ams::PulseFireResult::NO_DRIVER:
+        case ares::ams::PulseFireResult::DRIVER_REJECTED:
+        case ares::ams::PulseFireResult::LOCK_TIMEOUT:
+            LOG_E(TAG, "FIRE_PULSE ch=%u: driver-level failure (code=%u)",
+                  static_cast<unsigned>(ch), static_cast<unsigned>(result));
+            return proto::FailureCode::EXECUTION_ERROR;
+
+        case ares::ams::PulseFireResult::NOT_RUNNING:
+        case ares::ams::PulseFireResult::INVALID_CHANNEL:
+        case ares::ams::PulseFireResult::SAFETY_BLOCKED:
+        default:
+            LOG_W(TAG, "FIRE_PULSE ch=%u: precondition not met (code=%u)",
+                  static_cast<unsigned>(ch), static_cast<unsigned>(result));
+            return proto::FailureCode::PRECONDITION_FAIL;
+        }
     }
 
     // ── ST[8] Mode control ────────────────────────────────────────────────

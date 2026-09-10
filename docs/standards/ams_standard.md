@@ -1854,6 +1854,15 @@ All gates are evaluated in the order listed above. If any gate rejects the
 fire, the pulse is suppressed silently and a warning is logged via the event
 service; **no error state is entered**.
 
+**Single actuation authority (ARES-P0-002, APUS-7.6):** these gates apply
+identically regardless of the caller. `MissionScriptEngine::requestPulseFire()`
+is the single entry point used both internally, by script-declared
+`PULSE.fire` actions, and externally, by the radio dispatcher's
+FIRE_PULSE_A/B/C/D telecommand handling. There is no second code path that
+actuates a channel; a telecommand can never fire under conditions a script
+would block, and evaluation plus state mutation happen atomically under the
+engine mutex.
+
 All pulse safety runtime state — arm tokens, arm timestamps, the activation
 timestamp used by `pulse.safe_delay`, and the per-channel fired-status flags —
 is **reset to its initial value on every call to `deactivate()`**. This means a

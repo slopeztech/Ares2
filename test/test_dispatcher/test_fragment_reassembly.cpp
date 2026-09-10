@@ -82,7 +82,7 @@ struct DispatchFixture
     };
 
     ares::sim::SimRadioDriver dispatchRadio;   ///< Dispatcher transport radio.
-    ares::RadioDispatcher     dispatcher{ dispatchRadio, engine, nullptr };
+    ares::RadioDispatcher     dispatcher{ dispatchRadio, engine };
 
     DispatchFixture()
     {

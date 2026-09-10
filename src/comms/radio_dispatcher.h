@@ -37,7 +37,6 @@
 #include "comms/radio_mac.h"
 #include "ams/mission_script_engine.h"
 #include "hal/radio/radio_interface.h"
-#include "hal/pulse/pulse_interface.h"
 
 #include <atomic>
 #include <cstdint>
@@ -59,11 +58,13 @@ public:
     /**
      * @param[in] radio   Primary radio interface used for both RX and TX.
      * @param[in] engine  Mission script engine used for command injection.
-     * @param[in] pulse   Pulse channel driver (nullable — FIRE_PULSE rejected if nullptr).
+     *                    FIRE_PULSE_A/B/C/D is actuated exclusively via
+     *                    @c engine.requestPulseFire() — the dispatcher does
+     *                    not hold or call a PulseInterface directly
+     *                    (AMS-4.19, APUS-7.2 — single actuation authority).
      */
     RadioDispatcher(RadioInterface&               radio,
-                    ares::ams::MissionScriptEngine& engine,
-                    PulseInterface*               pulse = nullptr);
+                    ares::ams::MissionScriptEngine& engine);
 
     /**
      * @brief Drain available radio bytes, decode complete APUS frames,
@@ -122,7 +123,6 @@ private:
     // ── References ──────────────────────────────────────────
     RadioInterface&               radio_;
     ares::ams::MissionScriptEngine& engine_;
-    PulseInterface*               pulse_;   ///< Nullable — guarded before use.
 
     // ── MAC key (APUS-4.8) ─────────────────────────────
     static constexpr uint8_t kMacKeyLen = proto::HMAC_KEY_LEN;
