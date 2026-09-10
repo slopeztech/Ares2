@@ -221,9 +221,9 @@ public:
      *
      * Sets the corresponding bit in StatusBits so the next telemetry
      * frame reflects the actuation.  Called internally by
-     * requestPulseFire() and by executePulseActionsLocked(); external
-     * callers should use requestPulseFire() instead of calling this
-     * directly (AMS-4.19, APUS-7.2 — single actuation authority).
+     * executePulseActionsLocked(); external callers should use requestPulseFire()
+     * for external actuation requests instead of calling this directly
+     * (AMS-4.19, APUS-7.2 — single actuation authority).
      *
      * @param[in] channel  Channel index 0–3 (PulseChannel::CH_A – CH_D).
      */
