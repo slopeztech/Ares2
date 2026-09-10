@@ -175,6 +175,7 @@ static uint16_t make_fire_pulse_cmd(uint8_t* buf, uint8_t seq, CommandId id)
 
     uint16_t outLen = 0U;
     (void)encode(tx, buf, MAX_FRAME_LEN, outLen);
+    TEST_ASSERT_GREATER_THAN_UINT16(0U, outLen);
     return outLen;
 }
 
